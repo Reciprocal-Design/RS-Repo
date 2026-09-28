@@ -133,22 +133,28 @@ export function connectCrosstalk(scene: Scene, layouts: PathwayLayout[], pathway
       const er = rngFor(hash(pa.seed, pb.seed), 'crosstalk-edge', e);
       const forward = er() < 0.5;
       const [src, dst] = forward ? [layouts[a], layouts[b]] : [layouts[b], layouts[a]];
-      const maxK = Math.min(src.layers.length, dst.layers.length) - 1;
-      if (maxK < 1) continue;
-      const k = 1 + Math.floor(er() * maxK); // source layer k ≥ 1, target layer k+1 ≤ last
-      if (k + 1 > dst.layers.length - 1) continue;
-      const from = src.layers[k].filter((x) => x.active);
-      const to = dst.layers[k + 1].filter((x) => x.active);
-      if (!from.length || !to.length) continue;
-      const toward = (x: NodeGeom, other: PathwayLayout) =>
-        Math.hypot(x.x - other.receptor.inner.x, x.y - other.receptor.inner.y);
-      const f = weightedPick(er, from.map((x) => 1 / (1 + toward(x, dst) / 100) ** 3), 1)[0];
-      const t = weightedPick(er, to.map((x) => 1 / (1 + toward(x, src) / 100) ** 3), 1)[0];
-      if (f === undefined || t === undefined) continue;
-      const key = `${from[f].id}|${to[t].id}`;
+      // Source layer k ≥ 1 (never the receptor); target layer k+1 must exist.
+      const maxK = Math.min(src.layers.length - 1, dst.layers.length - 2);
+      // Candidate pairs across every layer k → k+1, preferring short links so
+      // crosstalk joins the facing sides of neighbours rather than spanning the cell.
+      const pairs: { a: NodeGeom; b: NodeGeom; d: number }[] = [];
+      for (let k = 1; k <= maxK; k++) {
+        for (const x of src.layers[k]) {
+          if (!x.active) continue;
+          for (const y of dst.layers[k + 1]) {
+            if (y.active) pairs.push({ a: x, b: y, d: Math.hypot(x.x - y.x, x.y - y.y) });
+          }
+        }
+      }
+      if (!pairs.length) continue;
+      const dMin = Math.min(...pairs.map((q) => q.d));
+      const pick = weightedPick(er, pairs.map((q) => Math.exp(-4 * (q.d / dMin - 1))), 1)[0];
+      if (pick === undefined) continue;
+      const { a: fa, b: tb } = pairs[pick];
+      const key = `${fa.id}|${tb.id}`;
       if (used.has(key)) continue;
       used.add(key);
-      edges.push(makeEdge(scene, from[f], to[t], true, er));
+      edges.push(makeEdge(scene, fa, tb, true, er));
     }
   }
   return edges;

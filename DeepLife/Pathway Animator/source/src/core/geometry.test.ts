@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultScene } from './defaults';
+import { defaultScene, makePathway } from './defaults';
 import { buildGeometry } from './geometry';
 import { addLayer, canRemoveLayer, regionOptions, removeLayer, setCounts, setRegion } from './layers';
 import type { NodeGeom, Scene } from './types';
@@ -136,5 +136,69 @@ describe('layer rules', () => {
     const c = setCounts(layers, 1, 20, 30);
     expect(c[1]).toMatchObject({ nodeCount: 10, activeCount: 10 });
     expect(setCounts(layers, 0, 5, 5)).toBe(layers);
+  });
+});
+
+describe('multiple pathways and crosstalk', () => {
+  function multi(n: number, seed = 11): Scene {
+    const s = defaultScene(seed);
+    s.pathwayCount = n;
+    s.pathways = Array.from({ length: n }, (_, i) => ({
+      ...makePathway(seed, i, s.pathways[0].layers),
+    }));
+    s.crosstalk = { enabled: true, amount: 0.6 };
+    return s;
+  }
+
+  it('crosstalk links adjacent pathways, layer k → k+1, active nodes only', () => {
+    for (const n of [2, 3, 5]) {
+      const s = multi(n);
+      const g = buildGeometry(s);
+      const xt = g.edges.filter((e) => e.crosstalk);
+      expect(xt.length).toBeGreaterThan(0);
+      const idx = (id: string) => s.pathways.findIndex((p) => p.id === id);
+      for (const e of xt) {
+        const a = g.nodeById.get(e.from)!, b = g.nodeById.get(e.to)!;
+        expect(a.active && b.active).toBe(true);
+        expect(b.layer - a.layer).toBe(1);
+        expect(a.layer).toBeGreaterThan(0);
+        const d = Math.abs(idx(a.pathwayId) - idx(b.pathwayId));
+        expect(d === 1 || d === n - 1).toBe(true);
+      }
+    }
+  });
+
+  it('crosstalk is stable when unrelated settings change', () => {
+    const a = multi(4);
+    const b = clone(a);
+    b.style.edgeWidth = 2.5;
+    b.style.gradientStops = ['#111111', '#222222', '#333333', '#444444'];
+    b.cell.visible = false;
+    b.canvas.background = '#000000';
+    const ids = (s: Scene) => buildGeometry(s).edges.filter((e) => e.crosstalk).map((e) => e.id);
+    expect(ids(b)).toEqual(ids(a));
+  });
+
+  it('no crosstalk when disabled or with one pathway', () => {
+    const s = multi(3);
+    s.crosstalk.enabled = false;
+    expect(buildGeometry(s).edges.some((e) => e.crosstalk)).toBe(false);
+    const one = defaultScene(3);
+    one.crosstalk.enabled = true;
+    expect(buildGeometry(one).edges.some((e) => e.crosstalk)).toBe(false);
+  });
+
+  it('5 pathways × 10 nodes keeps every node in its region and every edge finite', () => {
+    const s = multi(5);
+    for (const p of s.pathways) p.layers = p.layers.map((l, i) => (i ? { ...l, nodeCount: 10, activeCount: 6 } : l));
+    const g = buildGeometry(s);
+    for (const n of g.nodes) {
+      if (n.layer === 0) continue;
+      const dn = Math.hypot(n.x - g.nucleus.center.x, n.y - g.nucleus.center.y);
+      const rn = g.nucleus.radiusAt(Math.atan2(n.y - g.nucleus.center.y, n.x - g.nucleus.center.x));
+      expect(n.region === 'nucleus' ? dn < rn : dn > rn).toBe(true);
+    }
+    for (const e of g.edges) expect(Number.isFinite(e.length) && e.length > 0).toBe(true);
+    expect(g.warnings.length).toBeGreaterThan(0);
   });
 });

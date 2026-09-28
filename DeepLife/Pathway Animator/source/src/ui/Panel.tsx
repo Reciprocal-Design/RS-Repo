@@ -2,7 +2,7 @@ import { BACKGROUND_PRESETS, CANVAS_PRESETS, DEFAULT_GRADIENT } from '../core/de
 import { buildGeometry } from '../core/geometry';
 import type { ReceptorStyle, Scene } from '../core/types';
 import { ColorAlphaField, ColorField, NumberInput, Section, Select, Slider, Toggle } from './controls';
-import { PathwaysSection } from './PathwaysSection';
+import { CrosstalkSection, PathwaysSection } from './PathwaysSection';
 import { useApp } from './store';
 
 export function Panel() {
@@ -109,6 +109,7 @@ export function Panel() {
       </Section>
 
       <PathwaysSection />
+      <CrosstalkSection />
 
       <Section title="Style">
         <Slider label="Line thickness" value={st.edgeWidth} min={0.25} max={4} step={0.05} unit=" px" onChange={(edgeWidth) => style({ edgeWidth })} />

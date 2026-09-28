@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { defaultScene } from '../core/defaults';
+import { defaultScene, makePathway } from '../core/defaults';
 import { hash, randomSeed } from '../core/rng';
 import type { LayerSpec, Pathway, Scene } from '../core/types';
 
@@ -12,6 +12,8 @@ interface AppState {
   setPathway: (index: number, update: (p: Pathway) => Pathway) => void;
   /** Edit layers of one pathway, or of every pathway when "Same layers for all" is on. */
   editLayers: (index: number, update: (layers: LayerSpec[]) => LayerSpec[]) => void;
+  /** 1–5 pathways. Extra pathways are kept when reducing, so raising the count restores them. */
+  setPathwayCount: (n: number) => void;
   regenerateAll: () => void;
   regeneratePathway: (index: number) => void;
   setTime: (t: number) => void;
@@ -38,6 +40,22 @@ export const useApp = create<AppState>((set) => ({
           ),
         },
       };
+    }),
+  setPathwayCount: (n) =>
+    set((st) => {
+      const s = st.scene;
+      const count = Math.max(1, Math.min(5, Math.round(n)));
+      const pathways = [...s.pathways];
+      for (let i = pathways.length; i < count; i++) {
+        pathways.push({
+          ...makePathway(s.seed, i, s.pathways[0].layers),
+          startDelay: +(i * s.animation.pathwayStagger).toFixed(2),
+        });
+      }
+      if (s.sameLayersForAll) {
+        for (let i = 1; i < count; i++) pathways[i] = { ...pathways[i], layers: pathways[0].layers.map((l) => ({ ...l })) };
+      }
+      return { scene: { ...s, pathwayCount: count, pathways } };
     }),
   // New scene seed (outlines, decorative receptors) and new seeds for every unlocked pathway.
   regenerateAll: () =>

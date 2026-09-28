@@ -108,18 +108,33 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
   const rows = new Array<number>(L).fill(rhoReceptor);
   const stepC = (rhoReceptor - rhoNucEdge) / (cytoIdx.length + 1);
   cytoIdx.forEach((li, k) => (rows[li] = rhoReceptor - stepC * (k + 1)));
+  const n = Math.max(1, scene.pathwayCount);
+  const maxSpan = n === 1 ? 2.3 : Math.min(2.0, (0.84 * TAU) / n);
+  const minSpacing = 0.07 * R;
+
+  // With several pathways, the deepest row stops where its wedge still fits a
+  // typical row (6 nodes), so pathways don't knot together at the centre.
+  // It depends only on the pathway count, never on node counts, for stability.
   const depth = Math.max(0.1, Math.min(0.95, scene.nucleus.layerDepth));
-  const stepN = Math.min(1.6 * stepC, (rhoNucEdge * depth) / Math.max(0.5, nucIdx.length - 0.5));
+  let lastRho = rhoNucEdge * (1 - depth);
+  if (n > 1) {
+    const floor = (5 * 1.1 * minSpacing) / maxSpan;
+    if (floor > 0.85 * rhoNucEdge) {
+      warnings.push(`The nucleus is small for ${n} pathways: enlarge it or use fewer pathways.`);
+    }
+    lastRho = Math.max(lastRho, Math.min(floor, 0.85 * rhoNucEdge));
+  }
+  const stepN = Math.min(1.6 * stepC, (rhoNucEdge - lastRho) / Math.max(0.5, nucIdx.length - 0.5));
+  if (n > 1 && stepN < 0.3 * stepC) {
+    warnings.push('Nucleus layers are tightly packed: enlarge the nucleus or use fewer nucleus layers.');
+  }
   nucIdx.forEach((li, k) => (rows[li] = rhoNucEdge - stepN * (k + 0.5)));
   const stepOf = (li: number) => (layers[li].region === 'nucleus' ? stepN : stepC);
 
-  const n = Math.max(1, scene.pathwayCount);
-  const maxSpan = n === 1 ? 2.3 : Math.min(2.0, (0.84 * TAU) / n);
   // Deep rows sit on a flatter arc than the nucleus-centred one, so they bend
   // gently instead of curling round the centre. Fewer pathways, more room.
   const minArc = (0.5 * R) / n;
   const baseSpacing = (n === 1 ? 0.2 : 0.15) * R;
-  const minSpacing = 0.07 * R;
   const pad = 0.035 * R + scene.style.haloRadius * scale;
 
   const out: NodeGeom[][] = [];

@@ -18,4 +18,4 @@ The built files one level up are what GitHub Pages serves, so rebuild and commit
 - `src/render/` display list + Canvas backend; `render(ctx, scene, t)` is the single entry point
 - `src/ui/` React app and store
 
-Status: milestone 2 (controls for cell, nucleus, style, layers). See `milestone-2.png`.
+Status: milestone 3 (1–5 pathways, crowding handling, crosstalk). See `milestone-3.png`.

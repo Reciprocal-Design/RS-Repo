@@ -10,10 +10,21 @@ const REGION_LABEL: Record<Region, string> = { membrane: 'Receptor', cytoplasm: 
 export function PathwaysSection() {
   const scene = useApp((s) => s.scene);
   const setScene = useApp((s) => s.setScene);
+  const setPathwayCount = useApp((s) => s.setPathwayCount);
   const pathways = scene.pathways.slice(0, scene.pathwayCount);
 
   return (
     <Section title="Pathways">
+      <Slider label="Count" value={scene.pathwayCount} min={1} max={5} step={1} onChange={setPathwayCount} />
+      <Slider
+        label="Rotation"
+        value={scene.rotation}
+        min={-180}
+        max={180}
+        step={1}
+        unit="°"
+        onChange={(rotation) => setScene((s) => ({ ...s, rotation }))}
+      />
       <Toggle
         label="Same layers for all pathways"
         checked={scene.sameLayersForAll}
@@ -73,8 +84,9 @@ function PathwayCard({ pathway: p, index, showLayers }: { pathway: Pathway; inde
 
       {showLayers ? (
         <>
+          {same && count > 1 && <p className="hint">Layer edits apply to every pathway.</p>}
           <div className="layers-head">
-            <span>Layers{same && count > 1 ? ' (all pathways)' : ''}</span>
+            <span>Layers</span>
             <span>Nodes</span>
             <span>Active</span>
             <span />
@@ -137,5 +149,18 @@ function PathwayCard({ pathway: p, index, showLayers }: { pathway: Pathway; inde
         <p className="hint">Layers follow pathway 1.</p>
       )}
     </div>
+  );
+}
+
+export function CrosstalkSection() {
+  const crosstalk = useApp((s) => s.scene.crosstalk);
+  const count = useApp((s) => s.scene.pathwayCount);
+  const setScene = useApp((s) => s.setScene);
+  const set = (v: Partial<typeof crosstalk>) => setScene((s) => ({ ...s, crosstalk: { ...s.crosstalk, ...v } }));
+  return (
+    <Section title="Crosstalk" aside={<Toggle label="On" checked={crosstalk.enabled} onChange={(enabled) => set({ enabled })} />}>
+      <Slider label="Amount" value={crosstalk.amount} min={0} max={1} onChange={(amount) => set({ amount })} />
+      {count < 2 && <p className="hint">Crosstalk links neighbouring pathways, so it needs two or more.</p>}
+    </Section>
   );
 }
