@@ -2,6 +2,7 @@ import { BACKGROUND_PRESETS, CANVAS_PRESETS, DEFAULT_GRADIENT } from '../core/de
 import { buildGeometry } from '../core/geometry';
 import type { ReceptorStyle, Scene } from '../core/types';
 import { ColorAlphaField, ColorField, NumberInput, Section, Select, Slider, Toggle } from './controls';
+import { AnimationSection } from './AnimationSection';
 import { CrosstalkSection, PathwaysSection } from './PathwaysSection';
 import { useApp } from './store';
 
@@ -157,6 +158,8 @@ export function Panel() {
         <Slider label="Receptor width" value={st.receptorSize.width} min={4} max={40} step={1} unit=" px"
           onChange={(width) => style({ receptorSize: { width, length: Math.max(st.receptorSize.length, width) } })} />
       </Section>
+
+      <AnimationSection />
     </aside>
   );
 }

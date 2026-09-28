@@ -14,8 +14,8 @@ The built files one level up are what GitHub Pages serves, so rebuild and commit
 
 ## Layout
 
-- `src/core/` scene model, defaults, seeded RNG, outlines, layout, connections, layer rules, geometry (pure, deterministic)
+- `src/core/` scene model, defaults, seeded RNG, outlines, layout, connections, layer rules, geometry, signal schedule (pure, deterministic)
 - `src/render/` display list + Canvas backend; `render(ctx, scene, t)` is the single entry point
 - `src/ui/` React app and store
 
-Status: milestone 3 (1–5 pathways, crowding handling, crosstalk). See `milestone-3.png`.
+Status: milestone 4 (animation: comets, node pulses, lit edges, timeline). See `milestone-4.png`.

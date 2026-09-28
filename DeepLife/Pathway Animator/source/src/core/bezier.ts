@@ -34,3 +34,11 @@ export function tAtDistance(lut: Float32Array, dist: number): number {
   const f = (dist - lut[lo]) / (lut[hi] - lut[lo] || 1);
   return (lo + f) / (lut.length - 1);
 }
+
+/** The part of the curve from t = 0 to t (de Casteljau). */
+export function bezierHead([p0, p1, p2, p3]: Bezier, t: number): Bezier {
+  const lerp = (a: Vec2, b: Vec2) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  const a = lerp(p0, p1), b = lerp(p1, p2), c = lerp(p2, p3);
+  const d = lerp(a, b), e = lerp(b, c);
+  return [p0, a, d, lerp(d, e)];
+}

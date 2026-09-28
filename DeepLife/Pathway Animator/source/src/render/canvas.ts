@@ -23,6 +23,7 @@ export function drawDisplayList(ctx: Ctx, list: DisplayList, opts: CanvasDrawOpt
 
 function drawPrim(ctx: Ctx, p: Prim): void {
   ctx.globalAlpha = p.opacity ?? 1;
+  ctx.globalCompositeOperation = p.blend ?? 'source-over';
   switch (p.kind) {
     case 'closedSpline': {
       ctx.beginPath();
@@ -80,6 +81,29 @@ function drawPrim(ctx: Ctx, p: Prim): void {
       ctx.lineWidth = p.strokeWidth;
       ctx.stroke();
       ctx.restore();
+      break;
+    }
+    case 'trail': {
+      const a = p.points[0], b = p.points[p.points.length - 1];
+      const grad = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+      grad.addColorStop(0, p.tail);
+      grad.addColorStop(1, p.head);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      for (let i = 1; i < p.points.length; i++) ctx.lineTo(p.points[i].x, p.points[i].y);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = p.width;
+      ctx.stroke();
+      break;
+    }
+    case 'glow': {
+      const grad = ctx.createRadialGradient(p.c.x, p.c.y, 0, p.c.x, p.c.y, p.r);
+      grad.addColorStop(0, p.color);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.beginPath();
+      ctx.arc(p.c.x, p.c.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
       break;
     }
     case 'diamond': {

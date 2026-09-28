@@ -17,6 +17,7 @@ interface AppState {
   regenerateAll: () => void;
   regeneratePathway: (index: number) => void;
   setTime: (t: number) => void;
+  setPlaying: (playing: boolean) => void;
 }
 
 export const useApp = create<AppState>((set) => ({
@@ -77,4 +78,5 @@ export const useApp = create<AppState>((set) => ({
       },
     })),
   setTime: (time) => set({ time }),
+  setPlaying: (playing) => set({ playing }),
 }));

@@ -145,3 +145,5 @@ input[type=range] { accent-color: var(--accent); }
 .timeline input[type=range] { flex: 1; }
 .timeline .time { font: 11.5px ui-monospace, monospace; color: var(--dim); min-width: 96px; text-align: right; }
 .btn.icon { width: 34px; padding: 6px 0; }
+.timeline .toggle.loop { margin: 0; }
+.btn.icon { font-size: 11px; }
