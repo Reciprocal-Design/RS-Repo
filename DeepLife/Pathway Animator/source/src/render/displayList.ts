@@ -71,14 +71,14 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
 
   if (scene.cell.visible) {
     prims.push({
-      kind: 'closedSpline', id: 'membrane', group: 'membrane',
+      kind: 'closedSpline', id: 'membrane-outline', group: 'membrane',
       start: g.cell.points[0], segments: closedSplineSegments(g.cell.points),
       stroke: scene.cell.color, width: scene.cell.strokeWidth * s,
     });
   }
   if (scene.nucleus.visible) {
     prims.push({
-      kind: 'closedSpline', id: 'nucleus', group: 'nucleus',
+      kind: 'closedSpline', id: 'nucleus-outline', group: 'nucleus',
       start: g.nucleus.points[0], segments: closedSplineSegments(g.nucleus.points),
       stroke: scene.nucleus.color, width: scene.nucleus.strokeWidth * s,
     });

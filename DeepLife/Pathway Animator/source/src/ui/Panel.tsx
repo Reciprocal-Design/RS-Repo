@@ -3,6 +3,7 @@ import { buildGeometry } from '../core/geometry';
 import type { ReceptorStyle, Scene } from '../core/types';
 import { ColorAlphaField, ColorField, NumberInput, Section, Select, Slider, Toggle } from './controls';
 import { AnimationSection } from './AnimationSection';
+import { ExportSection } from './ExportSection';
 import { CrosstalkSection, PathwaysSection } from './PathwaysSection';
 import { useApp } from './store';
 
@@ -160,6 +161,7 @@ export function Panel() {
       </Section>
 
       <AnimationSection />
+      <ExportSection />
     </aside>
   );
 }

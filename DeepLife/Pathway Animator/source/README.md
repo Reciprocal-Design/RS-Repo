@@ -6,7 +6,7 @@ Vite + React + TypeScript + Zustand, Canvas 2D.
 ```sh
 npm install
 npm run dev     # local dev server
-npm test        # geometry stability and connection-rule tests
+npm test        # geometry, schedule, export and scene JSON tests
 npm run build   # typecheck, then build into the tool folder (../index.html + ../assets)
 ```
 
@@ -14,8 +14,8 @@ The built files one level up are what GitHub Pages serves, so rebuild and commit
 
 ## Layout
 
-- `src/core/` scene model, defaults, seeded RNG, outlines, layout, connections, layer rules, geometry, signal schedule (pure, deterministic)
-- `src/render/` display list + Canvas backend; `render(ctx, scene, t)` is the single entry point
-- `src/ui/` React app and store
+- `src/core/` scene model, defaults, seeded RNG, outlines, layout, connections, layer rules, geometry, signal schedule, scene JSON (pure, deterministic)
+- `src/render/` display list + Canvas and SVG backends; `render(ctx, scene, t)` is the single canvas entry point
+- `src/ui/` React app, store and exporters
 
-Status: milestone 4 (animation: comets, node pulses, lit edges, timeline). See `milestone-4.png`.
+Status: milestone 5 (PNG and SVG export, scene JSON save/load). See `milestone-5.png`.
