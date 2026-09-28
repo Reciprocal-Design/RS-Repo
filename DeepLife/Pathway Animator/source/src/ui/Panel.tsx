@@ -105,7 +105,7 @@ export function Panel() {
         <Slider label="Wobble" value={n.wobble} min={0} max={1} onChange={(wobble) => nucleus({ wobble })} />
         <Slider label="Stroke width" value={n.strokeWidth} min={0.25} max={5} step={0.05} unit=" px" onChange={(strokeWidth) => nucleus({ strokeWidth })} />
         <ColorAlphaField label="Colour" value={n.color} onChange={(color) => nucleus({ color })} />
-        <Slider label="Layer depth" value={n.layerDepth} min={0.2} max={0.95} onChange={(layerDepth) => nucleus({ layerDepth })} />
+        <Slider label="Layer depth" value={n.layerDepth} min={0.2} max={0.97} onChange={(layerDepth) => nucleus({ layerDepth })} />
       </Section>
 
       <PathwaysSection />

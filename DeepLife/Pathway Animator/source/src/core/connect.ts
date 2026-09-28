@@ -48,18 +48,9 @@ function weightedPick(rng: Rng, weights: number[], k: number): number[] {
   return keyed.slice(0, k).filter((x) => x.key >= 0).map((x) => x.i);
 }
 
-/** Signed lateral position (arc length from the pathway axis) of a node. */
-const lateral = (n: NodeGeom, axis: number) => {
-  // flow points at the nucleus centre, so the node's polar angle is that of -flow.
-  const d = Math.atan2(-n.flow.y, -n.flow.x) - axis;
-  return Math.atan2(Math.sin(d), Math.cos(d)) * n.rho;
-};
-
 /** Edges within one pathway: adjacent layers only, active nodes only. */
 export function connectPathway(scene: Scene, pathway: Pathway, layout: PathwayLayout): EdgeGeom[] {
   const edges: EdgeGeom[] = [];
-  const rn = layout.nodes[0];
-  const axis = Math.atan2(-rn.flow.y, -rn.flow.x);
 
   for (let li = 1; li < layout.layers.length; li++) {
     const parents = layout.layers[li - 1].filter((n) => n.active);
@@ -84,8 +75,8 @@ export function connectPathway(scene: Scene, pathway: Pathway, layout: PathwayLa
       continue;
     }
 
-    const latP = parents.map((p) => lateral(p, axis));
-    const latC = children.map((c) => lateral(c, axis));
+    const latP = parents.map((p) => p.lateral);
+    const latC = children.map((c) => c.lateral);
     const halfWidth = Math.max(...latP.map(Math.abs), ...latC.map(Math.abs), 1);
     const sigma = 0.55 * halfWidth + 0.5 * layout.spacing[li];
 

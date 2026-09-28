@@ -91,10 +91,12 @@ export interface NodeGeom {
   y: number;
   active: boolean;
   region: Region;
-  /** Unit vector of local signal flow (toward the nucleus centre). */
+  /** Unit vector of local signal flow (toward the centre of the node's row arc). */
   flow: Vec2;
-  /** Distance from the nucleus centre; the radial coordinate rows are laid out on. */
+  /** Signed radial coordinate rows are laid out on; decreases toward (and past) the nucleus centre. */
   rho: number;
+  /** Signed arc-length position across the node's row (0 on the pathway axis). */
+  lateral: number;
 }
 
 export type Bezier = [Vec2, Vec2, Vec2, Vec2];

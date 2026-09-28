@@ -111,36 +111,52 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
   const n = Math.max(1, scene.pathwayCount);
   const maxSpan = n === 1 ? 2.3 : Math.min(2.0, (0.84 * TAU) / n);
   const minSpacing = 0.07 * R;
+  // Nucleus rows may pack a little tighter (halos are ~0.045R across).
+  const minSpacingN = 0.05 * R;
 
-  // With several pathways, the deepest row stops where its wedge still fits a
-  // typical row (6 nodes), so pathways don't knot together at the centre.
-  // It depends only on the pathway count, never on node counts, for stability.
-  const depth = Math.max(0.1, Math.min(0.95, scene.nucleus.layerDepth));
-  let lastRho = rhoNucEdge * (1 - depth);
+  // How deep the last nucleus row sits. With one pathway the slider runs from
+  // the near edge of the nucleus, through its centre, to 75% of the way to the
+  // far edge (rows past the centre have a negative radial coordinate). With
+  // several, it spans from the nucleus edge down to the deepest row that still
+  // fits a typical (6-node) row in its wedge, so pathways never knot together
+  // at the centre. Both depend only on the pathway count, never on node counts.
+  const depth = Math.max(0.1, Math.min(0.97, scene.nucleus.layerDepth));
+  let lastRho = rhoNucEdge - depth * (rhoNucEdge + 0.75 * nucleus.radiusAt(thAxis + Math.PI));
   if (n > 1) {
-    const floor = (5 * 1.1 * minSpacing) / maxSpan;
+    const floor = (5 * 1.1 * minSpacingN) / maxSpan;
     if (floor > 0.85 * rhoNucEdge) {
       warnings.push(`The nucleus is small for ${n} pathways: enlarge it or use fewer pathways.`);
     }
-    lastRho = Math.max(lastRho, Math.min(floor, 0.85 * rhoNucEdge));
+    const deepest = Math.min(floor, 0.85 * rhoNucEdge);
+    lastRho = rhoNucEdge - depth * (rhoNucEdge - deepest);
   }
-  const stepN = Math.min(1.6 * stepC, (rhoNucEdge - lastRho) / Math.max(0.5, nucIdx.length - 0.5));
+  const stepN = Math.min((n === 1 ? 3.5 : 1.6) * stepC, (rhoNucEdge - lastRho) / Math.max(0.5, nucIdx.length - 0.5));
   if (n > 1 && stepN < 0.3 * stepC) {
     warnings.push('Nucleus layers are tightly packed: enlarge the nucleus or use fewer nucleus layers.');
   }
   nucIdx.forEach((li, k) => (rows[li] = rhoNucEdge - stepN * (k + 0.5)));
   const stepOf = (li: number) => (layers[li].region === 'nucleus' ? stepN : stepC);
 
-  // Deep rows sit on a flatter arc than the nucleus-centred one, so they bend
-  // gently instead of curling round the centre. Fewer pathways, more room.
-  const minArc = (0.5 * R) / n;
+  // With one or two pathways, deep rows sit on a flatter arc than the
+  // nucleus-centred one, so they bend gently instead of curling round the
+  // centre. With more, rows stay concentric so each keeps to its own wedge.
+  const minArc = n === 1 ? 0.5 * R : n === 2 ? 0.25 * R : 0;
   const baseSpacing = (n === 1 ? 0.2 : 0.15) * R;
   const pad = 0.035 * R + scene.style.haloRadius * scale;
 
   const out: NodeGeom[][] = [];
   const spacing: number[] = [];
-  const mk = (li: number, j: number, p: Vec2, active: boolean): NodeGeom => {
-    const rho = dist(p, N);
+  /**
+   * Flow points at the centre of the node's row arc (the nucleus centre for
+   * concentric rows), and rho is the node's signed radial coordinate measured
+   * along that arc's radius, so it decreases steadily from row to row even
+   * past the nucleus centre.
+   */
+  const mk = (li: number, j: number, p: Vec2, active: boolean, lateral: number,
+    row?: { c: Vec2; arc: number; rho0: number }): NodeGeom => {
+    const c = row?.c ?? N;
+    const d = dist(p, c);
+    const rho = row ? d - row.arc + row.rho0 : d;
     return {
       id: `${pathway.id}-L${li + 1}-N${j + 1}`,
       pathwayId: pathway.id,
@@ -150,19 +166,21 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
       y: p.y,
       active,
       region: layers[li].region,
-      flow: rho > 1e-6 ? { x: (N.x - p.x) / rho, y: (N.y - p.y) / rho } : { x: 0, y: 1 },
+      flow: d > 1e-6 ? { x: (c.x - p.x) / d, y: (c.y - p.y) / d } : { x: 0, y: 1 },
       rho,
+      lateral,
     };
   };
 
-  out.push([mk(0, 0, receptor.inner, true)]);
+  out.push([mk(0, 0, receptor.inner, true, 0)]);
   spacing.push(baseSpacing);
 
   for (let li = 1; li < L; li++) {
     const spec = layers[li];
     const m = Math.max(1, Math.min(10, Math.round(spec.nodeCount)));
     const rowRng = rngFor(pathway.seed, 'row', li);
-    const rho0 = Math.max(rows[li], 0.05 * R);
+    // Only a single pathway's rows may pass the nucleus centre.
+    const rho0 = n === 1 ? rows[li] : Math.max(rows[li], 0.05 * R);
     const arc = Math.max(rho0, minArc);
     // Arc centre: on the axis, behind the nucleus centre when the arc is flattened.
     const arcC = polar(N, rho0 - arc, thAxis);
@@ -170,10 +188,19 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
 
     let sp = baseSpacing * (0.88 + 0.24 * rowRng());
     if (m > 1) {
-      const avail = (arc * maxSpan) / (m - 1);
+      let avail = (arc * maxSpan) / (m - 1);
+      // A flattened nucleus row near or past the centre must also fit the
+      // nucleus's width at that depth, or containment would bunch its ends.
+      // (Rows near the top drape along the nucleus edge and need no limit.)
+      const rn = (nucleus.radiusAt(thAxis + Math.PI / 2) + nucleus.radiusAt(thAxis - Math.PI / 2)) / 2;
+      if (spec.region === 'nucleus' && arc > Math.abs(rho0) && rho0 < 0.3 * rn) {
+        const halfChord = Math.sqrt(Math.max(0, rn * rn - rho0 * rho0)) - pad;
+        avail = Math.min(avail, (1.7 * Math.max(halfChord, 0)) / (m - 1));
+      }
       if (avail < sp) sp = avail;
-      if (sp < minSpacing) {
-        sp = minSpacing;
+      const minSp = spec.region === 'nucleus' ? minSpacingN : minSpacing;
+      if (sp < minSp) {
+        sp = minSp;
         warnings.push(`Pathway ${index + 1}, layer ${li + 1} is crowded: fewer nodes or pathways will read better.`);
       }
     }
@@ -204,6 +231,13 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
         }
       }
     }
+    // Keep the row inside its own pathway's wedge so neighbours never overlap;
+    // a crowded row compresses (and has already warned) rather than spilling over.
+    if (n > 1) {
+      const lim = (arc * (0.8 * TAU)) / n / 2;
+      const widest = Math.max(...pts.map((p) => Math.abs(p.t)));
+      if (widest > lim) pts.forEach((p) => (p.t *= lim / widest));
+    }
 
     // Active nodes: seeded, biased toward the centre of the row.
     const activeCount = Math.max(0, Math.min(m, Math.round(spec.activeCount)));
@@ -232,7 +266,7 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
           rho -= over;
         }
       }
-      row.push(mk(li, j, polar(N, rho, th), activeSet.has(j)));
+      row.push(mk(li, j, polar(N, rho, th), activeSet.has(j), p.t, { c: arcC, arc, rho0 }));
     });
     out.push(row);
   }
