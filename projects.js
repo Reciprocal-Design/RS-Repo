@@ -7,4 +7,5 @@
 window.RS_META = {
   // "DeepLife": { description: "Client description" },
   // "DeepLife/Dot DNA": { description: "What it does", status: "live" },
+  "DeepLife/Pathway Animator": { description: "Animated cell signalling pathways, receptor to DEGs", status: "wip" },
 };
