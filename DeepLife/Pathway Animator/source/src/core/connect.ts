@@ -12,7 +12,8 @@ const MAX_FAN_OUT = 4;
  */
 export function edgeCurve(a: NodeGeom, b: NodeGeom, curvature: number): Bezier {
   const chord = Math.hypot(b.x - a.x, b.y - a.y);
-  const k = curvature * 0.5 * Math.max(a.rho - b.rho, 0.3 * chord);
+  // curvature 0 still bends gently; 1 is a full S-curve.
+  const k = (0.2 + 0.8 * curvature) * 0.5 * Math.max(a.rho - b.rho, 0.3 * chord);
   return [
     { x: a.x, y: a.y },
     { x: a.x + a.flow.x * k, y: a.y + a.flow.y * k },

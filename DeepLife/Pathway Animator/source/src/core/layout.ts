@@ -94,7 +94,9 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
   const warnings: string[] = [];
 
   const thAxis = angleOf(N, receptor.center);
-  const rhoReceptor = dist(N, receptor.inner);
+  // Rows are spaced from a nominal point just inside the membrane, not from the
+  // receptor's inner end, so resizing receptors never moves the network.
+  const rhoReceptor = dist(N, receptor.center) - 0.05 * R;
   const rhoNucEdge = nucleus.radiusAt(thAxis);
 
   const layers = pathway.layers;
@@ -113,6 +115,9 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
 
   const n = Math.max(1, scene.pathwayCount);
   const maxSpan = n === 1 ? 2.3 : Math.min(2.0, (0.84 * TAU) / n);
+  // Deep rows sit on a flatter arc than the nucleus-centred one, so they bend
+  // gently instead of curling round the centre. Fewer pathways, more room.
+  const minArc = (0.5 * R) / n;
   const baseSpacing = (n === 1 ? 0.2 : 0.15) * R;
   const minSpacing = 0.07 * R;
   const pad = 0.035 * R + scene.style.haloRadius * scale;
@@ -143,11 +148,14 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
     const m = Math.max(1, Math.min(10, Math.round(spec.nodeCount)));
     const rowRng = rngFor(pathway.seed, 'row', li);
     const rho0 = Math.max(rows[li], 0.05 * R);
+    const arc = Math.max(rho0, minArc);
+    // Arc centre: on the axis, behind the nucleus centre when the arc is flattened.
+    const arcC = polar(N, rho0 - arc, thAxis);
     const step = stepOf(li);
 
     let sp = baseSpacing * (0.88 + 0.24 * rowRng());
     if (m > 1) {
-      const avail = (rho0 * maxSpan) / (m - 1);
+      const avail = (arc * maxSpan) / (m - 1);
       if (avail < sp) sp = avail;
       if (sp < minSpacing) {
         sp = minSpacing;
@@ -191,8 +199,9 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
 
     const row: NodeGeom[] = [];
     pts.forEach((p, j) => {
-      const th = thAxis + p.t / rho0;
-      let rho = p.rad;
+      const q0 = polar(arcC, arc + (p.rad - rho0), thAxis + p.t / arc);
+      const th = angleOf(N, q0);
+      let rho = dist(N, q0);
       // Containment, adjusting only the radial coordinate.
       if (spec.region === 'nucleus') {
         rho = Math.min(rho, nucleus.radiusAt(th) - pad);

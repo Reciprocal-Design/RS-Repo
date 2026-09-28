@@ -72,7 +72,7 @@ export function defaultScene(seed = 1234): Scene {
       wobble: 0.3,
       strokeWidth: 1.2,
       color: 'rgba(255,255,255,0.24)',
-      layerDepth: 0.6,
+      layerDepth: 0.8,
     },
     style: {
       edgeWidth: 1,
