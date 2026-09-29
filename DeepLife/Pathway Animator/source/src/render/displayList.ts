@@ -45,6 +45,13 @@ export interface DisplayList {
   height: number;
   background: string;
   prims: Prim[];
+  /**
+   * The first `staticCount` prims (outlines, receptors, base edges) are the
+   * same at every time of a scene; `staticKey` is shared by every frame of the
+   * same scene, so a backend may render them once and reuse the result.
+   */
+  staticCount: number;
+  staticKey: object;
 }
 
 const TRAIL_SEGMENTS = 12;
@@ -67,26 +74,30 @@ function outlinePrims(
   points: Vec2[],
   look: OutlineLook & { color: string; strokeWidth: number },
   s: number,
+  prefix = '',
 ): Prim[] {
-  const key = JSON.stringify([group, look.outlineStyle, look.glowWidth, look.glowColor, look.edgeColor, look.color, look.strokeWidth, s]);
+  const key = JSON.stringify([group, look.outlineStyle, look.glowWidth, look.glowColor, look.edgeColor, look.color, look.strokeWidth, s, prefix]);
   let byKey = outlineCache.get(points);
   if (!byKey) outlineCache.set(points, (byKey = new Map()));
   let prims = byKey.get(key);
-  if (!prims) byKey.set(key, (prims = buildOutlinePrims(group, points, look, s)));
+  if (!prims) byKey.set(key, (prims = buildOutlinePrims(group, points, look, s, prefix)));
   return prims;
 }
 
+/** `prefix` keeps ids (and SVG clip paths) unique per cell of a map. */
 function buildOutlinePrims(
   group: 'membrane' | 'nucleus',
   points: Vec2[],
   look: OutlineLook & { color: string; strokeWidth: number },
   s: number,
+  prefix: string,
 ): Prim[] {
   const start = points[0];
   const segments = closedSplineSegments(points);
   const edgeW = Math.max(0.25, look.strokeWidth) * s;
+  const id = `${prefix}${group}`;
   if (look.outlineStyle !== 'glow') {
-    return [{ kind: 'closedSpline', id: `${group}-outline`, group, start, segments, stroke: look.color, width: edgeW }];
+    return [{ kind: 'closedSpline', id: `${id}-outline`, group, start, segments, stroke: look.color, width: edgeW }];
   }
   const glow = parseColor(look.glowColor), edge = parseColor(look.edgeColor);
   // Deep glow → glow → a lavender blend → the bright rim, interpolated in OKLab.
@@ -101,7 +112,7 @@ function buildOutlinePrims(
     const t = i / (GLOW_LAYERS - 1); // 0 = widest, faintest; 1 = at the rim
     const d = depth * (1 - t) ** 1.6 + edgeW * (1 + 2 * t);
     out.push({
-      kind: 'closedSpline', id: `${group}-glow-${i + 1}`, group, start, segments, clip: group,
+      kind: 'closedSpline', id: `${id}-glow-${i + 1}`, group, start, segments, clip: id,
       stroke: rgbaString(ramp(t ** 1.1)), width: 2 * d, opacity: 0.085,
     });
   }
@@ -109,11 +120,11 @@ function buildOutlinePrims(
   const rim: [number, number, number][] = [[3.2, 0.72, 0.3], [2.1, 0.88, 0.45], [1.3, 1, 0.75]];
   rim.forEach(([w, c, a], i) => {
     out.push({
-      kind: 'closedSpline', id: `${group}-rim-${i + 1}`, group, start, segments, clip: group,
+      kind: 'closedSpline', id: `${id}-rim-${i + 1}`, group, start, segments, clip: id,
       stroke: rgbaString(ramp(c)), width: 2 * w * edgeW, opacity: a,
     });
   });
-  out.push({ kind: 'closedSpline', id: `${group}-outline`, group, start, segments, stroke: look.edgeColor, width: edgeW });
+  out.push({ kind: 'closedSpline', id: `${id}-outline`, group, start, segments, stroke: look.edgeColor, width: edgeW });
   return out;
 }
 const mixWhite = ([r, g, b]: RGBA, k: number): RGBA => [r + (255 - r) * k, g + (255 - g) * k, b + (255 - b) * k, 1];
@@ -138,8 +149,13 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
   // Lit edges fade back to base over the last FADE_OUT seconds of a looping cycle.
   const fade = an.loop ? Math.max(0, Math.min(1, (schedule.total - tau) / FADE_OUT)) : 1;
 
-  if (scene.cell.visible) prims.push(...outlinePrims('membrane', g.cell.points, scene.cell, s));
-  if (scene.nucleus.visible) prims.push(...outlinePrims('nucleus', g.nucleus.points, scene.nucleus, s));
+  // Every cell's outlines (one cell, or each cell of a map), before anything else,
+  // so the canvas backend can cache them all as one static bitmap.
+  for (const c of g.cells) {
+    const prefix = c.id ? `${c.id}-` : '';
+    if (scene.cell.visible) prims.push(...outlinePrims('membrane', c.cell.points, scene.cell, s, prefix));
+    if (scene.nucleus.visible) prims.push(...outlinePrims('nucleus', c.nucleus.points, scene.nucleus, s, prefix));
+  }
 
   // Receptors: capsules across the membrane, stroked in the membrane colour.
   // They stay visible when the membrane line is hidden.
@@ -168,6 +184,8 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
       width: st.edgeWidth * s, from: color(e.depthFrom), to: color(e.depthTo), opacity: e.opacity,
     });
   }
+
+  const staticCount = prims.length;
 
   if (signal) {
     const trail = Math.max(0, an.trailLength);
@@ -289,5 +307,12 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
     prims.push({ kind: 'ring', id: `${n.id}-inner`, group: 'nodes-inactive', c: n, r: r * 0.5, stroke: st.inactiveNodeColor, width: w });
   }
 
-  return { width: scene.canvas.width, height: scene.canvas.height, background: scene.canvas.background, prims };
+  return {
+    width: scene.canvas.width,
+    height: scene.canvas.height,
+    background: scene.canvas.background,
+    prims,
+    staticCount,
+    staticKey: g,
+  };
 }

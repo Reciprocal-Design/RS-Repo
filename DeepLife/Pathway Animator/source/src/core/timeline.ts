@@ -53,12 +53,13 @@ export function buildSchedule(scene: Scene): Schedule {
 
   const fire = new Map<string, number>();
   const arrivals = new Map<string, number[]>();
-  const pathways = scene.pathways.slice(0, Math.max(1, scene.pathwayCount));
-  // Tiny graphs (≤ a few hundred nodes): a simple pick-the-earliest loop is plenty.
+  // Small graphs (a few hundred nodes; a cell map a few thousand): a
+  // pick-the-earliest loop over the pending set is plenty.
   const pending = new Map<string, number>();
-  for (const p of pathways) {
-    const receptor = g.nodes.find((n) => n.pathwayId === p.id && n.layer === 0);
-    if (receptor) pending.set(receptor.id, Math.max(0, p.startDelay));
+  const receptorOf = new Map(g.nodes.filter((n) => n.layer === 0).map((n) => [n.pathwayId, n.id]));
+  for (const p of g.pathways) {
+    const receptor = receptorOf.get(p.id);
+    if (receptor) pending.set(receptor, Math.max(0, p.startDelay));
   }
   while (pending.size) {
     let id = '';

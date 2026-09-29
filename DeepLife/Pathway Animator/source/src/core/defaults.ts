@@ -1,5 +1,17 @@
 import { hash } from './rng';
-import type { AnimationSettings, LayerSpec, Pathway, Scene } from './types';
+import type { AnimationSettings, CellMap, LayerSpec, Pathway, Scene } from './types';
+
+export function defaultCellMap(): CellMap {
+  return {
+    enabled: false,
+    name: '',
+    viewBox: { x: 0, y: 0, width: 1, height: 1 },
+    cells: [],
+    detailScale: 0.6,
+    stagger: 3,
+    links: { enabled: true, amount: 0.4 },
+  };
+}
 
 export const DEFAULT_GRADIENT = ['#2E6FE0', '#6C3FD6', '#FF2EA6', '#FF6F3D'];
 
@@ -102,5 +114,6 @@ export function defaultScene(seed = 1234): Scene {
     pathways: [makePathway(seed, 0)],
     crosstalk: { enabled: false, amount: 0.4 },
     animation: { ...DEFAULT_ANIMATION },
+    cellMap: defaultCellMap(),
   };
 }

@@ -1,6 +1,6 @@
-import { DEFAULT_ANIMATION, defaultLayers, defaultScene, makePathway } from './defaults';
+import { DEFAULT_ANIMATION, defaultCellMap, defaultLayers, defaultScene, makePathway } from './defaults';
 import { MAX_LAYERS, MAX_NODES, MIN_LAYERS } from './layers';
-import type { LayerSpec, Pathway, Region, Scene } from './types';
+import type { CellMap, LayerSpec, MapCell, Pathway, Region, Scene } from './types';
 
 // Scene JSON: save the full Scene, and load it back tolerantly. Missing fields
 // take their defaults and out-of-range values are clamped, so older or
@@ -49,6 +49,39 @@ function validLayers(raw: unknown): LayerSpec[] | null {
   return layers;
 }
 
+const coords = (v: unknown): number[] | null =>
+  Array.isArray(v) && v.length >= 6 && v.length % 2 === 0 && v.every((x) => typeof x === 'number' && Number.isFinite(x)) ? v : null;
+
+function normalizeCellMap(raw: unknown): CellMap {
+  const base = defaultCellMap();
+  if (!isObj(raw)) return base;
+  const m = merge(base, raw);
+  const vb = m.viewBox;
+  if (!(vb.width > 0 && vb.height > 0)) return base;
+  const cells: MapCell[] = [];
+  for (const c of Array.isArray(raw.cells) ? raw.cells : []) {
+    if (!isObj(c)) continue;
+    const membrane = coords(c.membrane);
+    if (!membrane) continue;
+    cells.push({
+      id: `c${cells.length + 1}`,
+      membrane,
+      nucleus: coords(c.nucleus),
+      enabled: bool(c.enabled, true),
+      seed: Math.round(num(c.seed, cells.length + 1, 0, 2 ** 32)),
+    });
+  }
+  return {
+    enabled: bool(m.enabled, false) && cells.length > 0,
+    name: typeof m.name === 'string' ? m.name : '',
+    viewBox: { x: num(vb.x, 0), y: num(vb.y, 0), width: vb.width, height: vb.height },
+    cells,
+    detailScale: num(m.detailScale, base.detailScale, 0.2, 1),
+    stagger: num(m.stagger, base.stagger, 0, 20),
+    links: { enabled: bool(m.links.enabled, true), amount: num(m.links.amount, base.links.amount, 0, 1) },
+  };
+}
+
 export function normalizeScene(raw: unknown): Scene {
   if (!isObj(raw) || !isObj(raw.canvas) || !Array.isArray(raw.pathways)) {
     throw new Error('This file is not a Pathway Animator scene.');
@@ -83,6 +116,7 @@ export function normalizeScene(raw: unknown): Scene {
   s.animation = merge({ ...DEFAULT_ANIMATION }, raw.animation);
   if (!['linear', 'easeInOut'].includes(s.animation.easing)) s.animation.easing = 'linear';
   s.crosstalk.amount = num(s.crosstalk.amount, 0.4, 0, 1);
+  s.cellMap = normalizeCellMap(raw.cellMap);
 
   const rawPathways = raw.pathways as unknown[];
   const pathways: Pathway[] = [];

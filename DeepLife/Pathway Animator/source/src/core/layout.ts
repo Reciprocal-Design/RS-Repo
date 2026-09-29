@@ -152,7 +152,11 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
     const deepest = Math.min(floor, 0.85 * rhoNucEdge);
     lastRho = rhoNucEdge - depth * (rhoNucEdge - deepest);
   }
-  const stepN = Math.min((n === 1 ? 3.5 : 1.6) * stepC, (rhoNucEdge - lastRho) / Math.max(0.5, nucIdx.length - 0.5));
+  // Nucleus rows may be spaced wider than cytoplasm rows; where the cytoplasm
+  // is a thin band (cells of an imported map often are), still let them reach
+  // well into the nucleus rather than bunching at its edge.
+  const stepRef = Math.max(stepC, 0.12 * R);
+  const stepN = Math.min((n === 1 ? 3.5 : 1.6) * stepRef, (rhoNucEdge - lastRho) / Math.max(0.5, nucIdx.length - 0.5));
   if (n > 1 && stepN < 0.3 * stepC) {
     warnings.push('Nucleus layers are tightly packed: enlarge the nucleus or use fewer nucleus layers.');
   }

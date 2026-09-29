@@ -18,42 +18,38 @@ export function drawDisplayList(ctx: Ctx, list: DisplayList, opts: CanvasDrawOpt
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   const prims = list.prims;
-  for (let i = 0; i < prims.length; i++) {
-    const p = prims[i];
-    if (p.kind === 'closedSpline' && p.clip) {
-      // A glowing rim is a run of clipped strokes that never changes during
-      // playback: draw it once to a bitmap at device resolution and reuse it.
-      let j = i;
-      while (j < prims.length && prims[j].kind === 'closedSpline' && (prims[j] as { clip?: string }).clip === p.clip) j++;
-      drawCachedRun(ctx, prims, i, j);
-      i = j - 1;
-      continue;
-    }
-    drawPrim(ctx, p);
+  // The static layer (outlines with their glowing rims, receptors, base edges;
+  // for a cell map, every cell's) is the same in every frame of a scene: draw
+  // it once to a bitmap at device resolution and reuse it during playback.
+  let i = 0;
+  if (list.staticCount > 0) {
+    drawStaticLayer(ctx, list);
+    i = list.staticCount;
   }
+  for (; i < prims.length; i++) drawPrim(ctx, prims[i]);
   ctx.restore();
 }
 
-interface RunCache {
+interface StaticCache {
   key: string;
   bitmap: HTMLCanvasElement | OffscreenCanvas;
 }
-const runCache = new WeakMap<Prim, RunCache>();
+const staticCache = new WeakMap<object, StaticCache>();
 
-function drawCachedRun(ctx: Ctx, prims: Prim[], from: number, to: number) {
+function drawStaticLayer(ctx: Ctx, list: DisplayList) {
   const m = ctx.getTransform();
   const { width, height } = ctx.canvas;
-  const key = [width, height, m.a, m.b, m.c, m.d, m.e, m.f, to - from].join(',');
-  let hit = runCache.get(prims[from]);
+  const key = [width, height, m.a, m.b, m.c, m.d, m.e, m.f, list.staticCount].join(',');
+  let hit = staticCache.get(list.staticKey);
   if (!hit || hit.key !== key) {
     const bitmap = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : Object.assign(document.createElement('canvas'), { width, height });
     const off = bitmap.getContext('2d') as Ctx;
     off.setTransform(m);
     off.lineCap = 'round';
     off.lineJoin = 'round';
-    for (let k = from; k < to; k++) drawPrim(off, prims[k]);
+    for (let k = 0; k < list.staticCount; k++) drawPrim(off, list.prims[k]);
     hit = { key, bitmap };
-    runCache.set(prims[from], hit);
+    staticCache.set(list.staticKey, hit);
   }
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);

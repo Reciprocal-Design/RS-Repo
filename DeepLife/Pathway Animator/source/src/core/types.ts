@@ -88,6 +88,27 @@ export interface Scene {
   pathways: Pathway[];
   crosstalk: { enabled: boolean; amount: number };
   animation: AnimationSettings;
+  cellMap: CellMap;
+}
+
+/** One cell of an imported map. Coordinates are flat x,y pairs in the map's own units. */
+export interface MapCell {
+  id: string; // 'c1', 'c2'… in reading order
+  membrane: number[];
+  nucleus: number[] | null; // null: a nucleus is made from the membrane shape
+  enabled: boolean; // has pathways (click a cell in the preview to toggle)
+  seed: number; // per-cell variation of the shared pathway settings
+}
+
+/** A cluster of cells imported from an SVG, drawn instead of the single cell. */
+export interface CellMap {
+  enabled: boolean;
+  name: string; // source file name
+  viewBox: { x: number; y: number; width: number; height: number };
+  cells: MapCell[];
+  detailScale: number; // 0.2–1: node, line, receptor and glow size relative to the single cell
+  stagger: number; // seconds: each cell starts at a random offset within this
+  links: { enabled: boolean; amount: number }; // signals passed to neighbouring cells
 }
 
 // ---- Derived geometry (regenerated from the Scene, never stored) ----
@@ -141,10 +162,22 @@ export interface Outline {
   radiusAt: (theta: number) => number;
 }
 
+/** A cell's outlines as drawn: the single cell, or one cell of a map. */
+export interface CellGeom {
+  id: string; // '' for the single cell
+  cell: Outline;
+  nucleus: Outline;
+  enabled: boolean;
+}
+
 export interface SceneGeom {
   scale: number;
   cell: Outline;
   nucleus: Outline;
+  /** Every cell to draw (one in single-cell mode). */
+  cells: CellGeom[];
+  /** Every pathway laid out, with its effective start delay (cell offsets included). */
+  pathways: { id: string; startDelay: number }[];
   receptors: ReceptorGeom[];
   nodes: NodeGeom[];
   nodeById: Map<string, NodeGeom>;

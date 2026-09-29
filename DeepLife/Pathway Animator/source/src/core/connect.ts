@@ -1,7 +1,7 @@
 import { arcLengthLut } from './bezier';
 import type { PathwayLayout } from './layout';
 import { hash, range, rngFor, signed, type Rng } from './rng';
-import type { Bezier, EdgeGeom, NodeGeom, Pathway, Scene } from './types';
+import type { Bezier, EdgeGeom, NodeGeom, Pathway, Scene, Vec2 } from './types';
 
 const MAX_FAN_OUT = 4;
 
@@ -117,10 +117,9 @@ export const CROSSTALK_REACH = 0.55;
  * get another, so links spread along the pathways instead of piling up at the
  * deepest layers.
  */
-export function connectCrosstalk(scene: Scene, layouts: PathwayLayout[], pathways: Pathway[]): EdgeGeom[] {
+export function connectCrosstalk(scene: Scene, layouts: PathwayLayout[], pathways: Pathway[], R: number): EdgeGeom[] {
   const n = layouts.length;
   if (!scene.crosstalk.enabled || n < 2) return [];
-  const R = scene.cell.radius * Math.min(scene.canvas.width, scene.canvas.height);
   const reach = CROSSTALK_REACH * R;
   const falloff = 0.3 * R;
   const edges: EdgeGeom[] = [];
@@ -177,4 +176,90 @@ export function connectCrosstalk(scene: Scene, layouts: PathwayLayout[], pathway
     }
   }
   return edges;
+}
+
+export interface LinkCell {
+  id: string;
+  seed: number;
+  R: number;
+  /** Outline sample points, for finding neighbours. */
+  points: Vec2[];
+  layouts: PathwayLayout[];
+}
+
+/** Do two cells touch? Their outlines come within a small gap of each other. */
+function touching(a: LinkCell, b: LinkCell): boolean {
+  const gap = 0.15 * Math.min(a.R, b.R);
+  const box = (c: LinkCell) => {
+    const xs = c.points.map((p) => p.x), ys = c.points.map((p) => p.y);
+    return [Math.min(...xs) - gap, Math.min(...ys) - gap, Math.max(...xs) + gap, Math.max(...ys) + gap];
+  };
+  const [ax0, ay0, ax1, ay1] = box(a), [bx0, by0, bx1, by1] = box(b);
+  if (ax1 < bx0 || bx1 < ax0 || ay1 < by0 || by1 < ay0) return false;
+  const g2 = gap * gap;
+  for (const p of a.points) for (const q of b.points) if ((p.x - q.x) ** 2 + (p.y - q.y) ** 2 < g2) return true;
+  return false;
+}
+
+/**
+ * Cell-to-cell links: for some pairs of touching cells (each pair with chance
+ * `amount`), one edge from an active cytoplasm node of one cell to a pathway
+ * receptor of the other, so a signal can travel on into the neighbour. Only
+ * short links are made, so they cross the shared wall rather than the map.
+ */
+export function connectCellLinks(scene: Scene, cells: LinkCell[]): EdgeGeom[] {
+  const { enabled, amount } = scene.cellMap.links;
+  if (!enabled || amount <= 0) return [];
+  const edges: EdgeGeom[] = [];
+  for (let i = 0; i < cells.length; i++) {
+    for (let j = i + 1; j < cells.length; j++) {
+      const A = cells[i], B = cells[j];
+      if (!A.layouts.length || !B.layouts.length) continue;
+      const rng = rngFor(scene.seed, 'cell-link', A.seed, B.seed);
+      if (rng() >= amount || !touching(A, B)) continue;
+      const [src, dst] = rng() < 0.5 ? [A, B] : [B, A];
+      const from = src.layouts.flatMap((l) => l.nodes.filter((n) => n.active && n.layer > 0 && n.region === 'cytoplasm'));
+      const to = dst.layouts.map((l) => l.layers[0][0]);
+      const reach = 1.3 * (src.R + dst.R) / 2;
+      const pairs: { a: NodeGeom; b: NodeGeom; d: number }[] = [];
+      for (const a of from) for (const b of to) {
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (d <= reach) pairs.push({ a, b, d });
+      }
+      if (!pairs.length) continue;
+      const dMin = Math.min(...pairs.map((q) => q.d));
+      const pick = weightedPick(rng, pairs.map((q) => Math.exp(-3 * (q.d / dMin - 1))), 1)[0];
+      if (pick !== undefined) edges.push(makeLinkEdge(scene, pairs[pick].a, pairs[pick].b, rng));
+    }
+  }
+  return edges;
+}
+
+/** A link leaves its node heading for the target and enters the receptor along its inward flow. */
+function makeLinkEdge(scene: Scene, a: NodeGeom, b: NodeGeom, rng: Rng): EdgeGeom {
+  const d = Math.hypot(b.x - a.x, b.y - a.y);
+  const k = d / 3;
+  const ux = (b.x - a.x) / (d || 1), uy = (b.y - a.y) / (d || 1);
+  const bend = signed(rng, 0.25) * d;
+  const bezier: Bezier = [
+    { x: a.x, y: a.y },
+    { x: a.x + ux * k - uy * bend, y: a.y + uy * k + ux * bend },
+    { x: b.x - b.flow.x * k, y: b.y - b.flow.y * k },
+    { x: b.x, y: b.y },
+  ];
+  const lut = arcLengthLut(bezier);
+  const { min, max } = scene.style.edgeOpacity;
+  return {
+    id: `link-${a.id}-to-${b.id}`,
+    from: a.id,
+    to: b.id,
+    pathwayId: a.pathwayId,
+    crosstalk: true,
+    bezier,
+    length: lut[lut.length - 1],
+    lut,
+    opacity: range(rng, Math.min(min, max), Math.max(min, max)),
+    depthFrom: a.depth,
+    depthTo: 0,
+  };
 }

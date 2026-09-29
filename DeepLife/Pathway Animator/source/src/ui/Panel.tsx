@@ -1,8 +1,10 @@
 import { BACKGROUND_PRESETS, CANVAS_PRESETS, DEFAULT_GRADIENT } from '../core/defaults';
+import { mapActive } from '../core/cellMap';
 import { buildGeometry } from '../core/geometry';
 import type { ReceptorStyle, Scene } from '../core/types';
 import { ColorAlphaField, ColorField, NumberInput, Section, Select, Slider, Toggle } from './controls';
 import { AnimationSection } from './AnimationSection';
+import { CellMapSection } from './CellMapSection';
 import { ExportSection } from './ExportSection';
 import { OutlineControls } from './OutlineControls';
 import { CrosstalkSection, PathwaysSection } from './PathwaysSection';
@@ -13,6 +15,7 @@ export function Panel() {
   const setScene = useApp((s) => s.setScene);
   const regenerateAll = useApp((s) => s.regenerateAll);
   const warnings = buildGeometry(scene).warnings;
+  const onMap = mapActive(scene);
 
   const patch = <K extends 'canvas' | 'cell' | 'nucleus' | 'style'>(key: K) =>
     (v: Partial<Scene[K]>) => setScene((s) => ({ ...s, [key]: { ...s[key], ...v } }));
@@ -90,9 +93,15 @@ export function Panel() {
         </div>
       </Section>
 
+      <CellMapSection />
+
       <Section title="Cell membrane" aside={<Toggle label="Show" checked={c.visible} onChange={(visible) => cell({ visible })} />}>
-        <Slider label="Size" value={c.radius} min={0.25} max={0.5} onChange={(radius) => cell({ radius })} />
-        <Slider label="Wobble" value={c.wobble} min={0} max={1} onChange={(wobble) => cell({ wobble })} />
+        {!onMap && (
+          <>
+            <Slider label="Size" value={c.radius} min={0.25} max={0.5} onChange={(radius) => cell({ radius })} />
+            <Slider label="Wobble" value={c.wobble} min={0} max={1} onChange={(wobble) => cell({ wobble })} />
+          </>
+        )}
         <Slider label="Stroke width" value={c.strokeWidth} min={0.25} max={5} step={0.05} unit=" px" onChange={(strokeWidth) => cell({ strokeWidth })} />
         <OutlineControls look={c} onChange={cell} />
         <ColorAlphaField label={c.outlineStyle === 'glow' ? 'Receptor colour' : 'Colour'} value={c.color} onChange={(color) => cell({ color })} />
@@ -103,10 +112,14 @@ export function Panel() {
       </Section>
 
       <Section title="Nucleus" aside={<Toggle label="Show" checked={n.visible} onChange={(visible) => nucleus({ visible })} />}>
-        <Slider label="Size" value={n.radiusRatio} min={0.2} max={0.7} onChange={(radiusRatio) => nucleus({ radiusRatio })} />
-        <Slider label="Offset X" value={n.offset.x} min={-0.3} max={0.3} onChange={(x) => nucleus({ offset: { ...n.offset, x } })} />
-        <Slider label="Offset Y" value={n.offset.y} min={-0.3} max={0.3} onChange={(y) => nucleus({ offset: { ...n.offset, y } })} />
-        <Slider label="Wobble" value={n.wobble} min={0} max={1} onChange={(wobble) => nucleus({ wobble })} />
+        {!onMap && (
+          <>
+            <Slider label="Size" value={n.radiusRatio} min={0.2} max={0.7} onChange={(radiusRatio) => nucleus({ radiusRatio })} />
+            <Slider label="Offset X" value={n.offset.x} min={-0.3} max={0.3} onChange={(x) => nucleus({ offset: { ...n.offset, x } })} />
+            <Slider label="Offset Y" value={n.offset.y} min={-0.3} max={0.3} onChange={(y) => nucleus({ offset: { ...n.offset, y } })} />
+            <Slider label="Wobble" value={n.wobble} min={0} max={1} onChange={(wobble) => nucleus({ wobble })} />
+          </>
+        )}
         <Slider label="Stroke width" value={n.strokeWidth} min={0.25} max={5} step={0.05} unit=" px" onChange={(strokeWidth) => nucleus({ strokeWidth })} />
         <OutlineControls look={n} onChange={nucleus} />
         {n.outlineStyle !== 'glow' && <ColorAlphaField label="Colour" value={n.color} onChange={(color) => nucleus({ color })} />}

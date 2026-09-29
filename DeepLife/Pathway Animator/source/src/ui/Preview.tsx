@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { mapActive } from '../core/cellMap';
 import { render } from '../render/render';
 import { useApp } from './store';
 
@@ -6,6 +7,7 @@ import { useApp } from './store';
 export function Preview() {
   const scene = useApp((s) => s.scene);
   const time = useApp((s) => s.time);
+  const clickMapCell = useApp((s) => s.clickMapCell);
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
@@ -37,9 +39,20 @@ export function Preview() {
     render(ctx, scene, time);
   }, [scene, time, cssW, cssH, W, H]);
 
+  const onMap = mapActive(scene);
   return (
     <div className="preview" ref={wrapRef}>
-      <canvas ref={canvasRef} style={{ width: cssW, height: cssH }} />
+      <canvas
+        ref={canvasRef}
+        style={{ width: cssW, height: cssH, cursor: onMap ? 'pointer' : undefined }}
+        title={onMap ? 'Click a cell to add or remove its pathways; Shift-click to re-roll it' : undefined}
+        onClick={(e) => {
+          if (!onMap || !cssW) return;
+          const r = e.currentTarget.getBoundingClientRect();
+          const p = { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
+          clickMapCell(p, e.shiftKey);
+        }}
+      />
     </div>
   );
 }

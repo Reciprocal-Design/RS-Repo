@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { defaultScene, makePathway } from '../core/defaults';
+import { mapCellAt } from '../core/cellMap';
 import { withStructureOf } from '../core/layers';
 import { hash, randomSeed } from '../core/rng';
-import type { LayerSpec, Pathway, Scene } from '../core/types';
+import type { CellMap, LayerSpec, Pathway, Scene, Vec2 } from '../core/types';
 
 interface AppState {
   scene: Scene;
@@ -23,6 +24,9 @@ interface AppState {
   regeneratePathway: (index: number) => void;
   setTime: (t: number) => void;
   setPlaying: (playing: boolean) => void;
+  setCellMap: (update: (m: CellMap) => CellMap) => void;
+  /** Click on the map: toggle that cell's pathways, or with `reroll`, give it a new layout. */
+  clickMapCell: (p: Vec2, reroll: boolean) => void;
 }
 
 export const useApp = create<AppState>((set) => ({
@@ -89,4 +93,14 @@ export const useApp = create<AppState>((set) => ({
     })),
   setTime: (time) => set({ time }),
   setPlaying: (playing) => set({ playing }),
+  setCellMap: (update) => set((st) => ({ scene: { ...st.scene, cellMap: update(st.scene.cellMap) } })),
+  clickMapCell: (p, reroll) =>
+    set((st) => {
+      const hit = mapCellAt(st.scene, p);
+      if (!hit) return {};
+      const cells = st.scene.cellMap.cells.map((c) =>
+        c.id !== hit.id ? c : reroll ? { ...c, enabled: true, seed: randomSeed() } : { ...c, enabled: !c.enabled },
+      );
+      return { scene: { ...st.scene, cellMap: { ...st.scene.cellMap, cells } } };
+    }),
 }));
