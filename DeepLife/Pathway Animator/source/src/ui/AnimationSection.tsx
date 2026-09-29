@@ -46,8 +46,27 @@ export function AnimationSection() {
       <Slider label="Glow" value={a.glow} min={0} max={1} onChange={(glow) => set({ glow })} />
       <Slider label="Lit edge opacity" value={a.litEdgeOpacity} min={0} max={1} onChange={(litEdgeOpacity) => set({ litEdgeOpacity })} />
       <Slider label="Node pulse" value={a.nodePulseScale} min={1} max={3} step={0.05} unit="×" onChange={(nodePulseScale) => set({ nodePulseScale })} />
-      <Slider label="Hold at end" value={a.holdAtEnd} min={0} max={6} step={0.1} unit=" s" onChange={(holdAtEnd) => set({ holdAtEnd })} />
-      <Toggle label="Loop" checked={a.loop} onChange={(loop) => set({ loop })} />
+      <Slider
+        label={a.continuous ? 'Lit edge hold' : 'Hold at end'}
+        value={a.holdAtEnd}
+        min={0}
+        max={6}
+        step={0.1}
+        unit=" s"
+        onChange={(holdAtEnd) => set({ holdAtEnd })}
+      />
+      <Toggle label="Continuous (never-ending, seamless loop)" checked={a.continuous} onChange={(continuous) => set({ continuous })} />
+      {a.continuous ? (
+        <>
+          <Slider label="Density" value={a.density} min={0} max={1} onChange={(density) => set({ density })} />
+          <p className="hint">
+            The loop length is chosen so a signal is always running and the end flows into the start. Each edge stays
+            lit for the hold time after its comet, then fades. More density overlaps more signals.
+          </p>
+        </>
+      ) : (
+        <Toggle label="Loop" checked={a.loop} onChange={(loop) => set({ loop })} />
+      )}
     </Section>
   );
 }

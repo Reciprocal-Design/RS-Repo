@@ -2,7 +2,7 @@ import { bezierHead, bezierPoint, tAtDistance } from '../core/bezier';
 import { makeRamp, parseColor, rgbaString, type RGBA } from '../core/color';
 import { buildGeometry } from '../core/geometry';
 import { closedSplineSegments } from '../core/outline';
-import { buildSchedule, cycleTime, ease, FADE_OUT, pulseEnvelope } from '../core/timeline';
+import { buildSchedule, cycleTime, ease, FADE_OUT, pulseEnvelope, since } from '../core/timeline';
 import type { Bezier, OutlineLook, Scene, Vec2 } from '../core/types';
 
 // A flat list of draw primitives, consumed by both the Canvas and SVG backends.
@@ -146,8 +146,12 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
   const signal = opts.signal ?? true;
   const schedule = buildSchedule(scene);
   const tau = cycleTime(scene, t);
-  // Lit edges fade back to base over the last FADE_OUT seconds of a looping cycle.
-  const fade = an.loop ? Math.max(0, Math.min(1, (schedule.total - tau) / FADE_OUT)) : 1;
+  const period = schedule.period;
+  // Lit edges fade back to base over the last FADE_OUT seconds of a looping
+  // cycle. In continuous mode each edge fades on its own instead: it stays lit
+  // for the hold time after its comet passes, then fades.
+  const fade = period ? 1 : an.loop ? Math.max(0, Math.min(1, (schedule.total - tau) / FADE_OUT)) : 1;
+  const litHold = Math.max(0, an.holdAtEnd);
 
   // Every cell's outlines (one cell, or each cell of a map), before anything else,
   // so the canvas backend can cache them all as one static bitmap.
@@ -192,11 +196,16 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
     const cometW = Math.max(0.5, an.cometSize) * s;
     // Progress along each edge: raw (linear in time, runs on past 1 while the
     // trail catches up) and eased (position of the head along the curve).
-    const along = schedule.edges.map((et) => ({ et, q: (tau - et.start) / et.duration, id: et.wave ? `${et.edge.id}-w${et.wave}` : et.edge.id }));
+    const along = schedule.edges.map((et) => {
+      const x = since(tau, et.start, period);
+      // Continuous: how lit the edge still is, x seconds after its comet left.
+      const lit = period ? Math.max(0, Math.min(1, (et.duration + litHold + FADE_OUT - x) / FADE_OUT)) : 1;
+      return { et, q: x / et.duration, lit, id: et.wave ? `${et.edge.id}-w${et.wave}` : et.edge.id };
+    });
 
     // Lit edges: the part a comet has passed stays brighter until the loop resets.
-    for (const { et, q, id } of along) {
-      if (q <= 0 || fade <= 0) continue;
+    for (const { et, q, lit, id } of along) {
+      if (q <= 0 || fade * lit <= 0) continue;
       const e = et.edge;
       const frac = ease(Math.min(1, q), an.easing);
       const tt = tAtDistance(e.lut, frac * e.length);
@@ -205,7 +214,7 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
         kind: 'bezier', id: `${id}-lit`, group: e.crosstalk ? 'crosstalk' : 'edges', p: part,
         width: st.edgeWidth * 1.25 * s, from: color(e.depthFrom),
         to: color(e.depthFrom + (e.depthTo - e.depthFrom) * frac),
-        opacity: Math.max(0, Math.min(1, an.litEdgeOpacity)) * fade,
+        opacity: Math.max(0, Math.min(1, an.litEdgeOpacity)) * fade * lit,
       });
     }
 
@@ -264,7 +273,7 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
     for (const n of g.nodes) {
       if (!n.active) continue;
       let e = 0;
-      for (const p of schedule.pulses.get(n.id) ?? []) e = Math.max(e, p.strength * pulseEnvelope(tau - p.t));
+      for (const p of schedule.pulses.get(n.id) ?? []) e = Math.max(e, p.strength * pulseEnvelope(since(tau, p.t, period)));
       if (e > 0) pulse.set(n.id, e);
     }
     for (const [id, e] of pulse) {

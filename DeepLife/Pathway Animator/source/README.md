@@ -19,6 +19,13 @@ The built files one level up are what GitHub Pages serves, so rebuild and commit
 - `src/render/` display list + Canvas and SVG backends; `render(ctx, scene, t)` is the single canvas entry point
 - `src/ui/` React app, store and exporters
 
+## Continuous motion
+
+"Animation → Continuous" makes the signal never stop: every event repeats with one period, so the end of
+the signal runs on into the start of the next loop and the loop is seamless. The period is the longest one
+for which a comet is travelling at every moment; "Density" shortens it so more signals overlap. Each edge
+stays lit for "Lit edge hold" after its comet, then fades.
+
 ## Cell maps
 
 "Cell map → Import SVG map…" replaces the single cell with a cluster of cells from an SVG (e.g. a Voronoi

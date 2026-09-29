@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { buildSchedule, cycleTime } from '../core/timeline';
+import { buildSchedule, cycleTime, loops } from '../core/timeline';
 import { useApp } from './store';
 
 /** Drives playback with requestAnimationFrame; rendering itself stays a pure function of time. */
@@ -15,13 +15,13 @@ function usePlayback() {
       const { scene, time, setTime, setPlaying } = useApp.getState();
       const { total } = buildSchedule(scene);
       const next = time + dt;
-      if (!scene.animation.loop && next >= total) {
+      if (!loops(scene) && next >= total) {
         setTime(total);
         setPlaying(false);
         return;
       }
       // Keep time within one cycle so it never grows without bound.
-      setTime(scene.animation.loop && total > 0 ? next % total : next);
+      setTime(loops(scene) && total > 0 ? next % total : next);
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -43,7 +43,7 @@ export function Timeline() {
   const toggle = () => {
     const st = useApp.getState();
     // Pressing play at the end of a non-looping run starts again.
-    if (!st.playing && !st.scene.animation.loop && st.time >= total) setTime(0);
+    if (!st.playing && !loops(st.scene) && st.time >= total) setTime(0);
     setPlaying(!st.playing);
   };
 
@@ -88,10 +88,11 @@ export function Timeline() {
       <span className="time">
         {t.toFixed(2)} / {total.toFixed(2)} s
       </span>
-      <label className="toggle loop">
+      <label className="toggle loop" title={scene.animation.continuous ? 'Continuous motion always loops' : undefined}>
         <input
           type="checkbox"
-          checked={scene.animation.loop}
+          checked={loops(scene)}
+          disabled={scene.animation.continuous}
           onChange={(e) => {
             const loop = e.target.checked;
             setScene((s) => ({ ...s, animation: { ...s.animation, loop } }));

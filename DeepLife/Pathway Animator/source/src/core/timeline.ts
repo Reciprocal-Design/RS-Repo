@@ -29,6 +29,11 @@ export interface Schedule {
   signalEnd: number;
   /** Full cycle length: signal, hold, and (when looping) the fade back to base. */
   total: number;
+  /**
+   * Continuous mode: every event repeats with this period (= total), so the
+   * end of the signal runs on into the start of the next loop. 0 otherwise.
+   */
+  period: number;
 }
 
 const cache = new WeakMap<Scene, Schedule>();
@@ -167,17 +172,71 @@ export function buildSchedule(scene: Scene): Schedule {
   }
   for (const list of arrivals.values()) list.sort((x, y) => x - y);
 
-  const total = signalEnd + Math.max(0, a.holdAtEnd) + (a.loop ? FADE_OUT : 0);
-  const schedule: Schedule = { fire, arrivals, pulses, edges, signalEnd, total };
+  const total = a.continuous
+    ? continuousPeriod(edges, trail, Math.max(0, a.holdAtEnd), a.density ?? 0)
+    : signalEnd + Math.max(0, a.holdAtEnd) + (a.loop ? FADE_OUT : 0);
+  const schedule: Schedule = { fire, arrivals, pulses, edges, signalEnd, total, period: a.continuous ? total : 0 };
   cache.set(scene, schedule);
   return schedule;
+}
+
+/** Does playback wrap round? Continuous motion always loops. */
+export const loops = (scene: Scene) => scene.animation.loop || scene.animation.continuous;
+
+/** Seconds since an event at `at`, wrapped onto the period in continuous mode. */
+export const since = (tau: number, at: number, period: number) =>
+  period > 0 ? ((((tau - at) % period) + period) % period) : tau - at;
+
+/**
+ * Continuous mode's loop length. Every event repeats with the period, so a
+ * comet running at time t also runs at t + period: the loop is seamless, and
+ * the question is only how long to make it. It is the longest period (up to
+ * the signal's whole span) for which, once everything is wrapped onto it,
+ * some comet head is always travelling. Density folds more of the signal over
+ * itself for busier motion. It never drops below what one edge needs (its
+ * travel, trail, and its lit hold and fade), so nothing overlaps itself.
+ */
+export function continuousPeriod(edges: EdgeTiming[], trail: number, litHold: number, density: number): number {
+  if (!edges.length) return 1;
+  // Activity = a comet head travelling along an edge.
+  const iv = edges.map((e) => [e.start, e.start + e.duration] as const);
+  const t0 = Math.min(...iv.map((x) => x[0]));
+  const span = Math.max(...iv.map((x) => x[1])) - t0;
+  const floor = Math.max(...edges.map((e) => e.duration * (1 + trail) + litHold + FADE_OUT)) + 0.05;
+  const covered = (T: number) => {
+    const parts: [number, number][] = [];
+    for (const [a, b] of iv) {
+      if (b - a >= T) return true;
+      const s = (((a - t0) % T) + T) % T, e = s + (b - a);
+      if (e <= T) parts.push([s, e]);
+      else parts.push([s, T], [0, e - T]);
+    }
+    parts.sort((x, y) => x[0] - y[0]);
+    let reach = 0;
+    for (const [a, b] of parts) {
+      if (a > reach + 1e-6) return false;
+      reach = Math.max(reach, b);
+    }
+    return reach >= T - 1e-6;
+  };
+  const step = Math.max(0.02, span / 400);
+  let best = 0;
+  for (let T = Math.max(span, floor); T >= floor; T -= step) {
+    if (covered(T)) {
+      best = T;
+      break;
+    }
+  }
+  if (!best) return Math.max(span, floor); // no gap-free loop: keep the whole signal
+  const dense = Math.max(floor, best * (1 - 0.6 * Math.max(0, Math.min(1, density))));
+  return covered(dense) ? dense : best;
 }
 
 /** Map playback time onto one cycle: wraps when looping, otherwise clamps. */
 export function cycleTime(scene: Scene, t: number): number {
   const { total } = buildSchedule(scene);
   if (total <= 0) return 0;
-  if (scene.animation.loop) return ((t % total) + total) % total;
+  if (loops(scene)) return ((t % total) + total) % total;
   return Math.min(Math.max(t, 0), total);
 }
 

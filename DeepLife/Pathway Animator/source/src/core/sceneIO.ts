@@ -119,6 +119,7 @@ export function normalizeScene(raw: unknown): Scene {
   s.spacingVariation = num(raw.spacingVariation, 0, 0, 1);
   s.animation = merge({ ...DEFAULT_ANIMATION }, raw.animation);
   if (!['linear', 'easeInOut'].includes(s.animation.easing)) s.animation.easing = 'linear';
+  s.animation.density = num(s.animation.density, DEFAULT_ANIMATION.density, 0, 1);
   s.crosstalk.amount = num(s.crosstalk.amount, 0.4, 0, 1);
   s.cellMap = normalizeCellMap(raw.cellMap);
 

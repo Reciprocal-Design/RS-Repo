@@ -58,6 +58,47 @@ describe('signal schedule', () => {
   });
 });
 
+describe('continuous motion', () => {
+  const heads = (s: Scene, t: number) =>
+    buildDisplayList(s, t).prims.filter((p) => p.kind === 'circle' && p.group === 'signal') as { c: { x: number; y: number } }[];
+
+  for (const n of [1, 3]) {
+    it(`always has a signal running, and the loop is seamless (${n} pathway${n > 1 ? 's' : ''})`, () => {
+      const s = multi(n);
+      s.animation = { ...s.animation, continuous: true, loop: false };
+      const T = buildSchedule(s).total;
+      expect(T).toBeGreaterThan(1);
+      // A comet is always travelling (away from exact hand-over instants).
+      for (let t = 0.013; t < T; t += 0.05) expect(heads(s, t).length).toBeGreaterThan(0);
+      // Across the wrap nothing jumps: each comet just after it is where a comet
+      // was just before, or at a node (one leaving as another arrived).
+      const g = buildGeometry(s);
+      const a = heads(s, T - 1e-3).map((p) => p.c), b = heads(s, T + 1e-3).map((p) => p.c);
+      const near = (p: { x: number; y: number }, qs: { x: number; y: number }[]) =>
+        qs.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < 2);
+      for (const p of b) expect(near(p, a) || near(p, g.nodes)).toBe(true);
+      for (const p of a) expect(near(p, b) || near(p, g.nodes)).toBe(true);
+      expect(cycleTime(s, T + 0.5)).toBeCloseTo(0.5);
+    });
+  }
+
+  it('edges fade on their own instead of all staying lit; density shortens the loop', () => {
+    const s = multi(3);
+    s.animation = { ...s.animation, continuous: true, density: 0 };
+    const sch = buildSchedule(s);
+    let fewest = Infinity;
+    for (let t = 0; t < sch.total; t += 0.1) {
+      fewest = Math.min(fewest, buildDisplayList(s, t).prims.filter((p) => p.id.endsWith('-lit')).length);
+    }
+    expect(fewest).toBeLessThan(sch.edges.length);
+    const dense = { ...s, animation: { ...s.animation, density: 1 } };
+    expect(buildSchedule(dense).total).toBeLessThanOrEqual(sch.total);
+    // Off: the usual cycle with its hold and fade.
+    const off = { ...s, animation: { ...s.animation, continuous: false } };
+    expect(buildSchedule(off).period).toBe(0);
+  });
+});
+
 describe('frames', () => {
   it('same scene JSON + same t → identical frame', () => {
     const a = multi(4);

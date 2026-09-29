@@ -284,6 +284,23 @@ describe('pathways on a cell map', () => {
     expect(side(random).some((cos) => cos > -0.5)).toBe(true);
   });
 
+  it('continuous motion on a map: several pathways are always active', () => {
+    const s = mapScene();
+    s.animation = { ...s.animation, continuous: true };
+    const sch = buildSchedule(s);
+    let fewest = Infinity;
+    for (let t = 0.013; t < sch.total; t += 0.1) {
+      const active = new Set(
+        sch.edges.filter((e) => {
+          const x = (((t - e.start) % sch.total) + sch.total) % sch.total;
+          return x > 0 && x < e.duration;
+        }).map((e) => e.edge.pathwayId),
+      );
+      fewest = Math.min(fewest, active.size);
+    }
+    expect(fewest).toBeGreaterThanOrEqual(2);
+  });
+
   it('finds the clicked cell', () => {
     const s = mapScene();
     const g = buildGeometry(s);

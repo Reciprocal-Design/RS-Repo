@@ -41,8 +41,10 @@ export interface AnimationSettings {
   glow: number; // 0–1
   litEdgeOpacity: number;
   nodePulseScale: number;
-  holdAtEnd: number;
+  holdAtEnd: number; // seconds; in continuous mode, how long an edge stays lit after its comet
   loop: boolean;
+  continuous: boolean; // never-ending motion: a seamless loop that always has a signal running
+  density: number; // 0–1, continuous mode: how much of the signal overlaps itself
 }
 
 export interface Scene {

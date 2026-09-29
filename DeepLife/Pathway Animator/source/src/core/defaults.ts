@@ -63,6 +63,8 @@ export const DEFAULT_ANIMATION: AnimationSettings = {
   nodePulseScale: 1.8,
   holdAtEnd: 1.5,
   loop: true,
+  continuous: false,
+  density: 0.3,
 };
 
 export function defaultScene(seed = 1234): Scene {
