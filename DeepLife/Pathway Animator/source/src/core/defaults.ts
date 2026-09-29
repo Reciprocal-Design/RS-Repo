@@ -64,6 +64,10 @@ export function defaultScene(seed = 1234): Scene {
       color: 'rgba(255,255,255,0.35)',
       decorativeReceptors: 7,
       showDecorativeReceptors: true,
+      outlineStyle: 'glow',
+      glowWidth: 70,
+      glowColor: '#6A35D8',
+      edgeColor: '#D6F0FF',
     },
     nucleus: {
       visible: true,
@@ -73,6 +77,10 @@ export function defaultScene(seed = 1234): Scene {
       strokeWidth: 1.2,
       color: 'rgba(255,255,255,0.24)',
       layerDepth: 0.8,
+      outlineStyle: 'line',
+      glowWidth: 40,
+      glowColor: '#6A35D8',
+      edgeColor: '#D6F0FF',
     },
     style: {
       edgeWidth: 1,

@@ -36,6 +36,17 @@ describe('SVG export', () => {
     for (const [, ref] of svg.matchAll(/url\(#([^)]+)\)/g)) expect(ids).toContain(ref);
   });
 
+  it('draws a glowing rim as clipped vector strokes', () => {
+    const s = defaultScene(4);
+    s.nucleus.outlineStyle = 'glow';
+    const svg = displayListToSvg(buildDisplayList(s, 0, { signal: false }));
+    expect(count(svg, /<clipPath id="clip-membrane">/g)).toBe(1);
+    expect(count(svg, /<clipPath id="clip-nucleus">/g)).toBe(1);
+    expect(count(svg, /clip-path="url\(#clip-membrane\)"/g)).toBeGreaterThan(10);
+    s.cell.outlineStyle = 'line';
+    expect(displayListToSvg(buildDisplayList(s, 0))).not.toContain('clip-membrane');
+  });
+
   it('can include the signal layer, and drop the background', () => {
     const s = defaultScene(4);
     const svg = displayListToSvg(buildDisplayList(s, 1.3, { signal: true }), { transparent: true });

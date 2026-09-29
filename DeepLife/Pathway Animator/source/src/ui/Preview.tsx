@@ -28,8 +28,10 @@ export function Preview() {
     const canvas = canvasRef.current;
     if (!canvas || !cssW || !cssH) return;
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.round(cssW * dpr);
-    canvas.height = Math.round(cssH * dpr);
+    // Only resize when needed: resizing reallocates the canvas every frame otherwise.
+    const bw = Math.round(cssW * dpr), bh = Math.round(cssH * dpr);
+    if (canvas.width !== bw) canvas.width = bw;
+    if (canvas.height !== bh) canvas.height = bh;
     const ctx = canvas.getContext('2d')!;
     ctx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
     render(ctx, scene, time);

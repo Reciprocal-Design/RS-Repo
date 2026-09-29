@@ -47,10 +47,11 @@ export interface SvgOptions {
 
 export function displayListToSvg(list: DisplayList, opts: SvgOptions = {}): string {
   const defs: string[] = [];
+  const clips = new Set<string>();
   const groups = new Map<Group, string[]>(GROUP_ORDER.map((g) => [g, []]));
 
   for (const p of list.prims) {
-    const el = primToSvg(p, defs);
+    const el = primToSvg(p, defs, clips);
     if (el) groups.get(p.group)!.push(el);
   }
 
@@ -72,7 +73,7 @@ export function displayListToSvg(list: DisplayList, opts: SvgOptions = {}): stri
   return out.join('\n');
 }
 
-function primToSvg(p: Prim, defs: string[]): string | null {
+function primToSvg(p: Prim, defs: string[], clips: Set<string>): string | null {
   const id = safeId(p.id);
   const op = p.opacity ?? 1;
   if (op <= 0) return null;
@@ -83,7 +84,16 @@ function primToSvg(p: Prim, defs: string[]): string | null {
     case 'closedSpline': {
       let d = `M${n(p.start.x)},${n(p.start.y)}`;
       for (const [a, b, e] of p.segments) d += ` C${n(a.x)},${n(a.y)} ${n(b.x)},${n(b.y)} ${n(e.x)},${n(e.y)}`;
-      return `<path id="${id}" d="${d} Z" fill="none" ${strokeAttrs(p.stroke)} stroke-width="${n(p.width)}"${opacity}/>`;
+      let clip = '';
+      if (p.clip) {
+        const cid = `clip-${safeId(p.clip)}`;
+        if (!clips.has(cid)) {
+          clips.add(cid);
+          defs.push(`<clipPath id="${cid}"><path d="${d} Z"/></clipPath>`);
+        }
+        clip = ` clip-path="url(#${cid})"`;
+      }
+      return `<path id="${id}" d="${d} Z" fill="none" ${strokeAttrs(p.stroke)} stroke-width="${n(p.width)}"${opacity}${clip}/>`;
     }
     case 'bezier': {
       const [a, b, c, e] = p.p;

@@ -73,6 +73,10 @@ export function normalizeScene(raw: unknown): Scene {
     .filter((c): c is string => typeof c === 'string');
   if (s.style.gradientStops.length < 2) s.style.gradientStops = [...base.style.gradientStops];
   if (!['capsule', 'diamond', 'capsuleDiamond'].includes(s.style.receptorStyle)) s.style.receptorStyle = base.style.receptorStyle;
+  for (const [o, d] of [[s.cell, base.cell], [s.nucleus, base.nucleus]] as const) {
+    if (o.outlineStyle !== 'line' && o.outlineStyle !== 'glow') o.outlineStyle = d.outlineStyle;
+    o.glowWidth = num(o.glowWidth, d.glowWidth, 0, 400);
+  }
   s.pathwayCount = Math.round(num(s.pathwayCount, 1, 1, 5));
   s.animation = merge({ ...DEFAULT_ANIMATION }, raw.animation);
   if (!['linear', 'easeInOut'].includes(s.animation.easing)) s.animation.easing = 'linear';

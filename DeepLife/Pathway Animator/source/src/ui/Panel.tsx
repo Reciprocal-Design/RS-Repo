@@ -4,6 +4,7 @@ import type { ReceptorStyle, Scene } from '../core/types';
 import { ColorAlphaField, ColorField, NumberInput, Section, Select, Slider, Toggle } from './controls';
 import { AnimationSection } from './AnimationSection';
 import { ExportSection } from './ExportSection';
+import { OutlineControls } from './OutlineControls';
 import { CrosstalkSection, PathwaysSection } from './PathwaysSection';
 import { useApp } from './store';
 
@@ -93,7 +94,8 @@ export function Panel() {
         <Slider label="Size" value={c.radius} min={0.25} max={0.5} onChange={(radius) => cell({ radius })} />
         <Slider label="Wobble" value={c.wobble} min={0} max={1} onChange={(wobble) => cell({ wobble })} />
         <Slider label="Stroke width" value={c.strokeWidth} min={0.25} max={5} step={0.05} unit=" px" onChange={(strokeWidth) => cell({ strokeWidth })} />
-        <ColorAlphaField label="Colour" value={c.color} onChange={(color) => cell({ color })} />
+        <OutlineControls look={c} onChange={cell} />
+        <ColorAlphaField label={c.outlineStyle === 'glow' ? 'Receptor colour' : 'Colour'} value={c.color} onChange={(color) => cell({ color })} />
         <Slider label="Decorative receptors" value={c.decorativeReceptors} min={0} max={12} step={1}
           onChange={(decorativeReceptors) => cell({ decorativeReceptors })} />
         <Toggle label="Show decorative receptors" checked={c.showDecorativeReceptors}
@@ -106,7 +108,8 @@ export function Panel() {
         <Slider label="Offset Y" value={n.offset.y} min={-0.3} max={0.3} onChange={(y) => nucleus({ offset: { ...n.offset, y } })} />
         <Slider label="Wobble" value={n.wobble} min={0} max={1} onChange={(wobble) => nucleus({ wobble })} />
         <Slider label="Stroke width" value={n.strokeWidth} min={0.25} max={5} step={0.05} unit=" px" onChange={(strokeWidth) => nucleus({ strokeWidth })} />
-        <ColorAlphaField label="Colour" value={n.color} onChange={(color) => nucleus({ color })} />
+        <OutlineControls look={n} onChange={nucleus} />
+        {n.outlineStyle !== 'glow' && <ColorAlphaField label="Colour" value={n.color} onChange={(color) => nucleus({ color })} />}
         <Slider label="Layer depth" value={n.layerDepth} min={0.2} max={0.97} onChange={(layerDepth) => nucleus({ layerDepth })} />
       </Section>
 

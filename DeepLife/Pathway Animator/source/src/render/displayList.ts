@@ -3,7 +3,7 @@ import { makeRamp, parseColor, rgbaString, type RGBA } from '../core/color';
 import { buildGeometry } from '../core/geometry';
 import { closedSplineSegments } from '../core/outline';
 import { buildSchedule, cycleTime, ease, FADE_OUT, pulseEnvelope } from '../core/timeline';
-import type { Bezier, Scene, Vec2 } from '../core/types';
+import type { Bezier, OutlineLook, Scene, Vec2 } from '../core/types';
 
 // A flat list of draw primitives, consumed by both the Canvas and SVG backends.
 
@@ -27,7 +27,8 @@ interface Base {
 
 export type Prim = Base &
   (
-    | { kind: 'closedSpline'; start: Vec2; segments: [Vec2, Vec2, Vec2][]; stroke: string; width: number }
+    /** A closed curve; with `clip`, the stroke is clipped to the inside of the curve (key names the clip shape). */
+    | { kind: 'closedSpline'; start: Vec2; segments: [Vec2, Vec2, Vec2][]; stroke: string; width: number; clip?: string }
     | { kind: 'bezier'; p: Bezier; width: number; from: string; to: string }
     | { kind: 'circle'; c: Vec2; r: number; fill: string }
     | { kind: 'ring'; c: Vec2; r: number; stroke: string; width: number }
@@ -47,6 +48,74 @@ export interface DisplayList {
 }
 
 const TRAIL_SEGMENTS = 12;
+const GLOW_LAYERS = 26;
+
+/**
+ * An outline as a plain line, or as a glowing rim: a stack of strokes clipped
+ * to the inside of the curve, each thinner and brighter than the last, so light
+ * fades from a bright edge into the dark interior. Vector in both backends.
+ */
+const outlineCache = new WeakMap<Vec2[], Map<string, Prim[]>>();
+
+/**
+ * Outline prims are memoised per outline (geometry is cached per scene) and
+ * look, so every frame gets the same prim objects and the canvas backend can
+ * reuse its rendered rim bitmap across frames.
+ */
+function outlinePrims(
+  group: 'membrane' | 'nucleus',
+  points: Vec2[],
+  look: OutlineLook & { color: string; strokeWidth: number },
+  s: number,
+): Prim[] {
+  const key = JSON.stringify([group, look.outlineStyle, look.glowWidth, look.glowColor, look.edgeColor, look.color, look.strokeWidth, s]);
+  let byKey = outlineCache.get(points);
+  if (!byKey) outlineCache.set(points, (byKey = new Map()));
+  let prims = byKey.get(key);
+  if (!prims) byKey.set(key, (prims = buildOutlinePrims(group, points, look, s)));
+  return prims;
+}
+
+function buildOutlinePrims(
+  group: 'membrane' | 'nucleus',
+  points: Vec2[],
+  look: OutlineLook & { color: string; strokeWidth: number },
+  s: number,
+): Prim[] {
+  const start = points[0];
+  const segments = closedSplineSegments(points);
+  const edgeW = Math.max(0.25, look.strokeWidth) * s;
+  if (look.outlineStyle !== 'glow') {
+    return [{ kind: 'closedSpline', id: `${group}-outline`, group, start, segments, stroke: look.color, width: edgeW }];
+  }
+  const glow = parseColor(look.glowColor), edge = parseColor(look.edgeColor);
+  // Deep glow → glow → a lavender blend → the bright rim, interpolated in OKLab.
+  const deep = rgbaString([glow[0] * 0.45, glow[1] * 0.45, glow[2] * 0.55, 1]);
+  const mid = rgbaString([(glow[0] + edge[0]) / 2, (glow[1] * 0.6 + edge[1] * 0.4), (glow[2] + edge[2]) / 2, 1]);
+  const ramp = makeRamp([deep, look.glowColor, mid, look.edgeColor]);
+  const depth = Math.max(0, look.glowWidth) * s;
+  const out: Prim[] = [];
+  // Many thin, equally faint layers: where they overlap (near the rim) the
+  // light builds up smoothly, with no visible steps.
+  for (let i = 0; i < GLOW_LAYERS; i++) {
+    const t = i / (GLOW_LAYERS - 1); // 0 = widest, faintest; 1 = at the rim
+    const d = depth * (1 - t) ** 1.6 + edgeW * (1 + 2 * t);
+    out.push({
+      kind: 'closedSpline', id: `${group}-glow-${i + 1}`, group, start, segments, clip: group,
+      stroke: rgbaString(ramp(t ** 1.1)), width: 2 * d, opacity: 0.085,
+    });
+  }
+  // A bright band right at the rim: lavender into the edge colour.
+  const rim: [number, number, number][] = [[3.2, 0.72, 0.3], [2.1, 0.88, 0.45], [1.3, 1, 0.75]];
+  rim.forEach(([w, c, a], i) => {
+    out.push({
+      kind: 'closedSpline', id: `${group}-rim-${i + 1}`, group, start, segments, clip: group,
+      stroke: rgbaString(ramp(c)), width: 2 * w * edgeW, opacity: a,
+    });
+  });
+  out.push({ kind: 'closedSpline', id: `${group}-outline`, group, start, segments, stroke: look.edgeColor, width: edgeW });
+  return out;
+}
 const mixWhite = ([r, g, b]: RGBA, k: number): RGBA => [r + (255 - r) * k, g + (255 - g) * k, b + (255 - b) * k, 1];
 const withAlpha = ([r, g, b]: RGBA, a: number) => rgbaString([r, g, b, a]);
 
@@ -69,20 +138,8 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
   // Lit edges fade back to base over the last FADE_OUT seconds of a looping cycle.
   const fade = an.loop ? Math.max(0, Math.min(1, (schedule.total - tau) / FADE_OUT)) : 1;
 
-  if (scene.cell.visible) {
-    prims.push({
-      kind: 'closedSpline', id: 'membrane-outline', group: 'membrane',
-      start: g.cell.points[0], segments: closedSplineSegments(g.cell.points),
-      stroke: scene.cell.color, width: scene.cell.strokeWidth * s,
-    });
-  }
-  if (scene.nucleus.visible) {
-    prims.push({
-      kind: 'closedSpline', id: 'nucleus-outline', group: 'nucleus',
-      start: g.nucleus.points[0], segments: closedSplineSegments(g.nucleus.points),
-      stroke: scene.nucleus.color, width: scene.nucleus.strokeWidth * s,
-    });
-  }
+  if (scene.cell.visible) prims.push(...outlinePrims('membrane', g.cell.points, scene.cell, s));
+  if (scene.nucleus.visible) prims.push(...outlinePrims('nucleus', g.nucleus.points, scene.nucleus, s));
 
   // Receptors: capsules across the membrane, stroked in the membrane colour.
   // They stay visible when the membrane line is hidden.

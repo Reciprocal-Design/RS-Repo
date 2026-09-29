@@ -17,7 +17,49 @@ export function drawDisplayList(ctx: Ctx, list: DisplayList, opts: CanvasDrawOpt
   }
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  for (const p of list.prims) drawPrim(ctx, p);
+  const prims = list.prims;
+  for (let i = 0; i < prims.length; i++) {
+    const p = prims[i];
+    if (p.kind === 'closedSpline' && p.clip) {
+      // A glowing rim is a run of clipped strokes that never changes during
+      // playback: draw it once to a bitmap at device resolution and reuse it.
+      let j = i;
+      while (j < prims.length && prims[j].kind === 'closedSpline' && (prims[j] as { clip?: string }).clip === p.clip) j++;
+      drawCachedRun(ctx, prims, i, j);
+      i = j - 1;
+      continue;
+    }
+    drawPrim(ctx, p);
+  }
+  ctx.restore();
+}
+
+interface RunCache {
+  key: string;
+  bitmap: HTMLCanvasElement | OffscreenCanvas;
+}
+const runCache = new WeakMap<Prim, RunCache>();
+
+function drawCachedRun(ctx: Ctx, prims: Prim[], from: number, to: number) {
+  const m = ctx.getTransform();
+  const { width, height } = ctx.canvas;
+  const key = [width, height, m.a, m.b, m.c, m.d, m.e, m.f, to - from].join(',');
+  let hit = runCache.get(prims[from]);
+  if (!hit || hit.key !== key) {
+    const bitmap = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : Object.assign(document.createElement('canvas'), { width, height });
+    const off = bitmap.getContext('2d') as Ctx;
+    off.setTransform(m);
+    off.lineCap = 'round';
+    off.lineJoin = 'round';
+    for (let k = from; k < to; k++) drawPrim(off, prims[k]);
+    hit = { key, bitmap };
+    runCache.set(prims[from], hit);
+  }
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(hit.bitmap, 0, 0);
   ctx.restore();
 }
 
@@ -32,7 +74,15 @@ function drawPrim(ctx: Ctx, p: Prim): void {
       ctx.closePath();
       ctx.strokeStyle = p.stroke;
       ctx.lineWidth = p.width;
-      ctx.stroke();
+      if (p.clip) {
+        // Keep only the inner half of the stroke: light falls inward from the rim.
+        ctx.save();
+        ctx.clip();
+        ctx.stroke();
+        ctx.restore();
+      } else {
+        ctx.stroke();
+      }
       break;
     }
     case 'bezier': {

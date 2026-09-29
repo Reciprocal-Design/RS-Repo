@@ -1,5 +1,14 @@
 export type Region = 'membrane' | 'cytoplasm' | 'nucleus';
 export type ReceptorStyle = 'capsule' | 'diamond' | 'capsuleDiamond';
+export type OutlineStyle = 'line' | 'glow';
+
+/** How an outline is drawn: a plain line, or a bright rim with light fading inward. */
+export interface OutlineLook {
+  outlineStyle: OutlineStyle;
+  glowWidth: number; // px at 1080: how far the rim glow reaches inward
+  glowColor: string; // the inner glow
+  edgeColor: string; // the bright rim
+}
 
 export interface Vec2 {
   x: number;
@@ -41,7 +50,7 @@ export interface Scene {
   name: string;
   seed: number;
   canvas: { width: number; height: number; background: string };
-  cell: {
+  cell: OutlineLook & {
     visible: boolean;
     radius: number; // fraction of min(canvas w,h)
     wobble: number; // 0–1, low-frequency outline noise
@@ -50,7 +59,7 @@ export interface Scene {
     decorativeReceptors: number; // inactive capsules, 0–12
     showDecorativeReceptors: boolean;
   };
-  nucleus: {
+  nucleus: OutlineLook & {
     visible: boolean;
     radiusRatio: number; // relative to cell radius
     offset: { x: number; y: number }; // fraction of cell radius
