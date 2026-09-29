@@ -81,9 +81,10 @@ export interface Scene {
     receptorStyle: ReceptorStyle;
     receptorSize: { length: number; width: number };
   };
-  pathwayCount: number; // 1–5, placed evenly around the cell
+  pathwayCount: number; // 1–5, placed around the cell
+  spacingVariation: number; // 0 = evenly spaced round the cell, 1 = most uneven
   rotation: number; // degrees, 0 = top, clockwise
-  sameLayersForAll: boolean;
+  sameLayersForAll: boolean; // pathways share layer structure (count and regions); node counts stay per pathway
   pathways: Pathway[];
   crosstalk: { enabled: boolean; amount: number };
   animation: AnimationSettings;

@@ -105,13 +105,24 @@ export function connectPathway(scene: Scene, pathway: Pathway, layout: PathwayLa
   return edges;
 }
 
+/** Crosstalk only joins nodes of neighbouring pathways closer than this (× cell radius). */
+export const CROSSTALK_REACH = 0.55;
+
 /**
  * Crosstalk: a few edges from layer k of one pathway to layer k+1 of its
- * neighbour around the cell, preferring nodes on the facing sides.
+ * neighbour around the cell. Any layer may take part, but only where the two
+ * pathways run close together: pairs farther apart than CROSSTALK_REACH are
+ * never linked, so widely spaced neighbours get none. Nearer pairs are
+ * favoured gently, and a layer that already carries a link is less likely to
+ * get another, so links spread along the pathways instead of piling up at the
+ * deepest layers.
  */
 export function connectCrosstalk(scene: Scene, layouts: PathwayLayout[], pathways: Pathway[]): EdgeGeom[] {
   const n = layouts.length;
   if (!scene.crosstalk.enabled || n < 2) return [];
+  const R = scene.cell.radius * Math.min(scene.canvas.width, scene.canvas.height);
+  const reach = CROSSTALK_REACH * R;
+  const falloff = 0.3 * R;
   const edges: EdgeGeom[] = [];
   const pairCount = n === 2 ? 1 : n;
   for (let a = 0; a < pairCount; a++) {
@@ -119,33 +130,50 @@ export function connectCrosstalk(scene: Scene, layouts: PathwayLayout[], pathway
     const pa = pathways[a], pb = pathways[b];
     const rng = rngFor(hash(pa.seed, pb.seed), 'crosstalk', a);
     const count = Math.round(scene.crosstalk.amount * 3 + rng() * 0.99);
-    const used = new Set<string>();
-    for (let e = 0; e < count; e++) {
-      const er = rngFor(hash(pa.seed, pb.seed), 'crosstalk-edge', e);
-      const forward = er() < 0.5;
-      const [src, dst] = forward ? [layouts[a], layouts[b]] : [layouts[b], layouts[a]];
-      // Source layer k ≥ 1 (never the receptor); target layer k+1 must exist.
+    if (!count) continue;
+
+    // Close candidate pairs, either direction, across every layer k → k+1.
+    // Source layer k ≥ 1 (never the receptor).
+    const pairs: { a: NodeGeom; b: NodeGeom; d: number; k: number }[] = [];
+    for (const [src, dst] of [[layouts[a], layouts[b]], [layouts[b], layouts[a]]]) {
       const maxK = Math.min(src.layers.length - 1, dst.layers.length - 2);
-      // Candidate pairs across every layer k → k+1, preferring short links so
-      // crosstalk joins the facing sides of neighbours rather than spanning the cell.
-      const pairs: { a: NodeGeom; b: NodeGeom; d: number }[] = [];
       for (let k = 1; k <= maxK; k++) {
         for (const x of src.layers[k]) {
           if (!x.active) continue;
           for (const y of dst.layers[k + 1]) {
-            if (y.active) pairs.push({ a: x, b: y, d: Math.hypot(x.x - y.x, x.y - y.y) });
+            if (!y.active) continue;
+            const d = Math.hypot(x.x - y.x, x.y - y.y);
+            if (d <= reach) pairs.push({ a: x, b: y, d, k });
           }
         }
       }
-      if (!pairs.length) continue;
-      const dMin = Math.min(...pairs.map((q) => q.d));
-      const pick = weightedPick(er, pairs.map((q) => Math.exp(-4 * (q.d / dMin - 1))), 1)[0];
-      if (pick === undefined) continue;
-      const { a: fa, b: tb } = pairs[pick];
-      const key = `${fa.id}|${tb.id}`;
-      if (used.has(key)) continue;
-      used.add(key);
-      edges.push(makeEdge(scene, fa, tb, true, er));
+    }
+    if (!pairs.length) continue;
+
+    const layerUse = new Map<number, number>();
+    const nodeUse = new Set<string>();
+    const free = (q: (typeof pairs)[number]) => !nodeUse.has(q.a.id) && !nodeUse.has(q.b.id);
+    const layersK = [...new Set(pairs.map((q) => q.k))];
+    const er = rngFor(hash(pa.seed, pb.seed), 'crosstalk-edges', a);
+    for (let e = 0; e < count; e++) {
+      // First the layer, by how close the pathways come there (not by how many
+      // candidate pairs it has, which would always favour the deep layers)…
+      const layerW = layersK.map((k) => {
+        const ds = pairs.filter((q) => q.k === k && free(q)).map((q) => q.d);
+        return ds.length ? (1 - Math.min(...ds) / reach + 0.05) * 0.3 ** (layerUse.get(k) ?? 0) : 0;
+      });
+      const li = weightedPick(er, layerW, 1)[0];
+      if (li === undefined) break;
+      const k = layersK[li];
+      // …then a pair within it, favouring the nearest.
+      const inLayer = pairs.filter((q) => q.k === k && free(q));
+      const pick = weightedPick(er, inLayer.map((q) => Math.exp(-((q.d / falloff) ** 2))), 1)[0];
+      if (pick === undefined) break;
+      const q = inLayer[pick];
+      nodeUse.add(q.a.id);
+      nodeUse.add(q.b.id);
+      layerUse.set(k, (layerUse.get(k) ?? 0) + 1);
+      edges.push(makeEdge(scene, q.a, q.b, true, er));
     }
   }
   return edges;

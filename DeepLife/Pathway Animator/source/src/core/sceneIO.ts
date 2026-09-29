@@ -78,6 +78,8 @@ export function normalizeScene(raw: unknown): Scene {
     o.glowWidth = num(o.glowWidth, d.glowWidth, 0, 400);
   }
   s.pathwayCount = Math.round(num(s.pathwayCount, 1, 1, 5));
+  // Scenes saved before spacing variation existed were evenly spaced: keep them so.
+  s.spacingVariation = num(raw.spacingVariation, 0, 0, 1);
   s.animation = merge({ ...DEFAULT_ANIMATION }, raw.animation);
   if (!['linear', 'easeInOut'].includes(s.animation.easing)) s.animation.easing = 'linear';
   s.crosstalk.amount = num(s.crosstalk.amount, 0.4, 0, 1);

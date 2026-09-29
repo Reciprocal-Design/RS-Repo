@@ -10,10 +10,27 @@ const polar = (c: Vec2, r: number, th: number): Vec2 => ({ x: c.x + Math.cos(th)
 const angleOf = (from: Vec2, to: Vec2) => Math.atan2(to.y - from.y, to.x - from.x);
 const dist = (a: Vec2, b: Vec2) => Math.hypot(a.x - b.x, a.y - b.y);
 
+/**
+ * Gaps (radians) from each pathway to the next one round the cell; they sum
+ * to a full turn. With spacing variation they are uneven, seeded by the scene,
+ * so pathways sit organically rather than on an even clock face. Each gap
+ * stays within ±50% of the even gap, so neighbours never close up.
+ */
+export function pathwayGaps(scene: Scene): number[] {
+  const n = Math.max(1, scene.pathwayCount);
+  if (n === 1) return [TAU];
+  const v = Math.max(0, Math.min(1, scene.spacingVariation ?? 0));
+  const raw = Array.from({ length: n }, (_, i) => 1 + v * signed(rngFor(scene.seed, 'spread', n, i), 0.5));
+  const sum = raw.reduce((a, b) => a + b, 0);
+  return raw.map((g) => (g / sum) * TAU);
+}
+
 /** Screen angle (radians) of pathway i; rotation 0 puts the first pathway at the top. */
 export function pathwayAngle(scene: Scene, i: number): number {
-  const n = Math.max(1, scene.pathwayCount);
-  return ((scene.rotation - 90 + (i * 360) / n) * Math.PI) / 180;
+  const gaps = pathwayGaps(scene);
+  let a = ((scene.rotation - 90) * Math.PI) / 180;
+  for (let k = 0; k < i; k++) a += gaps[k % gaps.length];
+  return a;
 }
 
 export interface CellFrame {
@@ -58,10 +75,11 @@ export function decorativeReceptors(frame: CellFrame, scene: Scene): ReceptorGeo
   const n = Math.max(1, scene.pathwayCount);
   const total = Math.max(0, Math.round(scene.cell.decorativeReceptors));
   const out: ReceptorGeom[] = [];
-  const gap = TAU / n;
+  const gaps = pathwayGaps(scene);
   for (let g = 0; g < n; g++) {
     const count = Math.floor(total / n) + (g < total % n ? 1 : 0);
     const start = pathwayAngle(scene, g);
+    const gap = gaps[g];
     for (let j = 0; j < count; j++) {
       const rng = rngFor(scene.seed, 'decorative', g, j, count);
       const slot = gap / (count + 1);
@@ -109,7 +127,11 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
   const stepC = (rhoReceptor - rhoNucEdge) / (cytoIdx.length + 1);
   cytoIdx.forEach((li, k) => (rows[li] = rhoReceptor - stepC * (k + 1)));
   const n = Math.max(1, scene.pathwayCount);
-  const maxSpan = n === 1 ? 2.3 : Math.min(2.0, (0.84 * TAU) / n);
+  // Angular room on each side: half the gap to the previous / next pathway.
+  const gaps = pathwayGaps(scene);
+  const roomPrev = gaps[(index - 1 + n) % n] / 2, roomNext = gaps[index % n] / 2;
+  const evenSpan = n === 1 ? 2.3 : Math.min(2.0, (0.84 * TAU) / n);
+  const maxSpan = n === 1 ? 2.3 : Math.min(2.0, 0.84 * (roomPrev + roomNext));
   const minSpacing = 0.07 * R;
   // Nucleus rows may pack a little tighter (halos are ~0.045R across).
   const minSpacingN = 0.05 * R;
@@ -123,7 +145,7 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
   const depth = Math.max(0.1, Math.min(0.97, scene.nucleus.layerDepth));
   let lastRho = rhoNucEdge - depth * (rhoNucEdge + 0.75 * nucleus.radiusAt(thAxis + Math.PI));
   if (n > 1) {
-    const floor = (5 * 1.1 * minSpacingN) / maxSpan;
+    const floor = (5 * 1.1 * minSpacingN) / evenSpan;
     if (floor > 0.85 * rhoNucEdge) {
       warnings.push(`The nucleus is small for ${n} pathways: enlarge it or use fewer pathways.`);
     }
@@ -233,10 +255,15 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
     }
     // Keep the row inside its own pathway's wedge so neighbours never overlap;
     // a crowded row compresses (and has already warned) rather than spilling over.
+    // Positive t heads toward the next pathway, negative toward the previous.
     if (n > 1) {
-      const lim = (arc * (0.8 * TAU)) / n / 2;
-      const widest = Math.max(...pts.map((p) => Math.abs(p.t)));
-      if (widest > lim) pts.forEach((p) => (p.t *= lim / widest));
+      const limNext = arc * 0.8 * roomNext, limPrev = arc * 0.8 * roomPrev;
+      const hiNext = Math.max(0, ...pts.map((p) => p.t));
+      const hiPrev = Math.max(0, ...pts.map((p) => -p.t));
+      pts.forEach((p) => {
+        if (p.t > 0 && hiNext > limNext) p.t *= limNext / hiNext;
+        if (p.t < 0 && hiPrev > limPrev) p.t *= limPrev / hiPrev;
+      });
     }
 
     // Active nodes: seeded, biased toward the centre of the row.

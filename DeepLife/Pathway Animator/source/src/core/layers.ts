@@ -57,3 +57,13 @@ export function setCounts(layers: LayerSpec[], i: number, nodeCount: number, act
   const a = Math.max(1, Math.min(n, Math.round(activeCount)));
   return layers.map((l, j) => (j === i ? { ...l, nodeCount: n, activeCount: a } : l));
 }
+
+/** True when two pathways have the same layer structure (count and regions). */
+export function sameStructure(a: LayerSpec[], b: LayerSpec[]): boolean {
+  return a.length === b.length && a.every((l, i) => l.region === b[i].region);
+}
+
+/** Take `model`'s structure, keeping `own` node counts when the structures already match. */
+export function withStructureOf(own: LayerSpec[], model: LayerSpec[]): LayerSpec[] {
+  return sameStructure(own, model) ? own : model.map((l) => ({ ...l }));
+}

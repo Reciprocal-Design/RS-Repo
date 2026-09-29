@@ -96,6 +96,7 @@ export function defaultScene(seed = 1234): Scene {
       receptorSize: { length: 44, width: 17 },
     },
     pathwayCount: 1,
+    spacingVariation: 0.7,
     rotation: 0,
     sameLayersForAll: true,
     pathways: [makePathway(seed, 0)],

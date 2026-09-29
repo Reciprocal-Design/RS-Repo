@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { defaultScene, makePathway } from './defaults';
+import { CROSSTALK_REACH } from './connect';
 import { buildGeometry } from './geometry';
-import { addLayer, canRemoveLayer, regionOptions, removeLayer, setCounts, setRegion } from './layers';
+import { addLayer, canRemoveLayer, regionOptions, removeLayer, setCounts, setRegion, withStructureOf } from './layers';
+import { pathwayGaps } from './layout';
 import type { NodeGeom, Scene } from './types';
 
 const clone = (s: Scene): Scene => structuredClone(s);
@@ -200,5 +202,55 @@ describe('multiple pathways and crosstalk', () => {
     }
     for (const e of g.edges) expect(Number.isFinite(e.length) && e.length > 0).toBe(true);
     expect(g.warnings.length).toBeGreaterThan(0);
+  });
+
+  it('spacing variation spaces pathways unevenly, within bounds; 0 is even', () => {
+    const TAU = Math.PI * 2;
+    for (const n of [2, 3, 5]) {
+      const s = multi(n);
+      s.spacingVariation = 0;
+      for (const g of pathwayGaps(s)) expect(g).toBeCloseTo(TAU / n, 9);
+      s.spacingVariation = 1;
+      const gaps = pathwayGaps(s);
+      expect(gaps.reduce((a, b) => a + b, 0)).toBeCloseTo(TAU, 9);
+      expect(Math.max(...gaps) - Math.min(...gaps)).toBeGreaterThan(0.05);
+      for (const g of gaps) expect(g).toBeGreaterThan(0.3 * (TAU / n));
+    }
+  });
+
+  it('crosstalk only joins close nodes, and can happen above the deepest layers', () => {
+    let upper = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const s = multi(5, seed);
+      const g = buildGeometry(s);
+      const R = s.cell.radius * Math.min(s.canvas.width, s.canvas.height);
+      const last = s.pathways[0].layers.length - 2; // deepest source layer
+      for (const e of g.edges.filter((x) => x.crosstalk)) {
+        const a = g.nodeById.get(e.from)!, b = g.nodeById.get(e.to)!;
+        expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeLessThanOrEqual(CROSSTALK_REACH * R + 1e-6);
+        if (a.layer < last) upper++;
+      }
+    }
+    expect(upper).toBeGreaterThan(0);
+  });
+
+  it('each pathway keeps its own node counts', () => {
+    const s = multi(3);
+    s.pathways[1].layers = setCounts(s.pathways[1].layers, 1, 9, 5);
+    s.pathways[2].layers = setCounts(s.pathways[2].layers, 2, 2, 1);
+    const g = buildGeometry(s);
+    const count = (p: string, layer: number) => g.nodes.filter((n) => n.pathwayId === p && n.layer === layer).length;
+    expect(count('p1', 1)).toBe(s.pathways[0].layers[1].nodeCount);
+    expect(count('p2', 1)).toBe(9);
+    expect(count('p3', 2)).toBe(2);
+  });
+
+  it('a shared structure keeps per-pathway counts, and replaces a mismatched one', () => {
+    const a = makePathway(1, 0).layers;
+    const b = setCounts(a, 1, 8, 2);
+    expect(withStructureOf(b, a)).toBe(b);
+    const c = addLayer(a, 'nucleus');
+    expect(withStructureOf(b, c).length).toBe(c.length);
+    expect(withStructureOf(b, c).map((l) => l.region)).toEqual(c.map((l) => l.region));
   });
 });

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { defaultScene, makePathway } from '../core/defaults';
+import { withStructureOf } from '../core/layers';
 import { hash, randomSeed } from '../core/rng';
 import type { LayerSpec, Pathway, Scene } from '../core/types';
 
@@ -10,8 +11,12 @@ interface AppState {
   setScene: (update: (s: Scene) => Scene) => void;
   /** Update one pathway. */
   setPathway: (index: number, update: (p: Pathway) => Pathway) => void;
-  /** Edit layers of one pathway, or of every pathway when "Same layers for all" is on. */
-  editLayers: (index: number, update: (layers: LayerSpec[]) => LayerSpec[]) => void;
+  /**
+   * Edit layers of one pathway. With "Same layer structure" on, structural
+   * edits (add, remove, region) are applied to every pathway, each keeping its
+   * own node counts; `countsOnly` edits always stay with their pathway.
+   */
+  editLayers: (index: number, update: (layers: LayerSpec[]) => LayerSpec[], opts?: { countsOnly?: boolean }) => void;
   /** 1–5 pathways. Extra pathways are kept when reducing, so raising the count restores them. */
   setPathwayCount: (n: number) => void;
   regenerateAll: () => void;
@@ -29,16 +34,21 @@ export const useApp = create<AppState>((set) => ({
     set((st) => ({
       scene: { ...st.scene, pathways: st.scene.pathways.map((p, i) => (i === index ? update(p) : p)) },
     })),
-  editLayers: (index, update) =>
+  editLayers: (index, update, opts) =>
     set((st) => {
       const { scene } = st;
-      const next = update(scene.pathways[index].layers);
+      const shared = scene.sameLayersForAll && !opts?.countsOnly;
+      const model = update(scene.pathways[index].layers);
       return {
         scene: {
           ...scene,
-          pathways: scene.pathways.map((p, i) =>
-            i === index || scene.sameLayersForAll ? { ...p, layers: next.map((l) => ({ ...l })) } : p,
-          ),
+          pathways: scene.pathways.map((p, i) => {
+            if (i === index) return { ...p, layers: model };
+            if (!shared) return p;
+            // Pathways share a structure, so the same index-based edit lines up;
+            // fall back to copying the model if it somehow does not.
+            return { ...p, layers: withStructureOf(update(p.layers), model) };
+          }),
         },
       };
     }),
@@ -54,7 +64,7 @@ export const useApp = create<AppState>((set) => ({
         });
       }
       if (s.sameLayersForAll) {
-        for (let i = 1; i < count; i++) pathways[i] = { ...pathways[i], layers: pathways[0].layers.map((l) => ({ ...l })) };
+        for (let i = 1; i < count; i++) pathways[i] = { ...pathways[i], layers: withStructureOf(pathways[i].layers, pathways[0].layers) };
       }
       return { scene: { ...s, pathwayCount: count, pathways } };
     }),
