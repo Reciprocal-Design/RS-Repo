@@ -87,6 +87,7 @@ export function CellMapSection() {
               Random half
             </button>
           </div>
+          <Toggle label="Point pathways into the widest space" checked={m.orient} onChange={(orient) => set({ orient })} />
           <Slider label="Detail size" value={m.detailScale} min={0.2} max={1} onChange={(detailScale) => set({ detailScale })} />
           <Slider label="Start spread" value={m.stagger} min={0} max={10} step={0.1} unit=" s" onChange={(stagger) => set({ stagger })} />
           <Toggle

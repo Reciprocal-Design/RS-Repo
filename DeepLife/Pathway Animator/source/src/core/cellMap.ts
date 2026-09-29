@@ -1,8 +1,8 @@
 import { connectCellLinks, connectCrosstalk, connectPathway, type LinkCell } from './connect';
-import { decorativeReceptors, layoutPathway, REFERENCE_SHORT_SIDE, type CellFrame, type PathwayLayout } from './layout';
+import { decorativeReceptors, layoutPathway, pathwayGaps, REFERENCE_SHORT_SIDE, type CellFrame, type PathwayLayout } from './layout';
 import { pointInPolygon, polygonArea, polygonCentroid, polygonOutline } from './polygon';
 import { hash, rngFor } from './rng';
-import type { CellGeom, CellMap, EdgeGeom, MapCell, NodeGeom, Pathway, ReceptorGeom, Scene, SceneGeom, Vec2 } from './types';
+import type { CellGeom, CellMap, EdgeGeom, MapCell, NodeGeom, Outline, Pathway, ReceptorGeom, Scene, SceneGeom, Vec2 } from './types';
 
 /** A nucleus for a cell drawn without one: the membrane shape, shrunk about its centre. */
 const NUCLEUS_RATIO = 0.42;
@@ -23,6 +23,41 @@ const unflat = (a: number[], map: (x: number, y: number) => Vec2) => {
   for (let i = 0; i + 1 < a.length; i += 2) out.push(map(a[i], a[i + 1]));
   return out;
 };
+
+/** Degrees an oriented cell may turn away from its roomiest direction, so similar cells still differ. */
+const ORIENT_JITTER = 8;
+
+/**
+ * The cell rotation (degrees) that puts its pathways where there is most room:
+ * each pathway runs from its receptor on the membrane to the nucleus, so the
+ * room it has is the cytoplasm between them. Room is averaged over a spread
+ * of directions around each pathway (a pathway fans out), and summed over the
+ * pathways, which keep their spacing (pathwayGaps) as the cell turns.
+ */
+export function roomiestRotation(cs: Scene, cell: Outline, nucleus: Outline, membraneFromNucleus: Outline, count: number): number {
+  const N = nucleus.center;
+  const room = (phi: number) => {
+    // The receptor sits on the membrane at angle phi from the cell centre.
+    const px = cell.center.x + Math.cos(phi) * cell.radiusAt(phi);
+    const py = cell.center.y + Math.sin(phi) * cell.radiusAt(phi);
+    const th = Math.atan2(py - N.y, px - N.x);
+    // Cytoplasm depth from there to the nucleus, and across the pathway's fan.
+    let sum = 0;
+    for (const d of [-0.5, -0.25, 0, 0.25, 0.5]) sum += Math.max(0, membraneFromNucleus.radiusAt(th + d) - nucleus.radiusAt(th + d));
+    return sum;
+  };
+  const gaps = pathwayGaps({ ...cs, pathwayCount: count });
+  let best = 0, bestScore = -Infinity;
+  for (let r = -180; r < 180; r += 3) {
+    let a = ((r - 90) * Math.PI) / 180, score = 0;
+    for (let i = 0; i < count; i++) {
+      score += room(a);
+      a += gaps[i % gaps.length];
+    }
+    if (score > bestScore) (bestScore = score), (best = r);
+  }
+  return best;
+}
 
 /** Seconds a cell's pathways start after the scene begins (random, within the stagger). */
 export const cellOffset = (scene: Scene, cell: MapCell) =>
@@ -62,12 +97,13 @@ export function buildMapGeometry(scene: Scene): SceneGeom | null {
     cells.push({ id: mc.id, cell, nucleus, enabled: mc.enabled });
 
     // Per-cell variation: its own scene seed (spacing, decorative receptors)
-    // and orientation, and its own seed for every shared pathway.
-    const cs: Scene = {
-      ...scene,
-      seed: hash(scene.seed, 'cell', mc.seed),
-      rotation: rngFor(scene.seed, 'cell-rotation', mc.seed)() * 360 - 180,
-    };
+    // and orientation, and its own seed for every shared pathway. Oriented
+    // cells turn their pathways toward the widest cytoplasm.
+    const cs: Scene = { ...scene, seed: hash(scene.seed, 'cell', mc.seed) };
+    const spin = rngFor(scene.seed, 'cell-rotation', mc.seed)();
+    cs.rotation = cm.orient
+      ? roomiestRotation(cs, cell, nucleus, polygonOutline(mem, 4, nucleus.center), count) + (spin - 0.5) * 2 * ORIENT_JITTER
+      : spin * 360 - 180;
     receptors.push(...decorativeReceptors(frame, cs).map((r) => ({ ...r, id: `${mc.id}-${r.id}` })));
 
     const layouts: PathwayLayout[] = [];

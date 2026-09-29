@@ -174,6 +174,35 @@ describe('pathways on a cell map', () => {
     expect(Math.max(...starts)).toBeLessThanOrEqual(4);
   });
 
+  it('points each pathway into its cell’s widest cytoplasm', () => {
+    // Nuclei pushed toward one side (a different side per cell): the receptor
+    // should sit on the opposite, roomy side.
+    const cells: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2, cx = 120 + (i % 4) * 240, cy = 120 + Math.floor(i / 4) * 240;
+      const dx = Math.cos(a), dy = Math.sin(a);
+      const hex = Array.from({ length: 6 }, (_, k) => `${cx + 100 * Math.cos((Math.PI / 3) * k)},${cy + 100 * Math.sin((Math.PI / 3) * k)}`);
+      cells.push(`<polygon points="${hex.join(' ')}"/><circle cx="${cx + 45 * dx}" cy="${cy + 45 * dy}" r="38"/>`);
+    }
+    const s = defaultScene(3);
+    const m = cellMapFromSvg(parseXml(`<svg viewBox="0 0 980 500">${cells.join('')}</svg>`), 3);
+    s.cellMap = { ...s.cellMap, enabled: true, viewBox: m.viewBox, cells: m.cells, links: { enabled: false, amount: 0 } };
+    const side = (sc: Scene) => {
+      const g = buildGeometry(sc);
+      return g.cells.map((c) => {
+        const r = g.nodes.find((n) => n.pathwayId.startsWith(`${c.id}-`) && n.layer === 0)!;
+        // Cosine between the receptor's and the nucleus's directions from the cell centre.
+        const ux = r.x - c.cell.center.x, uy = r.y - c.cell.center.y;
+        const nx = c.nucleus.center.x - c.cell.center.x, ny = c.nucleus.center.y - c.cell.center.y;
+        return (ux * nx + uy * ny) / (Math.hypot(ux, uy) * Math.hypot(nx, ny));
+      });
+    };
+    for (const cos of side(s)) expect(cos).toBeLessThan(-0.8);
+    // Off: a random turn per cell, so some receptors face the nucleus side.
+    const random = { ...s, cellMap: { ...s.cellMap, orient: false } };
+    expect(side(random).some((cos) => cos > -0.5)).toBe(true);
+  });
+
   it('finds the clicked cell', () => {
     const s = mapScene();
     const g = buildGeometry(s);

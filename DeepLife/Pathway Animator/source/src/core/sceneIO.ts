@@ -78,6 +78,7 @@ function normalizeCellMap(raw: unknown): CellMap {
     cells,
     detailScale: num(m.detailScale, base.detailScale, 0.2, 1),
     stagger: num(m.stagger, base.stagger, 0, 20),
+    orient: bool(m.orient, true),
     links: { enabled: bool(m.links.enabled, true), amount: num(m.links.amount, base.links.amount, 0, 1) },
   };
 }

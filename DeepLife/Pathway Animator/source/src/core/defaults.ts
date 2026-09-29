@@ -9,6 +9,7 @@ export function defaultCellMap(): CellMap {
     cells: [],
     detailScale: 0.6,
     stagger: 3,
+    orient: true,
     links: { enabled: true, amount: 0.4 },
   };
 }

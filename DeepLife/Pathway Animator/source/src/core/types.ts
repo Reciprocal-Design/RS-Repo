@@ -108,6 +108,7 @@ export interface CellMap {
   cells: MapCell[];
   detailScale: number; // 0.2–1: node, line, receptor and glow size relative to the single cell
   stagger: number; // seconds: each cell starts at a random offset within this
+  orient: boolean; // turn each cell's pathways toward its widest cytoplasm (else a random turn)
   links: { enabled: boolean; amount: number }; // signals passed to neighbouring cells
 }
 
