@@ -1,7 +1,7 @@
 import { arcLengthLut } from './bezier';
-import type { PathwayLayout } from './layout';
+import { receptorAt, type CellFrame, type PathwayLayout } from './layout';
 import { hash, range, rngFor, signed, type Rng } from './rng';
-import type { Bezier, EdgeGeom, NodeGeom, Pathway, Scene, Vec2 } from './types';
+import type { Bezier, EdgeGeom, NodeGeom, Pathway, ReceptorGeom, Scene, Vec2 } from './types';
 
 const MAX_FAN_OUT = 4;
 
@@ -185,6 +185,9 @@ export interface LinkCell {
   /** Outline sample points, for finding neighbours. */
   points: Vec2[];
   layouts: PathwayLayout[];
+  frame: CellFrame;
+  /** The cell's own scene (its seed and turn), for placing receptors. */
+  scene: Scene;
 }
 
 /** Do two cells touch? Their outlines come within a small gap of each other. */
@@ -201,38 +204,99 @@ function touching(a: LinkCell, b: LinkCell): boolean {
   return false;
 }
 
+export interface CellLinks {
+  edges: EdgeGeom[];
+  /** Relay receptor nodes (layer 0 of the pathway they feed). */
+  nodes: NodeGeom[];
+  receptors: ReceptorGeom[];
+}
+
 /**
- * Cell-to-cell links: for some pairs of touching cells (each pair with chance
- * `amount`), one edge from an active cytoplasm node of one cell to a pathway
- * receptor of the other, so a signal can travel on into the neighbour. Only
- * short links are made, so they cross the shared wall rather than the map.
+ * Cell-to-cell links. Each pair of touching cells gets `amount` links on
+ * average (0–3). A link runs from an active cytoplasm node of one cell to a
+ * relay receptor on the other cell's membrane, on the wall facing it, and that
+ * receptor feeds the nearest first-layer nodes of the neighbour's pathway, so
+ * the signal enters through a receptor and runs the pathway again from there.
+ * Links arriving close together on the same wall share a receptor.
  */
-export function connectCellLinks(scene: Scene, cells: LinkCell[]): EdgeGeom[] {
+export function connectCellLinks(scene: Scene, cells: LinkCell[]): CellLinks {
+  const out: CellLinks = { edges: [], nodes: [], receptors: [] };
   const { enabled, amount } = scene.cellMap.links;
-  if (!enabled || amount <= 0) return [];
-  const edges: EdgeGeom[] = [];
+  if (!enabled || amount <= 0) return out;
+  const usedSources = new Set<string>();
+  const relays = new Map<string, { node: NodeGeom; rec: ReceptorGeom }[]>(); // per cell
   for (let i = 0; i < cells.length; i++) {
     for (let j = i + 1; j < cells.length; j++) {
       const A = cells[i], B = cells[j];
-      if (!A.layouts.length || !B.layouts.length) continue;
+      if (!A.layouts.length || !B.layouts.length || !touching(A, B)) continue;
       const rng = rngFor(scene.seed, 'cell-link', A.seed, B.seed);
-      if (rng() >= amount || !touching(A, B)) continue;
-      const [src, dst] = rng() < 0.5 ? [A, B] : [B, A];
-      const from = src.layouts.flatMap((l) => l.nodes.filter((n) => n.active && n.layer > 0 && n.region === 'cytoplasm'));
-      const to = dst.layouts.map((l) => l.layers[0][0]);
-      const reach = 1.3 * (src.R + dst.R) / 2;
-      const pairs: { a: NodeGeom; b: NodeGeom; d: number }[] = [];
-      for (const a of from) for (const b of to) {
-        const d = Math.hypot(a.x - b.x, a.y - b.y);
-        if (d <= reach) pairs.push({ a, b, d });
+      const count = Math.floor(amount) + (rng() < amount - Math.floor(amount) ? 1 : 0);
+      for (let k = 0; k < count; k++) {
+        const [src, dst] = rng() < 0.5 ? [A, B] : [B, A];
+        // Sources near the shared wall, each used by one link only.
+        const from = src.layouts
+          .flatMap((l) => l.nodes.filter((n) => n.active && n.layer > 0 && n.region === 'cytoplasm'))
+          .filter((n) => !usedSources.has(n.id));
+        const near = (a: NodeGeom) => {
+          let best = dst.points[0], bd = Infinity;
+          for (const q of dst.points) {
+            const d = Math.hypot(q.x - a.x, q.y - a.y);
+            if (d < bd) (bd = d), (best = q);
+          }
+          return { q: best, d: bd };
+        };
+        const cands = from.map((a) => ({ a, ...near(a) })).filter((c) => c.d < 1.2 * src.R);
+        if (!cands.length) continue;
+        const dMin = Math.min(...cands.map((c) => c.d));
+        const pick = weightedPick(rng, cands.map((c) => Math.exp(-3 * (c.d / dMin - 1))), 1)[0];
+        if (pick === undefined) continue;
+        const { a, q } = cands[pick];
+        usedSources.add(a.id);
+        const relay = relayAt(scene, dst, q, relays, rng, out);
+        if (relay) out.edges.push(makeLinkEdge(scene, a, relay, rng));
       }
-      if (!pairs.length) continue;
-      const dMin = Math.min(...pairs.map((q) => q.d));
-      const pick = weightedPick(rng, pairs.map((q) => Math.exp(-3 * (q.d / dMin - 1))), 1)[0];
-      if (pick !== undefined) edges.push(makeLinkEdge(scene, pairs[pick].a, pairs[pick].b, rng));
     }
   }
-  return edges;
+  return out;
+}
+
+/** The relay receptor on `cell`'s membrane at (or near) point q, made on first use. */
+function relayAt(
+  scene: Scene, cell: LinkCell, q: Vec2,
+  relays: Map<string, { node: NodeGeom; rec: ReceptorGeom }[]>, rng: Rng, out: CellLinks,
+): NodeGeom | null {
+  const f = cell.frame;
+  const list = relays.get(cell.id) ?? [];
+  relays.set(cell.id, list);
+  const minSep = 2.2 * scene.style.receptorSize.length * f.scale;
+  const hit = list.find((r) => Math.hypot(r.rec.center.x - q.x, r.rec.center.y - q.y) < minSep);
+  if (hit) return hit.node;
+
+  const phi = Math.atan2(q.y - f.cell.center.y, q.x - f.cell.center.x);
+  const idx = list.length + 1;
+  // Feed the pathway whose first layer lies nearest the wall.
+  const firsts = cell.layouts.map((l) => ({ l, nodes: (l.layers[1] ?? []).filter((n) => n.active) })).filter((x) => x.nodes.length);
+  if (!firsts.length) return null;
+  const rec0 = receptorAt(f, cell.scene, phi, '', null);
+  const dist = (n: NodeGeom) => Math.hypot(n.x - rec0.inner.x, n.y - rec0.inner.y);
+  firsts.sort((x, y) => Math.min(...x.nodes.map(dist)) - Math.min(...y.nodes.map(dist)));
+  const { l, nodes } = firsts[0];
+  const pathwayId = l.receptor.pathwayId!;
+  const id = `${pathwayId}-R${idx}`;
+  const rec: ReceptorGeom = { ...rec0, id: `receptor-${id}`, pathwayId, nodeId: id };
+  const N = f.nucleus.center;
+  const node: NodeGeom = {
+    id, pathwayId, layer: 0, depth: 0, x: rec.inner.x, y: rec.inner.y, active: true, region: 'membrane',
+    flow: { x: Math.cos(rec.angle), y: Math.sin(rec.angle) },
+    rho: Math.hypot(rec.inner.x - N.x, rec.inner.y - N.y), lateral: 0,
+  };
+  list.push({ node, rec });
+  out.nodes.push(node);
+  out.receptors.push(rec);
+  // Into the pathway: the one or two nearest active first-layer nodes.
+  const targets = [...nodes].sort((x, y) => dist(x) - dist(y)).slice(0, rng() < 0.5 ? 1 : 2);
+  for (const c of targets) out.edges.push(makeEdge(scene, node, c, false, rngFor(hash(scene.seed, id), c.id)));
+  return node;
 }
 
 /** A link leaves its node heading for the target and enters the receptor along its inward flow. */
@@ -261,5 +325,6 @@ function makeLinkEdge(scene: Scene, a: NodeGeom, b: NodeGeom, rng: Rng): EdgeGeo
     opacity: range(rng, Math.min(min, max), Math.max(min, max)),
     depthFrom: a.depth,
     depthTo: 0,
+    link: true,
   };
 }

@@ -192,17 +192,17 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
     const cometW = Math.max(0.5, an.cometSize) * s;
     // Progress along each edge: raw (linear in time, runs on past 1 while the
     // trail catches up) and eased (position of the head along the curve).
-    const along = schedule.edges.map((et) => ({ et, q: (tau - et.start) / et.duration }));
+    const along = schedule.edges.map((et) => ({ et, q: (tau - et.start) / et.duration, id: et.wave ? `${et.edge.id}-w${et.wave}` : et.edge.id }));
 
     // Lit edges: the part a comet has passed stays brighter until the loop resets.
-    for (const { et, q } of along) {
+    for (const { et, q, id } of along) {
       if (q <= 0 || fade <= 0) continue;
       const e = et.edge;
       const frac = ease(Math.min(1, q), an.easing);
       const tt = tAtDistance(e.lut, frac * e.length);
       const part = bezierHead(e.bezier, tt);
       prims.push({
-        kind: 'bezier', id: `${e.id}-lit`, group: e.crosstalk ? 'crosstalk' : 'edges', p: part,
+        kind: 'bezier', id: `${id}-lit`, group: e.crosstalk ? 'crosstalk' : 'edges', p: part,
         width: st.edgeWidth * 1.25 * s, from: color(e.depthFrom),
         to: color(e.depthFrom + (e.depthTo - e.depthFrom) * frac),
         opacity: Math.max(0, Math.min(1, an.litEdgeOpacity)) * fade,
@@ -210,7 +210,7 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
     }
 
     // Comets: a trail fading to transparent behind a bright head with a soft glow.
-    for (const { et, q } of along) {
+    for (const { et, q, id } of along) {
       if (q <= 0 || q - trail >= 1) continue;
       const e = et.edge;
       const head = ease(Math.min(1, q), an.easing);
@@ -229,16 +229,16 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
         const front = pts.slice(TRAIL_SEGMENTS / 2);
         if (an.glow > 0) {
           prims.push({
-            kind: 'trail', id: `${e.id}-trail-glow`, group: 'signal', blend: 'lighter', points: pts,
+            kind: 'trail', id: `${id}-trail-glow`, group: 'signal', blend: 'lighter', points: pts,
             tail: withAlpha(cTail, 0), head: withAlpha(cHead, 0.22 * an.glow), width: cometW * (2.5 + 4 * an.glow),
           });
         }
         prims.push({
-          kind: 'trail', id: `${e.id}-trail`, group: 'signal', blend: 'lighter', points: pts,
+          kind: 'trail', id: `${id}-trail`, group: 'signal', blend: 'lighter', points: pts,
           tail: withAlpha(cTail, 0), head: withAlpha(cHead, 0.85), width: cometW * 0.5,
         });
         prims.push({
-          kind: 'trail', id: `${e.id}-trail-core`, group: 'signal', blend: 'lighter', points: front,
+          kind: 'trail', id: `${id}-trail-core`, group: 'signal', blend: 'lighter', points: front,
           tail: withAlpha(cMid, 0), head: withAlpha(cHead, 1), width: cometW,
         });
       }
@@ -247,26 +247,24 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
         const rgb = ramp(e.depthFrom + (e.depthTo - e.depthFrom) * head);
         if (an.glow > 0) {
           prims.push({
-            kind: 'glow', id: `${e.id}-head-glow`, group: 'signal', blend: 'lighter', c,
+            kind: 'glow', id: `${id}-head-glow`, group: 'signal', blend: 'lighter', c,
             r: cometW * (3 + 7 * an.glow), color: withAlpha(rgb, 0.55 * an.glow),
           });
         }
-        prims.push({ kind: 'circle', id: `${e.id}-head`, group: 'signal', blend: 'lighter', c, r: cometW * 0.9, fill: rgbaString(mixWhite(rgb, 0.7)) });
+        prims.push({ kind: 'circle', id: `${id}-head`, group: 'signal', blend: 'lighter', c, r: cometW * 0.9, fill: rgbaString(mixWhite(rgb, 0.7)) });
       }
     }
   }
 
   // Node pulses: a node pulses when it fires (full size) and again, smaller,
-  // for each later arrival from a convergent or crosstalk edge.
+  // for each later arrival from a convergent or crosstalk edge; on a cell map,
+  // each relay that runs the pathway again fires it again.
   const pulse = new Map<string, number>();
   if (signal) {
     for (const n of g.nodes) {
       if (!n.active) continue;
-      const fired = schedule.fire.get(n.id);
-      if (fired === undefined || tau < fired) continue;
-      const times = n.layer === 0 ? [fired] : (schedule.arrivals.get(n.id) ?? []);
       let e = 0;
-      times.forEach((at, i) => (e = Math.max(e, (i === 0 ? 1 : 0.45) * pulseEnvelope(tau - at))));
+      for (const p of schedule.pulses.get(n.id) ?? []) e = Math.max(e, p.strength * pulseEnvelope(tau - p.t));
       if (e > 0) pulse.set(n.id, e);
     }
     for (const [id, e] of pulse) {
@@ -290,7 +288,7 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
   for (const n of active) {
     if (n.layer === 0) {
       if (st.receptorStyle === 'capsule') continue;
-      const rec = g.receptors.find((r) => r.pathwayId === n.pathwayId)!;
+      const rec = g.receptors.find((r) => r.nodeId === n.id) ?? g.receptors.find((r) => r.pathwayId === n.pathwayId)!;
       prims.push({
         kind: 'diamond', id: `${n.id}-diamond`, group: 'nodes-active', c: n,
         r: st.activeNodeRadius * 1.6 * s * grow(n.id), angle: rec.angle, fill: '#ffffff',

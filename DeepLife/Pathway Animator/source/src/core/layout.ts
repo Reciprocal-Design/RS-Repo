@@ -199,6 +199,7 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
   };
 
   out.push([mk(0, 0, receptor.inner, true, 0)]);
+  receptor.nodeId = out[0][0].id;
   spacing.push(baseSpacing);
 
   for (let li = 1; li < L; li++) {

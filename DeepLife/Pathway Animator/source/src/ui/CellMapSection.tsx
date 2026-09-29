@@ -88,6 +88,13 @@ export function CellMapSection() {
             </button>
           </div>
           <Toggle label="Point pathways into the widest space" checked={m.orient} onChange={(orient) => set({ orient })} />
+          <Slider
+            label="Cell variation"
+            value={m.variation}
+            min={0}
+            max={1}
+            onChange={(variation) => set({ variation })}
+          />
           <Slider label="Detail size" value={m.detailScale} min={0.2} max={1} onChange={(detailScale) => set({ detailScale })} />
           <Slider label="Start spread" value={m.stagger} min={0} max={10} step={0.1} unit=" s" onChange={(stagger) => set({ stagger })} />
           <Toggle
@@ -96,7 +103,29 @@ export function CellMapSection() {
             onChange={(enabled) => set({ links: { ...m.links, enabled } })}
           />
           {m.links.enabled && (
-            <Slider label="Cell links" value={m.links.amount} min={0} max={1} onChange={(amount) => set({ links: { ...m.links, amount } })} />
+            <>
+              <Slider
+                label="Links per neighbour"
+                value={m.links.amount}
+                min={0}
+                max={3}
+                step={0.05}
+                onChange={(amount) => set({ links: { ...m.links, amount } })}
+              />
+              <Slider
+                label="Relay chain"
+                value={m.relayHops}
+                min={0}
+                max={6}
+                step={1}
+                unit={m.relayHops === 1 ? ' cell' : ' cells'}
+                onChange={(relayHops) => set({ relayHops })}
+              />
+              <p className="hint">
+                A link enters the neighbour through a receptor on the shared wall and runs its pathway again from there;
+                the relay chain is how many cells in a row it can pass on.
+              </p>
+            </>
           )}
           <div className="row">
             <button

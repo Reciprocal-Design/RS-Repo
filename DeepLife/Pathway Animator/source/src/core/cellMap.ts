@@ -1,5 +1,6 @@
 import { connectCellLinks, connectCrosstalk, connectPathway, type LinkCell } from './connect';
 import { decorativeReceptors, layoutPathway, pathwayGaps, REFERENCE_SHORT_SIDE, type CellFrame, type PathwayLayout } from './layout';
+import { varyLayers } from './layers';
 import { pointInPolygon, polygonArea, polygonCentroid, polygonOutline } from './polygon';
 import { hash, rngFor } from './rng';
 import type { CellGeom, CellMap, EdgeGeom, MapCell, NodeGeom, Outline, Pathway, ReceptorGeom, Scene, SceneGeom, Vec2 } from './types';
@@ -114,6 +115,8 @@ export function buildMapGeometry(scene: Scene): SceneGeom | null {
         id: `${mc.id}-${p.id}`,
         seed: hash(p.seed, 'cell', mc.seed),
         startDelay: p.startDelay + offset,
+        // Each cell's own node and layer counts, drifting from the shared ones.
+        layers: varyLayers(p.layers, cm.variation, rngFor(scene.seed, 'cell-layers', mc.seed, p.id)),
       }));
       ps.forEach((p, i) => {
         const l = layoutPathway(frame, cs, p, i);
@@ -126,9 +129,16 @@ export function buildMapGeometry(scene: Scene): SceneGeom | null {
       });
       edges.push(...connectCrosstalk(cs, layouts, ps, R));
     }
-    linkCells.push({ id: mc.id, seed: mc.seed, R, points: cell.points, layouts });
+    linkCells.push({ id: mc.id, seed: mc.seed, R, points: cell.points, layouts, frame, scene: cs });
   }
-  edges.push(...connectCellLinks(scene, linkCells));
+  const links = connectCellLinks(scene, linkCells);
+  edges.push(...links.edges);
+  nodes.push(...links.nodes);
+  // Relay receptors take the place of any decorative receptor they would overlap.
+  const clear = 1.6 * scene.style.receptorSize.length * scale;
+  const keep = (r: ReceptorGeom) =>
+    r.pathwayId !== null || links.receptors.every((q) => Math.hypot(q.center.x - r.center.x, q.center.y - r.center.y) >= clear);
+  receptors.splice(0, receptors.length, ...receptors.filter(keep), ...links.receptors);
 
   const first = cells[0];
   if (!first) return null;

@@ -10,7 +10,9 @@ export function defaultCellMap(): CellMap {
     detailScale: 0.6,
     stagger: 3,
     orient: true,
-    links: { enabled: true, amount: 0.4 },
+    links: { enabled: true, amount: 1 },
+    relayHops: 3,
+    variation: 0.4,
   };
 }
 

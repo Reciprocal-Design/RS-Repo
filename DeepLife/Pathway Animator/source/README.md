@@ -26,8 +26,11 @@ map of 18–20 cells). Each membrane and nucleus must be a closed shape (path, p
 ellipse; transforms are applied). Shapes are paired by containment: a top-level shape is a membrane and the
 largest shape inside it its nucleus; a frame or background holding several cells is ignored, and a cell
 without a nucleus gets one. Every cell grows its own network from the shared pathway settings; click a cell
-in the preview to add or remove its pathways, Shift-click to re-roll it. Cells start at random offsets
-("Start spread"), and "Cell links" pass signals from one cell into a touching neighbour's receptor. The map
-is saved in the scene JSON. Try `../samples/cell-cluster-voronoi.svg`.
+in the preview to add or remove its pathways, Shift-click to re-roll it. "Cell variation" lets node and
+layer counts drift from cell to cell, and each cell turns its pathways toward its widest cytoplasm. Cells
+start at random offsets ("Start spread"). Links (0–3 per pair of touching cells) run from a cytoplasm node
+into a relay receptor on the neighbour's shared wall, which runs that cell's pathway again from there; the
+"Relay chain" sets how many cells in a row a signal can pass on. The map is saved in the scene JSON. Try
+`../samples/cell-cluster-voronoi.svg`.
 
 Status: milestone 5 (PNG and SVG export, scene JSON save/load), plus cell maps. See `milestone-5.png`.

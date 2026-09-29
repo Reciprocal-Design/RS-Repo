@@ -109,7 +109,9 @@ export interface CellMap {
   detailScale: number; // 0.2–1: node, line, receptor and glow size relative to the single cell
   stagger: number; // seconds: each cell starts at a random offset within this
   orient: boolean; // turn each cell's pathways toward its widest cytoplasm (else a random turn)
-  links: { enabled: boolean; amount: number }; // signals passed to neighbouring cells
+  links: { enabled: boolean; amount: number }; // links per pair of touching cells, 0–3
+  relayHops: number; // how many cells in a row a relayed signal can re-trigger (0: arrivals only pulse)
+  variation: number; // 0–1: how much node and layer counts vary from cell to cell
 }
 
 // ---- Derived geometry (regenerated from the Scene, never stored) ----
@@ -146,6 +148,8 @@ export interface EdgeGeom {
   opacity: number;
   depthFrom: number;
   depthTo: number;
+  /** A cell-to-cell link into a neighbour's relay receptor (cell maps). */
+  link?: boolean;
 }
 
 export interface ReceptorGeom {
@@ -154,6 +158,8 @@ export interface ReceptorGeom {
   center: Vec2; // on the membrane line
   angle: number; // radians, direction of the inward normal
   inner: Vec2; // inner end, where edges start
+  /** The receptor node this capsule belongs to (pathway and relay receptors). */
+  nodeId?: string;
 }
 
 export interface Outline {

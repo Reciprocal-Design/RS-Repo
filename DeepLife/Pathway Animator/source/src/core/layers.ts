@@ -67,3 +67,26 @@ export function sameStructure(a: LayerSpec[], b: LayerSpec[]): boolean {
 export function withStructureOf(own: LayerSpec[], model: LayerSpec[]): LayerSpec[] {
   return sameStructure(own, model) ? own : model.map((l) => ({ ...l }));
 }
+
+/**
+ * A cell's own take on shared layers (cell maps): with `amount` 0 the layers
+ * are unchanged; toward 1 a layer may be added or removed (keeping the layer
+ * rules) and node and active counts drift by up to about ±3 and ±2.
+ */
+export function varyLayers(layers: LayerSpec[], amount: number, rng: () => number): LayerSpec[] {
+  const v = Math.max(0, Math.min(1, amount));
+  if (v === 0) return layers;
+  let out = layers;
+  const r = rng(), region = rng() < 0.5 ? 'cytoplasm' : 'nucleus';
+  if (r < 0.3 * v && canAddLayer(out)) out = addLayer(out, region);
+  else if (r > 1 - 0.3 * v) {
+    const removable = out.map((_, i) => i).filter((i) => canRemoveLayer(out, i));
+    if (removable.length) out = removeLayer(out, removable[Math.floor(rng() * removable.length)]);
+  }
+  return out.map((l, i) => {
+    if (i === 0) return l;
+    const n = Math.max(1, Math.min(MAX_NODES, Math.round(l.nodeCount + (rng() * 2 - 1) * 3 * v)));
+    const a = Math.round((l.activeCount * n) / l.nodeCount + (rng() * 2 - 1) * 2 * v);
+    return { ...l, nodeCount: n, activeCount: Math.max(1, Math.min(n, a)) };
+  });
+}

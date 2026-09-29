@@ -166,6 +166,87 @@ describe('pathways on a cell map', () => {
     expect(buildGeometry(off).edges.some((e) => e.id.startsWith('link-'))).toBe(false);
   });
 
+  it('links always end at a relay receptor on the neighbour’s wall, which feeds its pathway', () => {
+    const s = mapScene();
+    s.cellMap.links = { enabled: true, amount: 2 };
+    const g = buildGeometry(s);
+    const links = g.edges.filter((e) => e.link);
+    expect(links.length).toBeGreaterThan(20);
+    const cellOf = (id: string) => id.split('-')[0];
+    for (const e of links) {
+      const r = g.nodeById.get(e.to)!;
+      expect(r.layer).toBe(0);
+      expect(r.id).toMatch(/-R\d+$/);
+      // A capsule is drawn for it, on the target cell's membrane.
+      const rec = g.receptors.find((x) => x.nodeId === r.id)!;
+      const c = g.cells.find((x) => x.id === cellOf(r.pathwayId))!;
+      const d = Math.hypot(rec.center.x - c.cell.center.x, rec.center.y - c.cell.center.y);
+      expect(Math.abs(d - c.cell.radiusAt(Math.atan2(rec.center.y - c.cell.center.y, rec.center.x - c.cell.center.x)))).toBeLessThan(1);
+      // It feeds first-layer nodes of its own cell.
+      const out = g.edges.filter((x) => x.from === r.id);
+      expect(out.length).toBeGreaterThan(0);
+      for (const x of out) expect(g.nodeById.get(x.to)!.layer).toBe(1);
+      expect(out.every((x) => cellOf(x.to) === cellOf(r.id))).toBe(true);
+    }
+    const fewer = { ...s, cellMap: { ...s.cellMap, links: { enabled: true, amount: 0.5 } } };
+    expect(buildGeometry(fewer).edges.filter((e) => e.link).length).toBeLessThan(links.length / 2);
+  });
+
+  it('a relay runs the neighbour’s pathway again, down a limited chain', () => {
+    const s = mapScene();
+    s.cellMap.links = { enabled: true, amount: 2 };
+    s.cellMap.relayHops = 3;
+    const g = buildGeometry(s);
+    const sch = buildSchedule(s);
+    const relayed = sch.edges.filter((t) => t.wave > 0 && !t.edge.link);
+    expect(relayed.length).toBeGreaterThan(20);
+    // A relay wave starts at a relay receptor and reaches deep layers of that cell.
+    for (let w = 1; w <= 5; w++) {
+      const es = sch.edges.filter((t) => t.wave === w);
+      if (!es.length) continue;
+      const start = Math.min(...es.map((t) => t.start));
+      const src = es.find((t) => t.start === start)!.edge.from;
+      expect(g.nodeById.get(src)!.id).toMatch(/-R\d+$/);
+      expect(Math.max(...es.map((t) => g.nodeById.get(t.edge.to)!.layer))).toBeGreaterThan(2);
+    }
+    // The relay receptor pulses fully when it fires.
+    const firstRelay = sch.edges.find((t) => t.wave > 0)!;
+    expect(sch.pulses.get(firstRelay.edge.from)!.some((p) => p.strength === 1)).toBe(true);
+    // No relays with a chain of 0; more waves with a longer chain; always finite.
+    const none = { ...s, cellMap: { ...s.cellMap, relayHops: 0 } };
+    expect(buildSchedule(none).edges.some((t) => t.wave > 0)).toBe(false);
+    const long = { ...s, cellMap: { ...s.cellMap, relayHops: 6 } };
+    const waves = (x: Scene) => new Set(buildSchedule(x).edges.map((t) => t.wave)).size;
+    expect(waves(long)).toBeGreaterThanOrEqual(waves(s));
+    expect(Number.isFinite(buildSchedule(long).total)).toBe(true);
+    // Frames with relays still have unique ids.
+    const svg = displayListToSvg(buildDisplayList(s, sch.signalEnd * 0.6, { signal: true }));
+    const ids = [...svg.matchAll(/ id="([^"]+)"/g)].map((m) => m[1]);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('cell variation varies node and layer counts from cell to cell, within the rules', () => {
+    const counts = (v: number) => {
+      const s = mapScene();
+      s.cellMap.variation = v;
+      const g = buildGeometry(s);
+      return g.cells.map((c) => {
+        const ns = g.nodes.filter((n) => n.pathwayId === `${c.id}-p1` && !/-R\d+$/.test(n.id)); // relay receptors aside
+        const layers = Math.max(...ns.map((n) => n.layer)) + 1;
+        return `${layers}:${ns.length}`;
+      });
+    };
+    expect(new Set(counts(0)).size).toBe(1);
+    const varied = counts(1);
+    expect(new Set(varied).size).toBeGreaterThan(5);
+    expect(new Set(varied.map((c) => c.split(':')[0])).size).toBeGreaterThan(1);
+    for (const c of varied) {
+      const layers = Number(c.split(':')[0]);
+      expect(layers).toBeGreaterThanOrEqual(3);
+      expect(layers).toBeLessThanOrEqual(8);
+    }
+  });
+
   it('staggers cells: receptors start at different times', () => {
     const s = mapScene();
     s.cellMap.stagger = 4;
