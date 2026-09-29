@@ -190,6 +190,10 @@ describe('pathways on a cell map', () => {
     }
     const fewer = { ...s, cellMap: { ...s.cellMap, links: { enabled: true, amount: 0.5 } } };
     expect(buildGeometry(fewer).edges.filter((e) => e.link).length).toBeLessThan(links.length / 2);
+    // Up to 8 per neighbour: many more links, all unique.
+    const many = buildGeometry({ ...s, cellMap: { ...s.cellMap, links: { enabled: true, amount: 8 } } }).edges.filter((e) => e.link);
+    expect(many.length).toBeGreaterThan(2 * links.length);
+    expect(new Set(many.map((e) => e.id)).size).toBe(many.length);
   });
 
   it('a relay runs the neighbour’s pathway again, down a limited chain', () => {

@@ -79,7 +79,7 @@ function normalizeCellMap(raw: unknown): CellMap {
     detailScale: num(m.detailScale, base.detailScale, 0.2, 1),
     stagger: num(m.stagger, base.stagger, 0, 20),
     orient: bool(m.orient, true),
-    links: { enabled: bool(m.links.enabled, true), amount: num(m.links.amount, base.links.amount, 0, 3) },
+    links: { enabled: bool(m.links.enabled, true), amount: num(m.links.amount, base.links.amount, 0, 8) },
     relayHops: Math.round(num(m.relayHops, base.relayHops, 0, 10)),
     startShare: num(m.startShare, base.startShare, 0, 1),
     // Maps saved before cell variation existed keep their cells alike.

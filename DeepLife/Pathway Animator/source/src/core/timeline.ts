@@ -74,6 +74,12 @@ export function buildSchedule(scene: Scene): Schedule {
     m.set(e.from, list);
   }
 
+  // Grey idle mode: crosstalk from another pathway of the same cell ends where
+  // it arrives (the node pulses) instead of running that pathway on, so only
+  // the pathway that was triggered lights up.
+  const crosstalkEnds = scene.style.greyIdle;
+  const carries = (e: EdgeGeom) => !(crosstalkEnds && e.crosstalk);
+
   // One wave: first-arrival times from the sources, along in-cell edges.
   // Small graphs (a few thousand nodes at most): pick-the-earliest is plenty.
   const runWave = (sources: [string, number][]) => {
@@ -86,7 +92,7 @@ export function buildSchedule(scene: Scene): Schedule {
       pending.delete(id);
       fired.set(id, t);
       for (const e of outgoing.get(id) ?? []) {
-        if (fired.has(e.to)) continue;
+        if (fired.has(e.to) || !carries(e)) continue;
         const at = t + durationOf(e);
         if (at < (pending.get(e.to) ?? Infinity)) pending.set(e.to, at);
       }
@@ -119,8 +125,10 @@ export function buildSchedule(scene: Scene): Schedule {
         edges.push({ edge: e, start: t, duration, wave });
         const at = t + duration;
         push(arrivals, e.to, at);
-        // Later arrivals at a node already fired in this wave pulse more softly.
-        if (at > (first.get(e.to) ?? Infinity) + 1e-9) push(pulses, e.to, { t: at, strength: 0.45 });
+        // Later arrivals at a node already fired in this wave pulse more
+        // softly, as do crosstalk arrivals that end there.
+        const soft = !carries(e) || at > (first.get(e.to) ?? Infinity) + 1e-9;
+        if (soft) push(pulses, e.to, { t: at, strength: 0.45 });
       }
       for (const e of linksFrom.get(id) ?? []) {
         const duration = durationOf(e);

@@ -213,7 +213,7 @@ export interface CellLinks {
 
 /**
  * Cell-to-cell links. Each pair of touching cells gets `amount` links on
- * average (0–3). A link runs from an active cytoplasm node of one cell to a
+ * average (0–8). A link runs from an active cytoplasm node of one cell to a
  * relay receptor on the other cell's membrane, on the wall facing it, and that
  * receptor feeds the nearest first-layer nodes of the neighbour's pathway, so
  * the signal enters through a receptor and runs the pathway again from there.
@@ -233,10 +233,11 @@ export function connectCellLinks(scene: Scene, cells: LinkCell[]): CellLinks {
       const count = Math.floor(amount) + (rng() < amount - Math.floor(amount) ? 1 : 0);
       for (let k = 0; k < count; k++) {
         const [src, dst] = rng() < 0.5 ? [A, B] : [B, A];
-        // Sources near the shared wall, each used by one link only.
-        const from = src.layouts
-          .flatMap((l) => l.nodes.filter((n) => n.active && n.layer > 0 && n.region === 'cytoplasm'))
-          .filter((n) => !usedSources.has(n.id));
+        // Sources near the shared wall, each used by one link while fresh ones
+        // last (with many links per neighbour a node may send more than one).
+        const all = src.layouts.flatMap((l) => l.nodes.filter((n) => n.active && n.layer > 0 && n.region === 'cytoplasm'));
+        const fresh = all.filter((n) => !usedSources.has(n.id));
+        const from = fresh.length ? fresh : all;
         const near = (a: NodeGeom) => {
           let best = dst.points[0], bd = Infinity;
           for (const q of dst.points) {
@@ -252,8 +253,11 @@ export function connectCellLinks(scene: Scene, cells: LinkCell[]): CellLinks {
         if (pick === undefined) continue;
         const { a, q } = cands[pick];
         usedSources.add(a.id);
-        const relay = relayAt(scene, dst, q, relays, rng, out);
-        if (relay) out.edges.push(makeLinkEdge(scene, a, relay, rng));
+        const relay = relayAt(scene, dst, q, relays, out);
+        // A reused source may land on a receptor it already feeds: one link is enough.
+        if (relay && !out.edges.some((e) => e.link && e.from === a.id && e.to === relay.id)) {
+          out.edges.push(makeLinkEdge(scene, a, relay, rng));
+        }
       }
     }
   }
@@ -263,7 +267,7 @@ export function connectCellLinks(scene: Scene, cells: LinkCell[]): CellLinks {
 /** The relay receptor on `cell`'s membrane at (or near) point q, made on first use. */
 function relayAt(
   scene: Scene, cell: LinkCell, q: Vec2,
-  relays: Map<string, { node: NodeGeom; rec: ReceptorGeom }[]>, rng: Rng, out: CellLinks,
+  relays: Map<string, { node: NodeGeom; rec: ReceptorGeom }[]>, out: CellLinks,
 ): NodeGeom | null {
   const f = cell.frame;
   const list = relays.get(cell.id) ?? [];
@@ -279,8 +283,14 @@ function relayAt(
   if (!firsts.length) return null;
   const rec0 = receptorAt(f, cell.scene, phi, '', null);
   const dist = (n: NodeGeom) => Math.hypot(n.x - rec0.inner.x, n.y - rec0.inner.y);
-  firsts.sort((x, y) => Math.min(...x.nodes.map(dist)) - Math.min(...y.nodes.map(dist)));
-  const { l, nodes } = firsts[0];
+  // Among pathways reasonably near this wall, feed the one with fewest relay
+  // receptors so far, so relays reach every pathway of the cell, not just
+  // the one nearest the wall.
+  const reach = firsts.map((x) => ({ ...x, d: Math.min(...x.nodes.map(dist)) })).sort((x, y) => x.d - y.d);
+  const fed = (pid: string) => list.filter((r) => r.node.pathwayId === pid).length;
+  const near = reach.filter((x) => x.d <= 1.6 * reach[0].d);
+  near.sort((x, y) => fed(x.l.receptor.pathwayId!) - fed(y.l.receptor.pathwayId!) || x.d - y.d);
+  const { l, nodes } = near[0];
   const pathwayId = l.receptor.pathwayId!;
   const id = `${pathwayId}-R${idx}`;
   const rec: ReceptorGeom = { ...rec0, id: `receptor-${id}`, pathwayId, nodeId: id };
@@ -293,9 +303,10 @@ function relayAt(
   list.push({ node, rec });
   out.nodes.push(node);
   out.receptors.push(rec);
-  // Into the pathway: the one or two nearest active first-layer nodes.
-  const targets = [...nodes].sort((x, y) => dist(x) - dist(y)).slice(0, rng() < 0.5 ? 1 : 2);
-  for (const c of targets) out.edges.push(makeEdge(scene, node, c, false, rngFor(hash(scene.seed, id), c.id)));
+  // Into the pathway: like its own receptor, a relay receptor feeds every
+  // active first-layer node, so a relay runs the whole pathway again (and can
+  // pass on from any of its cytoplasm nodes).
+  for (const c of nodes) out.edges.push(makeEdge(scene, node, c, false, rngFor(hash(scene.seed, id), c.id)));
   return node;
 }
 

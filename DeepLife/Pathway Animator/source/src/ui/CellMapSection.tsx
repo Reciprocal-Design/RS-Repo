@@ -108,7 +108,7 @@ export function CellMapSection() {
                 label="Links per neighbour"
                 value={m.links.amount}
                 min={0}
-                max={3}
+                max={8}
                 step={0.05}
                 onChange={(amount) => set({ links: { ...m.links, amount } })}
               />

@@ -121,6 +121,25 @@ describe('grey idle pathways', () => {
     expect(lit(sch.total - 1e-6).size).toBe(0); // faded by the end of the loop
   });
 
+  it('crosstalk from another pathway does not run (or light up) that pathway', () => {
+    const s = multi(3);
+    s.style = { ...s.style, greyIdle: true };
+    s.crosstalk = { enabled: true, amount: 1 };
+    s.pathways = s.pathways.map((p, i) => ({ ...p, startDelay: i * 6 })); // well apart
+    const g = buildGeometry(s);
+    const xt = g.edges.filter((e) => e.crosstalk);
+    expect(xt.length).toBeGreaterThan(0);
+    const sch = buildSchedule(s);
+    // Every pathway's run starts at its own receptor's start, never earlier via crosstalk.
+    for (const p of s.pathways) {
+      for (const r of sch.runs.get(p.id) ?? []) expect(r.start).toBeCloseTo(p.startDelay, 9);
+    }
+    // Crosstalk comets still travel, and their target node pulses.
+    const t = sch.edges.find((e) => e.edge.crosstalk)!;
+    expect(sch.pulses.get(t.edge.to)!.some((q) => Math.abs(q.t - (t.start + t.duration)) < 1e-9)).toBe(true);
+    // (Without grey idle, crosstalk still runs the other pathway on: see "nodes fire on the first arrival".)
+  });
+
   it('with continuous motion, a pathway turns off again after its run', () => {
     const s = multi(3);
     s.style = { ...s.style, greyIdle: true };

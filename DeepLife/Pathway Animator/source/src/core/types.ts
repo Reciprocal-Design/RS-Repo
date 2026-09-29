@@ -113,7 +113,7 @@ export interface CellMap {
   detailScale: number; // 0.2–1: node, line, receptor and glow size relative to the single cell
   stagger: number; // seconds: each cell starts at a random offset within this
   orient: boolean; // turn each cell's pathways toward its widest cytoplasm (else a random turn)
-  links: { enabled: boolean; amount: number }; // links per pair of touching cells, 0–3
+  links: { enabled: boolean; amount: number }; // links per pair of touching cells, 0–8
   relayHops: number; // how many cells in a row a relayed signal can re-trigger (0: arrivals only pulse)
   startShare: number; // 0–1: share of pathways that start on their own; the rest fire only when relayed
   variation: number; // 0–1: how much node and layer counts vary from cell to cell
