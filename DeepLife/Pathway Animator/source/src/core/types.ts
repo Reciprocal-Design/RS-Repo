@@ -81,6 +81,8 @@ export interface Scene {
     inactiveNodeColor: string;
     inactiveNodeRadius: number;
     receptorStyle: ReceptorStyle;
+    greyIdle: boolean; // idle pathways drawn grey; a pathway lights up while a signal runs through it
+    idleOpacity: number; // 0–1, how visible idle pathways stay
     receptorSize: { length: number; width: number };
   };
   pathwayCount: number; // 1–5, placed around the cell
@@ -113,6 +115,7 @@ export interface CellMap {
   orient: boolean; // turn each cell's pathways toward its widest cytoplasm (else a random turn)
   links: { enabled: boolean; amount: number }; // links per pair of touching cells, 0–3
   relayHops: number; // how many cells in a row a relayed signal can re-trigger (0: arrivals only pulse)
+  startShare: number; // 0–1: share of pathways that start on their own; the rest fire only when relayed
   variation: number; // 0–1: how much node and layer counts vary from cell to cell
 }
 
@@ -185,8 +188,12 @@ export interface SceneGeom {
   nucleus: Outline;
   /** Every cell to draw (one in single-cell mode). */
   cells: CellGeom[];
-  /** Every pathway laid out, with its effective start delay (cell offsets included). */
-  pathways: { id: string; startDelay: number }[];
+  /**
+   * Every pathway laid out, with its effective start delay (cell offsets
+   * included). A pathway with `relayOnly` never starts on its own: it fires
+   * only when a relay from a neighbouring cell reaches it.
+   */
+  pathways: { id: string; startDelay: number; relayOnly?: boolean }[];
   receptors: ReceptorGeom[];
   nodes: NodeGeom[];
   nodeById: Map<string, NodeGeom>;

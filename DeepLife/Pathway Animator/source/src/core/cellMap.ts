@@ -125,12 +125,15 @@ export function buildMapGeometry(scene: Scene): SceneGeom | null {
         nodes.push(...l.nodes);
         l.warnings.forEach((w) => warnings.add(w));
         edges.push(...connectPathway(cs, p, l));
-        pathways.push({ id: p.id, startDelay: p.startDelay });
+        const own = rngFor(scene.seed, 'cell-start', mc.seed, p.id)() < cm.startShare;
+        pathways.push({ id: p.id, startDelay: p.startDelay, relayOnly: !own });
       });
       edges.push(...connectCrosstalk(cs, layouts, ps, R));
     }
     linkCells.push({ id: mc.id, seed: mc.seed, R, points: cell.points, layouts, frame, scene: cs });
   }
+  // At least one pathway starts on its own, or nothing would ever happen.
+  if (pathways.length && pathways.every((p) => p.relayOnly)) pathways[0].relayOnly = false;
   const links = connectCellLinks(scene, linkCells);
   edges.push(...links.edges);
   nodes.push(...links.nodes);

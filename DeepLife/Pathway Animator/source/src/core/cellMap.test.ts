@@ -301,6 +301,24 @@ describe('pathways on a cell map', () => {
     expect(fewest).toBeGreaterThanOrEqual(2);
   });
 
+  it('spontaneous starts: the rest of the pathways fire only when a relay reaches them', () => {
+    const s = mapScene();
+    s.cellMap = { ...s.cellMap, startShare: 0.2, links: { enabled: true, amount: 2 }, relayHops: 6 };
+    const g = buildGeometry(s);
+    const sch = buildSchedule(s);
+    const own = g.pathways.filter((p) => !p.relayOnly);
+    expect(own.length).toBeGreaterThan(0);
+    expect(own.length).toBeLessThan(g.pathways.length / 2);
+    // Every pathway run in wave 0 is a spontaneous one; relay-only ones still run, later, from relays.
+    const ownIds = new Set(own.map((p) => p.id));
+    expect(sch.edges.filter((t) => t.wave === 0).every((t) => ownIds.has(t.edge.pathwayId) || t.edge.link)).toBe(true);
+    const relayed = new Set(sch.edges.filter((t) => t.wave > 0 && !t.edge.link).map((t) => t.edge.pathwayId));
+    expect([...relayed].some((id) => !ownIds.has(id))).toBe(true);
+    // Never nothing at all.
+    const none = { ...s, cellMap: { ...s.cellMap, startShare: 0 } };
+    expect(buildGeometry(none).pathways.filter((p) => !p.relayOnly).length).toBe(1);
+  });
+
   it('finds the clicked cell', () => {
     const s = mapScene();
     const g = buildGeometry(s);

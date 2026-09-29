@@ -99,6 +99,50 @@ describe('continuous motion', () => {
   });
 });
 
+describe('grey idle pathways', () => {
+  it('rest in grey and light up only while a signal runs through them', () => {
+    const s = multi(3);
+    s.style = { ...s.style, greyIdle: true };
+    s.pathways = s.pathways.map((p, i) => ({ ...p, startDelay: i * 4 })); // well apart
+    s.crosstalk = { enabled: false, amount: 0 };
+    const sch = buildSchedule(s);
+    const lit = (t: number) => {
+      const on = buildDisplayList(s, t).prims.filter((p) => p.id.endsWith('-on'));
+      return new Set(on.map((p) => p.id.match(/p\d+/)![0]));
+    };
+    // Before anything runs: no pathway is on, and the base network is grey.
+    const g = buildGeometry(s);
+    const base = buildDisplayList(s, 0.001).prims.find((p) => p.id === g.edges[0].id) as { from: string; to: string };
+    expect(base.from).toBe(base.to);
+    // While pathway 2 runs (and 1 has not yet been reached by the loop fade), 2 is on and 3 is not.
+    const t2 = 4 + s.animation.layerDuration * 1.5;
+    expect(lit(t2).has('p2')).toBe(true);
+    expect(lit(t2).has('p3')).toBe(false);
+    expect(lit(sch.total - 1e-6).size).toBe(0); // faded by the end of the loop
+  });
+
+  it('with continuous motion, a pathway turns off again after its run', () => {
+    const s = multi(3);
+    s.style = { ...s.style, greyIdle: true };
+    s.pathways = s.pathways.map((p, i) => ({ ...p, startDelay: i * 4 }));
+    s.crosstalk = { enabled: false, amount: 0 };
+    s.animation = { ...s.animation, continuous: true, holdAtEnd: 0.5 };
+    const T = buildSchedule(s).total;
+    let fewest = Infinity, most = 0;
+    for (let t = 0; t < T; t += 0.1) {
+      const n = new Set(buildDisplayList(s, t).prims.filter((p) => p.id.endsWith('-on')).map((p) => p.id.match(/p\d+/)![0])).size;
+      fewest = Math.min(fewest, n);
+      most = Math.max(most, n);
+    }
+    expect(fewest).toBeGreaterThanOrEqual(1); // always something on
+    expect(most).toBeLessThan(3 + 1);
+    expect(fewest).toBeLessThan(3); // but never everything, all the time
+    // Off: colours as before.
+    const off = { ...s, style: { ...s.style, greyIdle: false } };
+    expect(buildDisplayList(off, 1).prims.some((p) => p.id.endsWith('-on'))).toBe(false);
+  });
+});
+
 describe('frames', () => {
   it('same scene JSON + same t → identical frame', () => {
     const a = multi(4);

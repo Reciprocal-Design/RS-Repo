@@ -80,7 +80,8 @@ function normalizeCellMap(raw: unknown): CellMap {
     stagger: num(m.stagger, base.stagger, 0, 20),
     orient: bool(m.orient, true),
     links: { enabled: bool(m.links.enabled, true), amount: num(m.links.amount, base.links.amount, 0, 3) },
-    relayHops: Math.round(num(m.relayHops, base.relayHops, 0, 6)),
+    relayHops: Math.round(num(m.relayHops, base.relayHops, 0, 10)),
+    startShare: num(m.startShare, base.startShare, 0, 1),
     // Maps saved before cell variation existed keep their cells alike.
     variation: num(raw.variation, 0, 0, 1),
   };
@@ -110,6 +111,7 @@ export function normalizeScene(raw: unknown): Scene {
     .filter((c): c is string => typeof c === 'string');
   if (s.style.gradientStops.length < 2) s.style.gradientStops = [...base.style.gradientStops];
   if (!['capsule', 'diamond', 'capsuleDiamond'].includes(s.style.receptorStyle)) s.style.receptorStyle = base.style.receptorStyle;
+  s.style.idleOpacity = num(s.style.idleOpacity, base.style.idleOpacity, 0, 1);
   for (const [o, d] of [[s.cell, base.cell], [s.nucleus, base.nucleus]] as const) {
     if (o.outlineStyle !== 'line' && o.outlineStyle !== 'glow') o.outlineStyle = d.outlineStyle;
     o.glowWidth = num(o.glowWidth, d.glowWidth, 0, 400);

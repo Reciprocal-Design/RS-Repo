@@ -116,14 +116,25 @@ export function CellMapSection() {
                 label="Relay chain"
                 value={m.relayHops}
                 min={0}
-                max={6}
+                max={10}
                 step={1}
                 unit={m.relayHops === 1 ? ' cell' : ' cells'}
                 onChange={(relayHops) => set({ relayHops })}
               />
+              <Slider
+                label="Spontaneous starts"
+                value={Math.round(m.startShare * 100)}
+                min={0}
+                max={100}
+                step={5}
+                unit="%"
+                onChange={(v) => set({ startShare: v / 100 })}
+              />
               <p className="hint">
                 A link enters the neighbour through a receptor on the shared wall and runs its pathway again from there;
-                the relay chain is how many cells in a row it can pass on.
+                the relay chain is how many cells in a row it can pass on. Lower spontaneous starts so only some
+                pathways fire on their own and the rest wait for a relay: a chain reaction (pair with “Grey out idle
+                pathways” in Style).
               </p>
             </>
           )}

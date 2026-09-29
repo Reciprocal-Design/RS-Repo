@@ -12,6 +12,7 @@ export function defaultCellMap(): CellMap {
     orient: true,
     links: { enabled: true, amount: 1 },
     relayHops: 3,
+    startShare: 1,
     variation: 0.4,
   };
 }
@@ -110,6 +111,8 @@ export function defaultScene(seed = 1234): Scene {
       inactiveNodeColor: '#6B6F85',
       inactiveNodeRadius: 8,
       receptorStyle: 'capsuleDiamond',
+      greyIdle: false,
+      idleOpacity: 0.35,
       receptorSize: { length: 44, width: 17 },
     },
     pathwayCount: 1,

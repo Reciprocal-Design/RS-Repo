@@ -22,6 +22,8 @@ export interface Schedule {
   fire: Map<string, number>;
   /** Every signal arrival per node, sorted. */
   arrivals: Map<string, number[]>;
+  /** When each pathway is running: one interval per wave that passes through it. */
+  runs: Map<string, { start: number; end: number }[]>;
   /** Node pulses: full when a node fires, weaker for later arrivals. */
   pulses: Map<string, { t: number; strength: number }[]>;
   edges: EdgeTiming[];
@@ -135,7 +137,7 @@ export function buildSchedule(scene: Scene): Schedule {
   const starts: [string, number][] = [];
   for (const p of g.pathways) {
     const r = receptorOf.get(p.id);
-    if (r) starts.push([r, Math.max(0, p.startDelay)]);
+    if (r && !p.relayOnly) starts.push([r, Math.max(0, p.startDelay)]);
   }
   const wave0 = runWave(starts);
   record(wave0, 0, 0);
@@ -144,7 +146,7 @@ export function buildSchedule(scene: Scene): Schedule {
   // has moved on by a hop and a half, so relays chase each other down it
   // rather than starting on top of one another.
   const busy = new Map<string, number[]>(); // pathway → wave start times
-  for (const p of g.pathways) busy.set(p.id, [Math.max(0, p.startDelay)]);
+  for (const p of g.pathways) busy.set(p.id, p.relayOnly ? [] : [Math.max(0, p.startDelay)]);
   const gap = RELAY_GAP * hop;
   const maxHops = Math.max(0, Math.round(scene.cellMap.relayHops ?? 0));
   let waves = 0;
@@ -172,10 +174,22 @@ export function buildSchedule(scene: Scene): Schedule {
   }
   for (const list of arrivals.values()) list.sort((x, y) => x - y);
 
+  // Pathway runs: the span of each wave's comets within each pathway.
+  const byRun = new Map<string, { pid: string; start: number; end: number }>();
+  for (const et of edges) {
+    const pid = et.edge.pathwayId, key = `${pid}|${et.wave}`;
+    const r = byRun.get(key);
+    const end = et.start + et.duration;
+    if (r) (r.start = Math.min(r.start, et.start)), (r.end = Math.max(r.end, end));
+    else byRun.set(key, { pid, start: et.start, end });
+  }
+  const runs = new Map<string, { start: number; end: number }[]>();
+  for (const r of byRun.values()) push(runs, r.pid, { start: r.start, end: r.end });
+
   const total = a.continuous
     ? continuousPeriod(edges, trail, Math.max(0, a.holdAtEnd), a.density ?? 0)
     : signalEnd + Math.max(0, a.holdAtEnd) + (a.loop ? FADE_OUT : 0);
-  const schedule: Schedule = { fire, arrivals, pulses, edges, signalEnd, total, period: a.continuous ? total : 0 };
+  const schedule: Schedule = { fire, arrivals, runs, pulses, edges, signalEnd, total, period: a.continuous ? total : 0 };
   cache.set(scene, schedule);
   return schedule;
 }

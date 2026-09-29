@@ -136,6 +136,16 @@ export function Panel() {
         <Slider label="Edge opacity max" value={st.edgeOpacity.max} min={0} max={1}
           onChange={(max) => style({ edgeOpacity: { min: Math.min(max, st.edgeOpacity.min), max } })} />
         <Slider label="Curvature" value={st.edgeCurvature} min={0} max={1} onChange={(edgeCurvature) => style({ edgeCurvature })} />
+        <Toggle label="Grey out idle pathways" checked={st.greyIdle} onChange={(greyIdle) => style({ greyIdle })} />
+        {st.greyIdle && (
+          <>
+            <Slider label="Idle brightness" value={st.idleOpacity} min={0} max={1} onChange={(idleOpacity) => style({ idleOpacity })} />
+            <p className="hint">
+              Pathways rest in the inactive node colour and light up only while a signal runs through them, so a chain
+              reaction is easy to follow.
+            </p>
+          </>
+        )}
         <div className="field">
           <span>
             Gradient

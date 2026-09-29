@@ -55,6 +55,8 @@ export interface DisplayList {
 }
 
 const TRAIL_SEGMENTS = 12;
+/** Seconds a pathway takes to light up from grey (grey idle mode). */
+const RISE = 0.3;
 const GLOW_LAYERS = 26;
 
 /**
@@ -182,14 +184,55 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
     }
   }
 
+  // Grey idle mode: the network rests in grey, and a pathway lights up in
+  // colour while a signal runs through it, then fades back.
+  const grey = st.greyIdle;
+  const idle = Math.max(0, Math.min(1, st.idleOpacity));
+  const greyRgb = parseColor(st.inactiveNodeColor);
+  const greyCss = rgbaString([greyRgb[0], greyRgb[1], greyRgb[2], 1]);
+
   for (const e of g.edges) {
     prims.push({
-      kind: 'bezier', id: e.id, group: e.crosstalk ? 'crosstalk' : 'edges', p: e.bezier,
-      width: st.edgeWidth * s, from: color(e.depthFrom), to: color(e.depthTo), opacity: e.opacity,
+      kind: 'bezier', id: e.id, group: e.crosstalk ? 'crosstalk' : 'edges', p: e.bezier, width: st.edgeWidth * s,
+      ...(grey
+        ? { from: greyCss, to: greyCss, opacity: e.opacity * idle }
+        : { from: color(e.depthFrom), to: color(e.depthTo), opacity: e.opacity }),
     });
   }
 
   const staticCount = prims.length;
+
+  // How lit each pathway is now (grey idle mode): on while a wave runs
+  // through it and for the hold after, then fading back to grey.
+  const act = new Map<string, number>();
+  if (grey && signal) {
+    const env = (x: number, len: number) =>
+      x < 0 ? 0 : x < len + litHold ? Math.min(1, x / RISE) : Math.max(0, 1 - (x - len - litHold) / FADE_OUT);
+    for (const [pid, runs] of schedule.runs) {
+      let a = 0;
+      for (const r of runs) {
+        const len = r.end - r.start;
+        if (period) {
+          // A run may outlast the period: count each repeat still fading.
+          for (let x = since(tau, r.start, period); x < len + litHold + FADE_OUT; x += period) a = Math.max(a, env(x, len));
+        } else {
+          a = Math.max(a, env(tau - r.start, len) * fade);
+        }
+      }
+      if (a > 0.005) act.set(pid, a); // below that it is invisible: skip drawing it
+    }
+    for (const e of g.edges) {
+      const a = act.get(e.pathwayId) ?? 0;
+      if (a <= 0) continue;
+      prims.push({
+        kind: 'bezier', id: `${e.id}-on`, group: e.crosstalk ? 'crosstalk' : 'edges', p: e.bezier,
+        width: st.edgeWidth * s, from: color(e.depthFrom), to: color(e.depthTo), opacity: e.opacity * a,
+      });
+    }
+  }
+  // Grey idle mode: node brightness follows its pathway (1 when not greying).
+  const on = (n: { pathwayId: string }) => (grey ? (act.get(n.pathwayId) ?? 0) : 1);
+  const nodeFill = (a: number) => (a >= 1 ? '#ffffff' : rgbaString(mixWhite(greyRgb, a)));
 
   if (signal) {
     const trail = Math.max(0, an.trailLength);
@@ -198,8 +241,9 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
     // trail catches up) and eased (position of the head along the curve).
     const along = schedule.edges.map((et) => {
       const x = since(tau, et.start, period);
-      // Continuous: how lit the edge still is, x seconds after its comet left.
-      const lit = period ? Math.max(0, Math.min(1, (et.duration + litHold + FADE_OUT - x) / FADE_OUT)) : 1;
+      // Continuous or grey idle: how lit the edge still is, x seconds after its
+      // comet left (otherwise lit edges stay lit until the loop's closing fade).
+      const lit = period || grey ? Math.max(0, Math.min(1, (et.duration + litHold + FADE_OUT - x) / FADE_OUT)) : 1;
       return { et, q: x / et.duration, lit, id: et.wave ? `${et.edge.id}-w${et.wave}` : et.edge.id };
     });
 
@@ -292,18 +336,29 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
   for (const n of active) {
     const isReceptor = n.layer === 0;
     if (isReceptor && st.receptorStyle === 'capsule') continue;
-    prims.push({ kind: 'circle', id: `${n.id}-halo`, group: 'nodes-active', c: n, r: st.haloRadius * s * grow(n.id), fill: halo });
+    const a = on(n);
+    if (a <= 0) continue;
+    prims.push({
+      kind: 'circle', id: `${n.id}-halo`, group: 'nodes-active', c: n, r: st.haloRadius * s * grow(n.id), fill: halo,
+      ...(a < 1 ? { opacity: a } : {}),
+    });
   }
   for (const n of active) {
     if (n.layer === 0) {
       if (st.receptorStyle === 'capsule') continue;
       const rec = g.receptors.find((r) => r.nodeId === n.id) ?? g.receptors.find((r) => r.pathwayId === n.pathwayId)!;
+      const a = on(n);
       prims.push({
         kind: 'diamond', id: `${n.id}-diamond`, group: 'nodes-active', c: n,
-        r: st.activeNodeRadius * 1.6 * s * grow(n.id), angle: rec.angle, fill: '#ffffff',
+        r: st.activeNodeRadius * 1.6 * s * grow(n.id), angle: rec.angle, fill: nodeFill(a),
+        ...(a < 1 ? { opacity: idle + (1 - idle) * a } : {}),
       });
     } else {
-      prims.push({ kind: 'circle', id: n.id, group: 'nodes-active', c: n, r: st.activeNodeRadius * s * grow(n.id), fill: '#ffffff' });
+      const a = on(n);
+      prims.push({
+        kind: 'circle', id: n.id, group: 'nodes-active', c: n, r: st.activeNodeRadius * s * grow(n.id), fill: nodeFill(a),
+        ...(a < 1 ? { opacity: idle + (1 - idle) * a } : {}),
+      });
     }
   }
   for (const n of g.nodes) {
