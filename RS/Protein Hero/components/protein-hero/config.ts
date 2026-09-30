@@ -33,6 +33,9 @@ export const HERO = {
     // Surface texture: fine grain plus a broad, soft undulation.
     detail: { scale: 11, strength: 0.3 }, // repeats per model radius, bump strength
     macro: { scale: 1.6, strength: 0.25 },
+    // Imperfection: nothing in nature is uniform.
+    mottle: 0.16, // albedo variation across the surface (0..1)
+    roughnessVariation: 0.35, // roughness varies by ± this fraction
   },
 
   background: {
@@ -55,11 +58,13 @@ export const HERO = {
     envIntensity: 0.5,
     hdriRotation: 0.6, // radians; turns the HDRI's softboxes around the subject
     hdriTint: 0.6, // 0 = raw neutral HDRI, 1 = fully the slate studio dome
+    envDome: "#3a4959", // dome tint colour; kept well off black so no reflected direction goes dead
   },
 
   // Signalling strands: three lines merging through the protein, with travelling glow pulses.
   lines: {
-    radius: 0.005, // tube thickness, in model radii
+    radius: 0.005, // core tube thickness, in model radii
+    haloWidth: 0.032, // half-width of the soft glow ribbon around each core
     base: "#5f7387", // resting line colour
     pulse: "#cfe8ff", // glow pulse colour
     pulseIntensity: 8, // HDR multiplier; bloom turns this into glow
@@ -106,6 +111,8 @@ export const HERO = {
     dragSpeed: 0.006, // radians per pixel dragged
     inertia: 3.2, // higher = spin settles faster after release
     autoRotate: 0.12, // radians per second when idle
+    idleAfter: 3, // seconds without input before the model starts leaning on its own (touch never hovers)
+    idleLean: [0.55, 0.4] as [number, number], // how far that autonomous lean wanders (x, y), like a cursor
   },
 
   post: {

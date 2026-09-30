@@ -46,6 +46,30 @@
   opacity: 1;
 }
 
+/* No-WebGL fallback: a flat drawing of the scene plus one line of explanation. */
+.fallback {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  color: #cfdbe6;
+}
+
+.fallback svg {
+  width: 100%;
+  height: 100%;
+}
+
+.fallback p {
+  position: absolute;
+  right: clamp(16px, 4vw, 48px);
+  top: clamp(16px, 4vh, 40px);
+  max-width: 22rem;
+  margin: 0;
+  font-size: 0.8rem;
+  text-align: right;
+  opacity: 0.7;
+}
+
 .content {
   position: absolute;
   left: clamp(16px, 6vw, 96px);

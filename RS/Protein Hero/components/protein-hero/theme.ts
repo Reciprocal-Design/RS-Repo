@@ -37,7 +37,7 @@ export const THEME = {
     haze: colorPair(HERO.background.haze, off.background.haze),
     glow: colorPair(HERO.background.glow, off.background.glow),
   },
-  envDome: colorPair(HERO.background.deep, off.envDome),
+  envDome: colorPair(HERO.lights.envDome, off.envDome),
   ambient: colorPair(HERO.lights.ambient.color, off.ambient),
   particles: colorPair(HERO.particles.color, off.particles),
   dust: colorPair(HERO.dust.color, off.dust),

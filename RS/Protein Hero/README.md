@@ -8,6 +8,15 @@ An interactive, studio-lit 3D protein for a website hero, built with Next.js, Re
 - **Interaction:** drag to spin freely (with inertia), the model leans gently toward the cursor, and it turns slowly when idle. On touch, horizontal drags spin and vertical swipes still scroll the page.
 - **Performance:** meshopt-compressed GLB (~580 KB), rendering pauses when the hero is off screen, resolution drops automatically on slow devices, and `prefers-reduced-motion` is respected.
 
+## Realism notes
+
+- **Environment:** a real studio HDRI plus softboxes, captured into the environment map. The tint dome is kept well off black, so no reflected direction goes dead.
+- **Imperfection:** baked AO, fine grain and broad undulation normal maps, plus albedo mottling and roughness variation (`protein.mottle`, `protein.roughnessVariation`), so no part of the surface is perfectly uniform.
+- **Light:** everything is linear HDR, tone mapped once near the end of the post chain (ACES), with bloom, grain and vignette. Each signalling strand is a thin opaque core (crisp under depth of field) over a soft additive halo ribbon with a gaussian profile. The glow ramps up where the strands enter and leave the protein, starting inside it. The strands vary in width, brightness and speed.
+- **Art-directed, not simulated:** the strand paths, pulses and subsurface scattering are styled approximations, not physical solves. Tune them by eye.
+- **Motion:** all pointer response is damped. After a few seconds without input (and always on touch, which never hovers) the protein leans on its own. Reduced motion holds a still pose.
+- **Resilience:** rendering pauses off screen and in hidden tabs. Add `?nopause` to the URL to bypass that for automated screenshots. WebGL is probed once; without it the hero shows a flat drawing of the scene and says why.
+
 ## Run
 
 ```bash

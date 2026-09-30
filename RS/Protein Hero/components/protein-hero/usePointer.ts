@@ -11,6 +11,8 @@ export type PointerState = {
   /** Accumulated drag in pixels since the last frame read it. */
   dragDX: number;
   dragDY: number;
+  /** performance.now() of the last cursor move or drag over the hero; 0 = never. */
+  lastInput: number;
 };
 
 const INTERACTIVE = "a, button, input, select, textarea, [data-no-drag]";
@@ -20,7 +22,7 @@ const INTERACTIVE = "a, button, input, select, textarea, [data-no-drag]";
  * Uses plain DOM events so text and buttons layered over the canvas keep working.
  */
 export function usePointer(target: React.RefObject<HTMLElement | null>) {
-  const state = useRef<PointerState>({ x: 0, y: 0, smoothX: 0, smoothY: 0, dragging: false, dragDX: 0, dragDY: 0 });
+  const state = useRef<PointerState>({ x: 0, y: 0, smoothX: 0, smoothY: 0, dragging: false, dragDX: 0, dragDY: 0, lastInput: 0 });
 
   useEffect(() => {
     const el = target.current;
@@ -34,6 +36,7 @@ export function usePointer(target: React.RefObject<HTMLElement | null>) {
       if (e.pointerType === "mouse" && inside) {
         s.x = ((e.clientX - r.left) / r.width) * 2 - 1;
         s.y = -(((e.clientY - r.top) / r.height) * 2 - 1);
+        s.lastInput = performance.now();
       }
       if (last && e.pointerId === last.id) {
         s.dragDX += e.clientX - last.x;
@@ -45,6 +48,7 @@ export function usePointer(target: React.RefObject<HTMLElement | null>) {
       if (e.button !== 0 || (e.target as Element).closest(INTERACTIVE)) return;
       last = { x: e.clientX, y: e.clientY, id: e.pointerId };
       s.dragging = true;
+      s.lastInput = performance.now();
       el.dataset.dragging = "true";
     };
     const onUp = (e: PointerEvent) => {

@@ -58,6 +58,7 @@ export function Protein({ pointer, theme, backLightDir, animate, onReady }: Prop
   const spin = useRef<Group>(null);
   const velocity = useRef({ x: 0, y: 0 });
   const intro = useRef(animate ? 0 : 1);
+  const idle = useRef(0);
   const [ox, oy] = useSubjectOffset();
 
   useEffect(() => onReady?.(), [onReady]);
@@ -68,9 +69,21 @@ export function Protein({ pointer, theme, backLightDir, animate, onReady }: Prop
     const { tilt, parallax, dragSpeed, inertia, autoRotate } = HERO.interaction;
     dt = Math.min(dt, 1 / 20);
 
-    // Ease the cursor (shared with the backdrop).
-    pointer.smoothX = MathUtils.damp(pointer.smoothX, pointer.x, 3, dt);
-    pointer.smoothY = MathUtils.damp(pointer.smoothY, pointer.y, 3, dt);
+    // With no input for a few seconds (and always on touch, which never hovers), hand the lean
+    // over to a slow autonomous wander, blended in and out so it never snaps.
+    const now = performance.now();
+    const { idleAfter, idleLean } = HERO.interaction;
+    const isIdle = animate && !pointer.dragging && now - pointer.lastInput > idleAfter * 1000;
+    idle.current = MathUtils.damp(idle.current, isIdle ? 1 : 0, isIdle ? 0.6 : 4, dt);
+    const t = now / 1000;
+    const wanderX = Math.sin(t * 0.21) * idleLean[0] + Math.sin(t * 0.47 + 1.3) * idleLean[0] * 0.3;
+    const wanderY = Math.sin(t * 0.17 + 2.1) * idleLean[1];
+    const targetX = MathUtils.lerp(pointer.x, wanderX, idle.current);
+    const targetY = MathUtils.lerp(pointer.y, wanderY, idle.current);
+
+    // Ease the cursor (shared with the backdrop and the switch).
+    pointer.smoothX = MathUtils.damp(pointer.smoothX, targetX, 3, dt);
+    pointer.smoothY = MathUtils.damp(pointer.smoothY, targetY, 3, dt);
 
     // Drag → angular velocity; release → inertia decays back to the idle turn.
     const v = velocity.current;
@@ -96,7 +109,6 @@ export function Protein({ pointer, theme, backLightDir, animate, onReady }: Prop
     // Intro: grow in with an ease-out, then a slow breathing float.
     intro.current = Math.min(1, intro.current + dt / 2.2);
     const e = 1 - Math.pow(1 - intro.current, 3);
-    const t = performance.now() / 1000;
     lean.current.scale.setScalar(HERO.protein.scale * (0.86 + 0.14 * e));
     if (animate) lean.current.position.y += Math.sin(t * 0.55) * 0.025;
   });

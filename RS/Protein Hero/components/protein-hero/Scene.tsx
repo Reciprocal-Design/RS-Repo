@@ -125,9 +125,12 @@ function StudioEnvironment({ theme, live }: { theme: ThemeState; live: boolean }
 /** The strands, following the protein's place in the frame (but not its rotation). */
 function Lines({ on, animate }: { on: boolean; animate: boolean }) {
   const [ox, oy] = useSubjectOffset();
+  // The camera pulls back on tall screens; thicken the lines to match so they don't alias into dashes.
+  const aspect = useThree((s) => s.size.width / s.size.height);
+  const thickness = Math.round(Math.max(1, 0.85 / aspect) * 10) / 10;
   return (
     <group position={[ox, oy, 0]} scale={HERO.protein.scale}>
-      <SignalLines on={on} animate={animate} />
+      <SignalLines on={on} animate={animate} thickness={thickness} />
     </group>
   );
 }
