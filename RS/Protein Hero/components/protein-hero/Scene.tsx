@@ -9,7 +9,7 @@ import { ACESFilmicToneMapping, AgXToneMapping, BackSide, NeutralToneMapping, Ve
 import { Backdrop } from "./Backdrop";
 import { HERO } from "./config";
 import { Particles } from "./Particles";
-import { Echo, Protein } from "./Protein";
+import { Protein } from "./Protein";
 import type { PointerState } from "./usePointer";
 
 type SceneProps = {
@@ -41,12 +41,21 @@ function Rig() {
   return null;
 }
 
+/** A real studio HDRI for natural reflections, tinted purple and lit with custom softboxes to match the backdrop. */
 function StudioEnvironment() {
+  const { lights } = HERO;
   return (
-    <Environment resolution={256} frames={1} environmentIntensity={HERO.lights.envIntensity}>
+    <Environment
+      files={HERO.hdriUrl}
+      resolution={512}
+      frames={1}
+      environmentIntensity={lights.envIntensity}
+      environmentRotation={[0, lights.hdriRotation, 0]}
+    >
+      {/* Translucent dome over the HDRI: keeps its detail but shifts it into the purple studio. */}
       <mesh scale={50}>
         <sphereGeometry args={[1, 32, 16]} />
-        <meshBasicMaterial color={HERO.background.deep} side={BackSide} />
+        <meshBasicMaterial color={HERO.background.deep} side={BackSide} transparent opacity={lights.hdriTint} depthWrite={false} />
       </mesh>
       {/* Warm softbox behind, upper left: matches the glow in the backdrop. */}
       <Lightformer form="rect" color={HERO.background.glow} intensity={5} position={[-5, 4, -4]} scale={[8, 8, 1]} target={[0, 0, 0]} />
@@ -96,11 +105,10 @@ export default function Scene({ pointer, eventSource, active, reducedMotion, onR
       <directionalLight color={lights.key.color} intensity={lights.key.intensity} position={lights.key.position} />
       <directionalLight color={lights.fill.color} intensity={lights.fill.intensity} position={lights.fill.position} />
       <directionalLight color={lights.rim.color} intensity={lights.rim.intensity} position={lights.rim.position} />
-      <StudioEnvironment />
 
       <Suspense fallback={null}>
+        <StudioEnvironment />
         <Protein pointer={pointer} backLightDir={backLightDir} animate={animate} onReady={onReady} />
-        {HERO.echo.enabled && <Echo backLightDir={backLightDir} animate={animate} />}
       </Suspense>
       <Particles animate={animate} />
 

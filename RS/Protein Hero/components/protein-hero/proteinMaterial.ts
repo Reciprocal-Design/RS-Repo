@@ -1,4 +1,6 @@
-import { Color, MeshPhysicalMaterial, Vector3 } from "three";
+import { Color, MeshPhysicalMaterial, Texture, Vector3 } from "three";
+
+type DetailLayer = { scale: number; strength: number };
 
 export type ProteinMaterialOptions = {
   color: string;
@@ -6,10 +8,17 @@ export type ProteinMaterialOptions = {
   rim: string;
   roughness: number;
   aoStrength: number;
+  clearcoat: number;
+  detail: DetailLayer;
+  macro: DetailLayer;
 };
+
+export type ProteinTextures = { detail: Texture; macro: Texture };
 
 /**
  * MeshPhysicalMaterial with a soft, waxy "organic" look:
+ *  - triplanar normal maps in object space (the mesh has no UVs): fine pores + broad undulation,
+ *    under a smooth clearcoat so highlights stay glossy
  *  - baked AO from vertex colours (deepened with a power curve, also applied to reflections)
  *  - cheap subsurface translucency from a back light (light bleeding through thin ridges)
  *  - wrapped diffuse so the terminator stays soft
@@ -17,7 +26,11 @@ export type ProteinMaterialOptions = {
  *
  * `backLightDir` is shared so the scene can update it (view-space) every frame.
  */
-export function createProteinMaterial(opts: ProteinMaterialOptions, backLightDir: { value: Vector3 }) {
+export function createProteinMaterial(
+  opts: ProteinMaterialOptions,
+  textures: ProteinTextures,
+  backLightDir: { value: Vector3 },
+) {
   const material = new MeshPhysicalMaterial({
     color: opts.color,
     roughness: opts.roughness,
@@ -26,8 +39,8 @@ export function createProteinMaterial(opts: ProteinMaterialOptions, backLightDir
     sheen: 0.5,
     sheenRoughness: 0.55,
     sheenColor: new Color(opts.rim),
-    clearcoat: 0.18,
-    clearcoatRoughness: 0.38,
+    clearcoat: opts.clearcoat,
+    clearcoatRoughness: 0.3,
   });
 
   const uniforms = {
@@ -35,10 +48,28 @@ export function createProteinMaterial(opts: ProteinMaterialOptions, backLightDir
     uTranslucency: { value: new Color(opts.translucency) },
     uRim: { value: new Color(opts.rim) },
     uAOPower: { value: opts.aoStrength },
+    uDetailMap: { value: textures.detail },
+    uMacroMap: { value: textures.macro },
+    uDetail: { value: [opts.detail.scale, opts.detail.strength] },
+    uMacro: { value: [opts.macro.scale, opts.macro.strength] },
   };
 
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
+
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        "#include <common>",
+        /* glsl */ `#include <common>
+        varying vec3 vObjPos;
+        varying vec3 vObjNormal;`,
+      )
+      .replace(
+        "#include <begin_vertex>",
+        /* glsl */ `#include <begin_vertex>
+        vObjPos = position;
+        vObjNormal = normal;`,
+      );
 
     shader.fragmentShader = shader.fragmentShader
       .replace(
@@ -47,7 +78,36 @@ export function createProteinMaterial(opts: ProteinMaterialOptions, backLightDir
         uniform vec3 uBackLightDir;
         uniform vec3 uTranslucency;
         uniform vec3 uRim;
-        uniform float uAOPower;`,
+        uniform float uAOPower;
+        uniform sampler2D uDetailMap, uMacroMap;
+        uniform vec2 uDetail, uMacro; // (scale, strength)
+        uniform mat3 normalMatrix;
+        varying vec3 vObjPos;
+        varying vec3 vObjNormal;
+
+        // Triplanar normal mapping with whiteout blending (object space in, object space out).
+        vec3 triplanarNormal(sampler2D map, vec3 p, vec3 n, float scale, float strength) {
+          vec3 w = pow(abs(n), vec3(4.0));
+          w /= w.x + w.y + w.z;
+          vec3 tx = texture2D(map, p.zy * scale).xyz * 2.0 - 1.0;
+          vec3 ty = texture2D(map, p.xz * scale).xyz * 2.0 - 1.0;
+          vec3 tz = texture2D(map, p.xy * scale).xyz * 2.0 - 1.0;
+          tx.xy *= strength; ty.xy *= strength; tz.xy *= strength;
+          tx = vec3(tx.xy + n.zy, abs(tx.z) * n.x);
+          ty = vec3(ty.xy + n.xz, abs(ty.z) * n.y);
+          tz = vec3(tz.xy + n.xy, abs(tz.z) * n.z);
+          return normalize(tx.zyx * w.x + ty.xzy * w.y + tz.xyz * w.z);
+        }`,
+      )
+      .replace(
+        "#include <normal_fragment_maps>",
+        /* glsl */ `#include <normal_fragment_maps>
+        {
+          vec3 n0 = normalize(vObjNormal);
+          vec3 n1 = triplanarNormal(uMacroMap, vObjPos, n0, uMacro.x, uMacro.y);
+          vec3 n2 = triplanarNormal(uDetailMap, vObjPos, n1, uDetail.x, uDetail.y);
+          normal = normalize(normalMatrix * n2);
+        }`,
       )
       // Baked AO lives in vColor; curve it rather than multiplying it in raw.
       .replace(

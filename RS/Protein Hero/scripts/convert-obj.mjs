@@ -1,5 +1,7 @@
 // Converts source/protein.obj into a compact, web-ready GLB.
 //   - welds duplicate vertices so the surface shades smoothly
+//   - softens the surface: Taubin smoothing, then a small outward offset along the normals
+//     (rounds off sharp ridges and fills pinched crevices, like an inflated/solvent surface)
 //   - recomputes smooth normals
 //   - centres the model at the origin and scales it to a unit radius
 //   - bakes ambient occlusion into vertex colours (COLOR_0) for deep, soft crevices
@@ -14,6 +16,9 @@ import { quantize, reorder, meshopt } from "@gltf-transform/functions";
 import { MeshoptDecoder, MeshoptEncoder } from "meshoptimizer";
 import { BufferAttribute, DoubleSide, Ray, Vector3 } from "three";
 import { MeshBVH } from "three-mesh-bvh";
+
+const SMOOTH_ITERATIONS = 10; // Taubin passes (smooths without shrinking)
+const SURFACE_OFFSET = 0.012; // outward offset along normals, in model radii
 
 const AO_SAMPLES = 64;      // rays per vertex
 const AO_DISTANCE = 0.35;   // max occluder distance (model is unit radius)
@@ -104,6 +109,44 @@ function bakeAO(g) {
   for (let i = 0; i < pos.count; i++) colors[i * 3] = colors[i * 3 + 1] = colors[i * 3 + 2] = ao[i];
   g.setAttribute("color", new BufferAttribute(colors, 3));
 }
+// Neighbour lists from the (welded) index buffer.
+function neighbours(g) {
+  const idx = g.index.array, sets = Array.from({ length: g.attributes.position.count }, () => new Set());
+  for (let f = 0; f < idx.length; f += 3) {
+    const a = idx[f], b = idx[f + 1], c = idx[f + 2];
+    sets[a].add(b).add(c); sets[b].add(a).add(c); sets[c].add(a).add(b);
+  }
+  return sets.map((s) => Int32Array.from(s));
+}
+
+// Taubin smoothing (alternating shrink/inflate Laplacian steps) + an offset along the normals.
+function soften(g) {
+  const pos = g.attributes.position.array, nb = neighbours(g), n = nb.length;
+  const tmp = new Float32Array(pos.length);
+  const step = (factor) => {
+    for (let i = 0; i < n; i++) {
+      const list = nb[i];
+      if (!list.length) { tmp.set(pos.subarray(i * 3, i * 3 + 3), i * 3); continue; }
+      let x = 0, y = 0, z = 0;
+      for (const j of list) { x += pos[j * 3]; y += pos[j * 3 + 1]; z += pos[j * 3 + 2]; }
+      const k = 1 / list.length;
+      tmp[i * 3] = pos[i * 3] + factor * (x * k - pos[i * 3]);
+      tmp[i * 3 + 1] = pos[i * 3 + 1] + factor * (y * k - pos[i * 3 + 1]);
+      tmp[i * 3 + 2] = pos[i * 3 + 2] + factor * (z * k - pos[i * 3 + 2]);
+    }
+    pos.set(tmp);
+  };
+  for (let it = 0; it < SMOOTH_ITERATIONS; it++) { step(0.5); step(-0.53); }
+  g.computeVertexNormals();
+  const nor = g.attributes.normal.array;
+  for (let i = 0; i < pos.length; i++) pos[i] += nor[i] * SURFACE_OFFSET;
+  g.attributes.position.needsUpdate = true;
+  g.computeVertexNormals();
+}
+console.time("soften");
+geometries.forEach(soften);
+console.timeEnd("soften");
+
 console.time("AO bake");
 geometries.forEach(bakeAO);
 console.timeEnd("AO bake");

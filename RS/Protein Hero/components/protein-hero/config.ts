@@ -1,8 +1,15 @@
 // All the look-and-feel knobs for the hero in one place.
 // Colours are sRGB hex; intensities are in three.js physical units.
 
+const ASSETS = process.env.NEXT_PUBLIC_ASSET_BASE ?? process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
 export const HERO = {
-  modelUrl: `${process.env.NEXT_PUBLIC_ASSET_BASE ?? process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/models/protein.glb`,
+  modelUrl: `${ASSETS}/models/protein.glb`,
+  // Poly Haven studio HDRI (CC0, via @pmndrs/assets): real softbox reflections on the surface.
+  hdriUrl: `${ASSETS}/hdri/studio.exr`,
+  // Tileable normal maps (CC0, via @pmndrs/assets), projected triplanar since the mesh has no UVs.
+  detailNormalUrl: `${ASSETS}/textures/detail-normal.webp`,
+  macroNormalUrl: `${ASSETS}/textures/macro-normal.webp`,
 
   camera: { fov: 30, distance: 4.4 },
 
@@ -19,15 +26,10 @@ export const HERO = {
     roughness: 0.52,
     aoStrength: 1.6, // >1 deepens the baked crevice shading
     scale: 0.92,
-  },
-
-  // Out-of-focus secondary protein, back right (like the reference).
-  echo: {
-    enabled: true,
-    color: "#f0a347",
-    translucency: "#ffb04a",
-    position: [2.6, 1.35, -5.5] as [number, number, number],
-    scale: 0.75,
+    // Surface texture: fine skin-like pores plus a broad, soft undulation.
+    detail: { scale: 7, strength: 0.5 }, // repeats per model radius, bump strength
+    macro: { scale: 1.6, strength: 0.25 },
+    clearcoat: 0.35, // smooth wet layer over the textured base
   },
 
   background: {
@@ -43,7 +45,9 @@ export const HERO = {
     fill: { color: "#ffe4f0", intensity: 1.3, position: [2.5, 1.2, 4] as [number, number, number] },
     rim: { color: "#9b78ff", intensity: 1.1, position: [3.2, -1.8, -1.2] as [number, number, number] },
     ambient: { color: "#7a5aa8", intensity: 0.25 },
-    envIntensity: 1.1,
+    envIntensity: 0.55,
+    hdriRotation: 0.6, // radians; turns the HDRI's softboxes around the subject
+    hdriTint: 0.6, // 0 = raw neutral HDRI, 1 = fully the purple studio dome
   },
 
   particles: { count: 22, color: "#6f8dff", intensity: 1.6 },
