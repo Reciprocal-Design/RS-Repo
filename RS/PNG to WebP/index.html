@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PNG/JPEG → WebP Converter</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<!-- PNG optimiser: UPNG.js (MIT, Photopea) needs pako loaded first. Vendored, see vendor/*-LICENSE.txt -->
+<script src="vendor/pako.min.js"></script>
+<script src="vendor/UPNG.js"></script>
 <style>
   :root{
     --ink:#15171a;
@@ -458,10 +461,10 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>PNG/JPEG → WebP Converter</h1>
+    <h1>PNG/JPEG → WebP Converter &amp; PNG Optimiser</h1>
     <div style="display:flex; align-items:baseline; gap:10px;">
       <span class="tag">Runs entirely in-browser · nothing uploaded</span>
-      <span class="version-tag" id="versionTag" title="Click 3× for changelog">v1.5</span>
+      <span class="version-tag" id="versionTag" title="Click 3× for changelog">v1.6</span>
     </div>
   </header>
 
@@ -477,6 +480,14 @@
 
   <div class="layout">
     <div class="left">
+      <div class="panel">
+        <h2>Output</h2>
+        <div class="radiogroup" id="formatGroup">
+          <label class="active"><input type="radio" name="format" value="webp" checked> WebP</label>
+          <label><input type="radio" name="format" value="png"> Optimised PNG</label>
+        </div>
+      </div>
+
       <div class="panel">
         <h2>Resize</h2>
         <div class="radiogroup" id="resizeGroup">
@@ -507,13 +518,25 @@
 
       <div class="panel">
         <h2>Quality</h2>
-        <div class="field">
+        <div class="field" id="webpQualityField">
           <label>WebP compression quality</label>
           <div class="slider-row">
             <input type="range" id="quality" min="1" max="100" value="82">
             <span class="slider-val" id="qualityVal">82</span>
           </div>
           <div class="hint">Lower = smaller files, more compression artifacts. 80–85 is a solid default for UI/web assets.</div>
+        </div>
+        <div class="field" id="pngColoursField" style="display:none;">
+          <label>PNG colours</label>
+          <select id="pngColours">
+            <option value="0">Lossless: full colour</option>
+            <option value="256" selected>256 colours</option>
+            <option value="128">128 colours</option>
+            <option value="64">64 colours</option>
+            <option value="32">32 colours</option>
+            <option value="16">16 colours</option>
+          </select>
+          <div class="hint">Lossless re-compresses without changing a pixel. Reducing colours (like TinyPNG) is lossy but usually shrinks files far more. Check gradients and soft shadows for banding. If a PNG you didn't resize comes out bigger than the original, the original is kept.</div>
         </div>
       </div>
 
@@ -602,6 +625,15 @@ let idCounter = 0;
 
 const CHANGELOG = [
   {
+    v: 'v1.6',
+    changes: [
+      'Added an Optimised PNG output: re-compresses PNGs (lossless, or reduced to 256–16 colours) and exports them as a .zip, using the same resize, naming and frame options as WebP.',
+      'Animated PNGs keep their frames when optimised at original size.',
+      'Cards show the size change after export, and the progress line keeps a total before → after summary.',
+      'Fixed a second export doing nothing: images already exported once can now be exported again (e.g. WebP, then PNG) without re-adding them.'
+    ]
+  },
+  {
     v: 'v1.5',
     changes: [
       'Added JPEG support — the tool now accepts .jpg/.jpeg alongside .png, and converts either to WebP.',
@@ -687,6 +719,7 @@ const clearBtn = document.getElementById('clearBtn');
 const convertBtn = document.getElementById('convertBtn');
 const qualitySlider = document.getElementById('quality');
 const qualityVal = document.getElementById('qualityVal');
+const pngColoursSel = document.getElementById('pngColours');
 const templateInput = document.getElementById('template');
 const caseModeSel = document.getElementById('caseMode');
 const indexStartInp = document.getElementById('indexStart');
@@ -780,8 +813,13 @@ function showLoadWarning(names) {
   banner.classList.add('show');
 }
 
+// Loaded images (including ones already exported once) that aren't dropped.
+function isExportable(f) {
+  return !f.excluded && (f.status === 'ready' || f.status === 'done');
+}
+
 function renderGrid() {
-  const includedCount = files.filter(f => !f.excluded && f.status === 'ready').length;
+  const includedCount = files.filter(isExportable).length;
   const loadingCount = files.filter(f => f.status === 'loading').length;
   fileCount.textContent = loadingCount
     ? `Loading ${files.length - loadingCount} of ${files.length}…`
@@ -801,12 +839,11 @@ function renderGrid() {
   files.forEach(f => {
     const card = document.createElement('div');
     card.className = 'card' + (f.excluded ? ' excluded' : '') + (f.status === 'error' ? ' error' : '');
-    let statusText = f.status;
-    if (f.excluded && f.status !== 'error') statusText = 'dropped';
+    const statusText = statusLabel(f);
     const dimsText = f.status === 'loading' ? 'loading…' : (f.status === 'error' ? 'failed to decode' : `${f.width}×${f.height}px`);
     card.innerHTML = `
       <button class="remove" data-id="${f.id}" title="Remove entirely">×</button>
-      <span class="status ${f.status === 'done' ? 'done' : ''} ${f.status === 'loading' ? 'loading' : ''} ${f.status === 'error' ? 'error' : ''}">${statusText}</span>
+      <span class="status ${f.status === 'done' ? 'done' : ''} ${f.status === 'loading' ? 'loading' : ''} ${f.status === 'error' ? 'error' : ''}" title="${sizeTitle(f)}">${statusText}</span>
       <div class="thumb">${f.status === 'loading' ? '' : `<img src="${f.url}" alt="">`}</div>
       <div class="meta">
         <div class="fname">${f.file.name}</div>
@@ -841,6 +878,7 @@ function renderGrid() {
 
 clearBtn.addEventListener('click', () => {
   files = [];
+  progressWrap.classList.remove('show');
   renderGrid();
 });
 
@@ -879,6 +917,22 @@ document.querySelectorAll('#resizeGroup input[name="resize"]').forEach(radio => 
 // --- Quality slider ---
 qualitySlider.addEventListener('input', () => {
   qualityVal.textContent = qualitySlider.value;
+});
+
+// --- Output format ---
+function getFormat() {
+  return document.querySelector('#formatGroup input[name="format"]:checked').value;
+}
+document.querySelectorAll('#formatGroup input[name="format"]').forEach(radio => {
+  radio.addEventListener('change', () => {
+    document.querySelectorAll('#formatGroup label').forEach(l => l.classList.remove('active'));
+    radio.closest('label').classList.add('active');
+    const png = getFormat() === 'png';
+    document.getElementById('webpQualityField').style.display = png ? 'none' : '';
+    document.getElementById('pngColoursField').style.display = png ? '' : 'none';
+    convertBtn.textContent = png ? 'Optimise & download .zip' : 'Convert & download .zip';
+    updatePreview();
+  });
 });
 
 // --- Naming ---
@@ -925,13 +979,38 @@ function buildFileName(baseName, width, height, index) {
 }
 
 function updatePreview() {
-  const sample = files.find(f => !f.excluded && f.status === 'ready');
+  const sample = files.find(isExportable);
   const baseName = sample ? sample.file.name.replace(/\.(png|jpe?g)$/i, '') : 'example-image';
   const w = sample ? sample.width : 1200;
   const h = sample ? sample.height : 800;
   const start = parseInt(indexStartInp.value) || 0;
   const name = buildFileName(baseName, w, h, start);
-  namePreview.innerHTML = escapeHtml(name) + '<span class="ext">.webp</span>';
+  namePreview.innerHTML = escapeHtml(name) + `<span class="ext">.${getFormat()}</span>`;
+}
+
+function formatBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1024 / 1024).toFixed(2) + ' MB';
+}
+
+function savingText(before, after) {
+  const pct = Math.round((after / before - 1) * 100);
+  return (pct > 0 ? '+' : pct < 0 ? '−' : '±') + Math.abs(pct) + '%';
+}
+
+function statusLabel(f) {
+  if (f.excluded && f.status !== 'error') return 'dropped';
+  if (f.status === 'done' && f.outSize != null) {
+    return f.keptOriginal ? 'kept original' : 'done ' + savingText(f.file.size, f.outSize);
+  }
+  return f.status;
+}
+
+function sizeTitle(f) {
+  if (f.status !== 'done' || f.outSize == null) return '';
+  const note = f.keptOriginal ? ' (optimised version was larger, original kept)' : '';
+  return `${formatBytes(f.file.size)} → ${formatBytes(f.outSize)}${note}`;
 }
 
 function escapeHtml(str) {
@@ -964,7 +1043,11 @@ function getTargetDims(origW, origH) {
   return { w: origW, h: origH };
 }
 
-function convertOne(f) {
+function convertOne(f, format) {
+  return format === 'png' ? optimisePng(f) : convertWebp(f);
+}
+
+function convertWebp(f) {
   return new Promise((resolve) => {
     const { w, h } = getTargetDims(f.width, f.height);
     const canvas = document.createElement('canvas');
@@ -979,15 +1062,54 @@ function convertOne(f) {
   });
 }
 
+async function optimisePng(f) {
+  const { w, h } = getTargetDims(f.width, f.height);
+  const colours = parseInt(pngColoursSel.value) || 0; // 0 = lossless
+  const isPng = f.file.type === 'image/png' || /\.png$/i.test(f.file.name);
+  const resized = w !== f.width || h !== f.height;
+
+  // At original size, decode the PNG bytes directly: exact pixels (no canvas
+  // premultiplied-alpha rounding) and every frame of an animated PNG.
+  let frames = null, delays;
+  if (isPng && !resized) {
+    try {
+      const decoded = UPNG.decode(await f.file.arrayBuffer());
+      if (decoded.width === w && decoded.height === h) {
+        frames = UPNG.toRGBA8(decoded);
+        if (frames.length > 1) delays = decoded.frames.map(fr => fr.delay);
+      }
+    } catch (e) {
+      frames = null; // fall back to the canvas path below
+    }
+  }
+  if (!frames) {
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(f.img, 0, 0, w, h);
+    frames = [ctx.getImageData(0, 0, w, h).data.buffer];
+  }
+
+  const png = UPNG.encode(frames, w, h, colours, delays);
+  // Never hand back something heavier than what was dropped in, unless it was resized.
+  if (isPng && !resized && png.byteLength >= f.file.size) {
+    return { blob: f.file, w, h, keptOriginal: true };
+  }
+  return { blob: new Blob([png], { type: 'image/png' }), w, h, keptOriginal: false };
+}
+
 // --- Convert & zip ---
 convertBtn.addEventListener('click', async () => {
-  const toExport = files.filter(f => !f.excluded && f.status === 'ready');
+  const toExport = files.filter(isExportable);
   if (!toExport.length) return;
   convertBtn.disabled = true;
   progressWrap.classList.add('show');
 
+  const format = getFormat();
   const zip = new JSZip();
   const usedNames = new Set();
+  let totalBefore = 0, totalAfter = 0;
   const indexStart = parseInt(indexStartInp.value) || 0;
 
   for (let i = 0; i < toExport.length; i++) {
@@ -995,7 +1117,9 @@ convertBtn.addEventListener('click', async () => {
     progressLabel.textContent = `Converting ${i + 1} / ${toExport.length}`;
     progressFill.style.width = Math.round(((i) / toExport.length) * 100) + '%';
 
-    const { blob, w, h } = await convertOne(f);
+    // Let the progress label paint before a (possibly slow) encode blocks the page.
+    await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+    const { blob, w, h, keptOriginal } = await convertOne(f, format);
     const baseName = f.file.name.replace(/\.(png|jpe?g)$/i, '');
     let finalName = buildFileName(baseName, w, h, indexStart + i);
 
@@ -1007,8 +1131,12 @@ convertBtn.addEventListener('click', async () => {
     }
     usedNames.add(candidate);
 
-    zip.file(candidate + '.webp', blob);
+    zip.file(`${candidate}.${format}`, blob);
     f.status = 'done';
+    f.outSize = blob.size;
+    f.keptOriginal = !!keptOriginal;
+    totalBefore += f.file.size;
+    totalAfter += blob.size;
     renderGridStatusOnly();
   }
 
@@ -1019,15 +1147,15 @@ convertBtn.addEventListener('click', async () => {
   const zipUrl = URL.createObjectURL(zipBlob);
   const a = document.createElement('a');
   a.href = zipUrl;
-  a.download = 'webp-export.zip';
+  a.download = format === 'png' ? 'png-optimised.zip' : 'webp-export.zip';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
 
-  setTimeout(() => {
-    progressWrap.classList.remove('show');
-    convertBtn.disabled = false;
-  }, 800);
+  // Leave the bar up with a before → after summary until the next export or clear.
+  progressLabel.textContent = `Done: ${toExport.length} file${toExport.length === 1 ? '' : 's'} · ${formatBytes(totalBefore)} → ${formatBytes(totalAfter)} (${savingText(totalBefore, totalAfter)})`;
+  setTimeout(() => URL.revokeObjectURL(zipUrl), 1000);
+  convertBtn.disabled = false;
 });
 
 function renderGridStatusOnly() {
@@ -1036,7 +1164,8 @@ function renderGridStatusOnly() {
     const f = files.find(f => f.id === id);
     if (!f) return;
     const el = card.querySelector('.status');
-    el.textContent = f.excluded ? 'dropped' : f.status;
+    el.textContent = statusLabel(f);
+    el.title = sizeTitle(f);
     el.classList.toggle('done', f.status === 'done' && !f.excluded);
   });
 }
