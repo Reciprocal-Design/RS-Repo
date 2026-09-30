@@ -11,7 +11,10 @@ An interactive, studio-lit 3D protein for a website hero, built with Next.js, Re
 ## Realism notes
 
 - **Environment:** a real studio HDRI plus softboxes, captured into the environment map. The tint dome is kept well off black, so no reflected direction goes dead.
-- **Imperfection:** baked AO, fine grain and broad undulation normal maps, plus albedo mottling and roughness variation (`protein.mottle`, `protein.roughnessVariation`), so no part of the surface is perfectly uniform.
+- **Imperfection and roughness:** baked AO, three triplanar normal layers (broad undulation, detail, very fine grain), albedo mottling and wide roughness variation, so the surface reads as matte and physically rough, never uniform.
+- **Soft edges and refraction:** light scatters back out toward the silhouettes (`protein.edgeSoftness`), and partial transmission (`protein.transmission`) lets thin ridges and edges refract what is behind them. Clear droplets drift around the protein and refract the backdrop, lines and far structures. The refraction pass renders at half resolution.
+- **Multiple lights:** key, back (translucency), fill, rim, a cool accent from low right and a soft top light, all on top of the HDRI. Two point lights sit where the strands enter and leave the protein and pulse with the signal, so the signalling lights the surface.
+- **Background depth:** slowly moving cloud-like variation and faint rays in the backdrop, volumetric light shafts, large far structures blended into the haze, then debris, droplets, bokeh and dust at different depths.
 - **Light:** everything is linear HDR, tone mapped once near the end of the post chain (ACES), with bloom, grain and vignette. Each signalling strand is a thin opaque core (crisp under depth of field) over a soft additive halo ribbon with a gaussian profile. The glow ramps up where the strands enter and leave the protein, starting inside it. The strands vary in width, brightness and speed.
 - **Art-directed, not simulated:** the strand paths, pulses and subsurface scattering are styled approximations, not physical solves. Tune them by eye.
 - **Motion:** all pointer response is damped. After a few seconds without input (and always on touch, which never hovers) the protein leans on its own. Reduced motion holds a still pose.

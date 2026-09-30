@@ -16,6 +16,10 @@ export type ProteinMaterialOptions = {
   macro: DetailLayer;
   mottle: number;
   roughnessVariation: number;
+  grain: DetailLayer; // a third, very fine normal layer for a matte, rough micro-surface
+  edgeSoftness: number; // how much light scatters out at the silhouettes (0..1)
+  // Partial transmission: thin ridges and edges let light and the background through, refracted.
+  transmission: { amount: number; thickness: number; ior: number; distance: number };
 };
 
 export type ProteinTextures = { detail: Texture; macro: Texture };
@@ -40,6 +44,7 @@ const SSS_DIRECT_DIFFUSE = /* glsl */ `{
  *  - baked AO from vertex colours, tinted toward the scatter colour so crevices glow rather than go black
  *  - triplanar normal maps in object space (the mesh has no UVs): fine grain + broad undulation
  *  - low specular and a sheen instead of a clearcoat, so reflections stay soft
+ *  - partial transmission with volume attenuation: refraction through thin ridges and soft edges
  *
  * `backLightDir` is shared so the scene can update it (view-space) every frame.
  */
@@ -57,6 +62,11 @@ export function createProteinMaterial(
     sheen: 0.8,
     sheenRoughness: 0.75,
     sheenColor: new Color(opts.rim),
+    transmission: opts.transmission.amount,
+    thickness: opts.transmission.thickness,
+    ior: opts.transmission.ior,
+    attenuationColor: new Color(opts.scatter),
+    attenuationDistance: opts.transmission.distance,
   });
 
   const uniforms = {
@@ -72,6 +82,8 @@ export function createProteinMaterial(
     uMacro: { value: [opts.macro.scale, opts.macro.strength] },
     uMottle: { value: opts.mottle },
     uRoughVar: { value: opts.roughnessVariation },
+    uGrain: { value: [opts.grain.scale, opts.grain.strength] },
+    uEdgeSoftness: { value: opts.edgeSoftness },
   };
 
   material.userData.uniforms = uniforms;
@@ -110,7 +122,8 @@ export function createProteinMaterial(
         uniform float uAOPower;
         uniform sampler2D uDetailMap, uMacroMap;
         uniform vec2 uDetail, uMacro; // (scale, strength)
-        uniform float uMottle, uRoughVar;
+        uniform float uMottle, uRoughVar, uEdgeSoftness;
+        uniform vec2 uGrain;
         uniform mat3 normalMatrix;
         varying vec3 vObjPos;
         varying vec3 vObjNormal;
@@ -162,7 +175,9 @@ export function createProteinMaterial(
           vec3 n0 = normalize(vObjNormal);
           vec3 n1 = triplanarNormal(uMacroMap, vObjPos, n0, uMacro.x, uMacro.y);
           vec3 n2 = triplanarNormal(uDetailMap, vObjPos, n1, uDetail.x, uDetail.y);
-          normal = normalize(normalMatrix * n2);
+          // Very fine grain, offset so it doesn't line up with the detail layer.
+          vec3 n3 = triplanarNormal(uDetailMap, vObjPos * 1.37 + 0.71, n2, uGrain.x, uGrain.y);
+          normal = normalize(normalMatrix * n3);
         }`,
       )
       .replace(
@@ -183,6 +198,11 @@ export function createProteinMaterial(
           float fresnel = pow(1.0 - saturate(dot(N, V)), 2.5);
           reflectedLight.indirectDiffuse += uRim * fresnel * 0.3 * bakedAO;
 
+          // Softer edges: toward the silhouette, light that entered elsewhere scatters back out,
+          // so edges lift toward the scatter colour instead of ending in a hard dark line.
+          float edge = pow(1.0 - saturate(dot(geometryNormal, V)), 1.6);
+          reflectedLight.indirectDiffuse += uScatter * edge * uEdgeSoftness * mix(0.4, 1.0, bakedAO);
+
           // Keep reflections out of the crevices.
           reflectedLight.indirectSpecular *= mix(0.1, 1.0, bakedAO);
           reflectedLight.directSpecular *= mix(0.3, 1.0, bakedAO);
@@ -201,4 +221,5 @@ export function blendProteinTheme(material: MeshPhysicalMaterial, t: number, col
   THEME.protein.translucency(u.uTranslucency.value, t);
   THEME.protein.rim(u.uRim.value, t);
   THEME.protein.rim(material.sheenColor, t);
+  THEME.protein.scatter(material.attenuationColor, t);
 }

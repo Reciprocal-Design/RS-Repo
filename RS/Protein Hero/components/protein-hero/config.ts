@@ -21,21 +21,25 @@ export const HERO = {
 
   // Diseased protein: cool, desaturated blue-grey, soft and velvety with light scattering under the surface.
   protein: {
-    color: "#72828f", // blue-grey albedo
+    color: "#637483", // blue-grey albedo
     scatter: "#6c8ba3", // colour light picks up travelling under the surface
     scatterWrap: [0.55, 0.7, 0.85] as [number, number, number], // how far each channel (r,g,b) bleeds past the shadow line
     translucency: "#9cc0d8", // backlight glowing through thin ridges
     rim: "#c9d8e4", // velvety sheen on silhouettes
-    roughness: 0.66,
+    roughness: 0.72,
     specular: 0.35, // 0..1, lower = softer, less mirror-like highlights
     aoStrength: 1.3, // >1 deepens the baked crevice shading
     scale: 0.92,
     // Surface texture: fine grain plus a broad, soft undulation.
-    detail: { scale: 11, strength: 0.3 }, // repeats per model radius, bump strength
+    detail: { scale: 11, strength: 0.42 }, // repeats per model radius, bump strength
     macro: { scale: 1.6, strength: 0.25 },
     // Imperfection: nothing in nature is uniform.
     mottle: 0.16, // albedo variation across the surface (0..1)
-    roughnessVariation: 0.35, // roughness varies by ± this fraction
+    roughnessVariation: 0.6, // roughness varies by ± this fraction
+    grain: { scale: 31, strength: 0.28 }, // very fine third normal layer: a matte, rough micro-surface
+    edgeSoftness: 0.22, // light scattering back out at the silhouettes (0..1)
+    // Partial transmission: refraction through thin ridges and edges (set amount 0 to disable).
+    transmission: { amount: 0.12, thickness: 0.9, ior: 1.36, distance: 0.6 },
   },
 
   background: {
@@ -49,11 +53,15 @@ export const HERO = {
 
   lights: {
     // Soft key from the top-front-left, like the reference.
-    key: { color: "#eef3f7", intensity: 2, position: [-2.2, 3, 2.6] as [number, number, number] },
+    key: { color: "#eef3f7", intensity: 1.8, position: [-2.2, 3, 2.6] as [number, number, number] },
     // Behind the subject: drives the translucency through thin ridges.
     back: { color: "#c3d6e6", intensity: 1.6, position: [-3, 2.6, -2.4] as [number, number, number] },
     fill: { color: "#cfdbe6", intensity: 0.7, position: [2.8, 0.4, 3.5] as [number, number, number] },
     rim: { color: "#6f8fae", intensity: 0.9, position: [3.2, -1.8, -1.2] as [number, number, number] },
+    // Cool accent from low front-right: a second, coloured source so the forms read in more than one light.
+    accent: { color: "#7fd3e6", intensity: 0.6, position: [2.6, -2.2, 2.2] as [number, number, number] },
+    // Soft overhead: separates the top of the forms from the background.
+    top: { color: "#e3ecf4", intensity: 0.5, position: [0.3, 4, 0.5] as [number, number, number] },
     ambient: { color: "#4f6072", intensity: 0.3 },
     envIntensity: 0.5,
     hdriRotation: 0.6, // radians; turns the HDRI's softboxes around the subject
@@ -69,10 +77,36 @@ export const HERO = {
     pulse: "#cfe8ff", // glow pulse colour
     pulseIntensity: 8, // HDR multiplier; bloom turns this into glow
     speed: 0.09, // pulse laps per second
+    lightIntensity: 2.5, // point lights where the strands enter and leave the protein, lighting its surface
   },
 
   // The ON/OFF switch sits on the protein's upper right; this is its anchor, relative to the protein centre.
   switchAnchor: [0.62, 0.66, 0.9] as [number, number, number],
+
+  // Background depth.
+  shafts: { count: 7, color: "#c9d9e6", intensity: 0.07 }, // volumetric light shafts from the upper left
+  far: {
+    color: "#4a5a69",
+    opacity: 0.35, // blended over the backdrop, so they only just emerge from the haze
+    items: [
+      { position: [-4.6, 2.2, -17] as [number, number, number], scale: 1.3, rotation: [0.4, 1, 0] as [number, number, number] },
+      { position: [5.4, -2, -19] as [number, number, number], scale: 1.6, rotation: [1.2, 2, 0.3] as [number, number, number] },
+    ],
+  },
+  // Clear refracting droplets around the subject.
+  droplets: {
+    roughness: 0.06,
+    ior: 1.33,
+    thickness: 0.35,
+    items: [
+      { position: [-0.95, 0.6, 0.9] as [number, number, number], scale: 0.12 },
+      { position: [1.75, -0.25, 0.6] as [number, number, number], scale: 0.1 },
+      { position: [-2.1, 0.3, -1.6] as [number, number, number], scale: 0.17 },
+      { position: [0.95, -1.05, 1.2] as [number, number, number], scale: 0.07 },
+      { position: [2.5, 0.95, -2] as [number, number, number], scale: 0.24 },
+      { position: [-0.25, 1.3, 0.6] as [number, number, number], scale: 0.055 },
+    ],
+  },
 
   // Environment artifacts.
   particles: { count: 22, color: "#8fa4b8", intensity: 1.1 }, // soft bokeh motes
@@ -100,6 +134,8 @@ export const HERO = {
     ambient: "#a9cbe2",
     particles: "#ffffff",
     dust: "#ffffff",
+    shafts: "#ffffff",
+    far: "#b4d1e5",
     bloomIntensity: 0.3, // the bright backdrop needs less bloom
     vignetteDarkness: 0.15,
     transitionSpeed: 1.6, // higher = faster change between looks

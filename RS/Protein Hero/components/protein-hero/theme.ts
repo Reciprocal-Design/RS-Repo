@@ -41,4 +41,6 @@ export const THEME = {
   ambient: colorPair(HERO.lights.ambient.color, off.ambient),
   particles: colorPair(HERO.particles.color, off.particles),
   dust: colorPair(HERO.dust.color, off.dust),
+  shafts: colorPair(HERO.shafts.color, off.shafts),
+  far: colorPair(HERO.far.color, off.far),
 };
