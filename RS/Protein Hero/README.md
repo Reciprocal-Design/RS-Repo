@@ -60,7 +60,18 @@ npm run convert -- source/your-model.obj public/models/protein.glb
 
 The converter welds the mesh, softens it (Taubin smoothing plus a small outward offset, so ridges round off and pinched crevices fill in), centres and normalises it, bakes ambient occlusion into vertex colours, and compresses it. `SMOOTH_ITERATIONS` and `SURFACE_OFFSET` at the top of `scripts/convert-obj.mjs` control how soft it gets.
 
+## Swap the HDRI or surface texture
+
+```bash
+npm run hdri -- path/to/your.exr public/hdri/studio.hdr 1024
+npm run surface-maps -- path/to/seamless-grunge.jpg 1024 3.5
+```
+
+- `hdri`: downsamples any EXR/HDR panorama to a 1k run-length-encoded `.hdr`, lifting near-black directions so reflections never go dead. The 4k source EXR (`source/hdri/`) is not committed because of its size (18.5 MB); it is Poly Haven's `studio_small_09`.
+- `surface-maps`: turns a seamless grayscale grunge/height texture (`source/textures/surface-grunge.jpg`) into a tileable normal map (bright = raised) and a levels-stretched grunge map. It blends in a 90°-rotated copy first so the texture's streaks don't line up into fibres on the model. The protein uses the normal map at two scales (`protein.detail`, `protein.grain`), and the grunge map to make specks rougher and slightly lighter (`protein.grunge`).
+
 ## Credits
 
-- `public/hdri/studio.exr`: a [Poly Haven](https://polyhaven.com/hdris) studio HDRI, CC0, via [@pmndrs/assets](https://github.com/pmndrs/assets).
-- `public/textures/*-normal.webp`: tileable normal maps from [emmelleppi/normal-maps](https://github.com/emmelleppi/normal-maps), CC0, via @pmndrs/assets.
+- `public/hdri/studio.hdr`: Poly Haven `studio_small_09` (CC0), supplied by the client, converted by `scripts/convert-hdri.mjs`.
+- `public/textures/surface-*.webp`: derived from the client-supplied surface texture.
+- `public/textures/macro-normal.webp`: a tileable normal map from [emmelleppi/normal-maps](https://github.com/emmelleppi/normal-maps), CC0, via [@pmndrs/assets](https://github.com/pmndrs/assets).
