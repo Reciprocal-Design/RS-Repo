@@ -11,7 +11,7 @@ An interactive, studio-lit 3D protein for a website hero, built with Next.js, Re
 ## Realism notes
 
 - **Environment:** a real studio HDRI plus softboxes, captured into the environment map. The tint dome is kept well off black, so no reflected direction goes dead.
-- **Imperfection and roughness:** baked AO, three triplanar normal layers (broad undulation, detail, very fine grain), albedo mottling and wide roughness variation, so the surface reads as matte and physically rough, never uniform.
+- **Imperfection and roughness:** baked AO, a broad triplanar undulation, albedo mottling and wide roughness variation, so the surface reads as soft and matte, never uniform.
 - **Soft edges and refraction:** light scatters back out toward the silhouettes (`protein.edgeSoftness`), and partial transmission (`protein.transmission`) lets thin ridges and edges refract what is behind them. Clear droplets drift around the protein and refract the backdrop, lines and far structures. The refraction pass renders at half resolution.
 - **Multiple lights:** key, back (translucency), fill, rim, a cool accent from low right and a soft top light, all on top of the HDRI. Two point lights sit where the strands enter and leave the protein and swell as pulses arrive.
 - **Signal meets protein:** each pulse's position is mirrored on the CPU (same formula as the line shader) and passed to the protein materials. As a pulse approaches, the surface around it glows as if the light were entering; inside, the glow shows through as it crosses, then fades as it exits. Debris near a strand catches it too. Tune with `lines.surfaceGlow` and `lines.surfaceGlowRadius`.
@@ -60,18 +60,16 @@ npm run convert -- source/your-model.obj public/models/protein.glb
 
 The converter welds the mesh, softens it (Taubin smoothing plus a small outward offset, so ridges round off and pinched crevices fill in), centres and normalises it, bakes ambient occlusion into vertex colours, and compresses it. `SMOOTH_ITERATIONS` and `SURFACE_OFFSET` at the top of `scripts/convert-obj.mjs` control how soft it gets.
 
-## Swap the HDRI or surface texture
+## Swap or rotate the HDRI
 
 ```bash
 npm run hdri -- path/to/your.exr public/hdri/studio.hdr 1024
-npm run surface-maps -- path/to/seamless-grunge.jpg 1024 3.5
 ```
 
 - `hdri`: downsamples any EXR/HDR panorama to a 1k run-length-encoded `.hdr`, lifting near-black directions so reflections never go dead. The 4k source EXR (`source/hdri/`) is not committed because of its size (18.5 MB); it is Poly Haven's `studio_small_09`.
-- `surface-maps`: turns a seamless grayscale grunge/height texture (`source/textures/surface-grunge.jpg`) into a tileable normal map (bright = raised) and a levels-stretched grunge map. It blends in a 90°-rotated copy first so the texture's streaks don't line up into fibres on the model. The protein uses the normal map at two scales (`protein.detail`, `protein.grain`), and the grunge map to make specks rougher and slightly lighter (`protein.grunge`).
+- `lights.hdriRotation` in `config.ts` turns the map (Euler x, y, z in radians). It is set so the HDRI's brightest softbox sits top-front-left, agreeing with the key light.
 
 ## Credits
 
 - `public/hdri/studio.hdr`: Poly Haven `studio_small_09` (CC0), supplied by the client, converted by `scripts/convert-hdri.mjs`.
-- `public/textures/surface-*.webp`: derived from the client-supplied surface texture.
 - `public/textures/macro-normal.webp`: a tileable normal map from [emmelleppi/normal-maps](https://github.com/emmelleppi/normal-maps), CC0, via [@pmndrs/assets](https://github.com/pmndrs/assets).
