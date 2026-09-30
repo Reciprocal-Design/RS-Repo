@@ -161,3 +161,8 @@ input[type=text] {
 .btn.wide { width: 100%; margin-top: 10px; }
 .hint.error { color: #ff6b6b; }
 .hint.ok { color: #6fdc9a; }
+
+/* Video export progress */
+.progress { height: 6px; border-radius: 3px; background: var(--line, rgba(255,255,255,0.12)); overflow: hidden; align-self: center; }
+.progress i { display: block; height: 100%; background: var(--accent); transition: width 0.15s linear; }
+.row .hint { margin: 0; align-self: center; font-variant-numeric: tabular-nums; }

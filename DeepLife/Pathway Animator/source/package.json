@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "mediabunny": "^1.61.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "simplex-noise": "^4.0.3",

@@ -19,6 +19,15 @@ The built files one level up are what GitHub Pages serves, so rebuild and commit
 - `src/render/` display list + Canvas and SVG backends; `render(ctx, scene, t)` is the single canvas entry point
 - `src/ui/` React app, store and exporters
 
+## Video export
+
+"Export → Video" renders the animation frame by frame (not a screen recording, so every frame is exact at
+any size) and encodes it with the browser's own WebCodecs encoder: MP4 (H.264) or WebM (VP9), ×0.5/×1/×2
+the canvas size (up to 4096 px a side), 24–60 fps, 1–20 loops. Frame times are spread exactly across whole
+loops, so a looping or continuous scene exports as a seamlessly looping video. Where the browser has no
+H.264 encoder (some Firefox and Linux builds), MP4 falls back to WebM. The muxer (Mediabunny) is loaded
+only when a video is exported. No transparency: the background is included.
+
 ## Continuous motion
 
 "Animation → Continuous" makes the signal never stop: every event repeats with one period, so the end of
