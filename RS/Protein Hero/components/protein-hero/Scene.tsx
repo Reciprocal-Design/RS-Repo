@@ -8,6 +8,9 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { BloomEffect, VignetteEffect } from "postprocessing";
 import {
   ACESFilmicToneMapping,
+  Euler,
+  Group,
+  Matrix4,
   AgXToneMapping,
   AmbientLight,
   BackSide,
@@ -42,13 +45,44 @@ type SceneProps = {
 
 const TONE_MAPPING = { ACES_FILMIC: ACESFilmicToneMapping, AGX: AgXToneMapping, NEUTRAL: NeutralToneMapping };
 const backLight = new Vector3(...HERO.lights.back.position).normalize();
+const Y_AXIS = new Vector3(0, 1, 0);
 
-/** Keeps the translucency light direction in view space as the camera/scene changes. */
-function BackLightTracker({ dir }: { dir: { value: Vector3 } }) {
+/** Shared orbit angle of the light rig (radians about the vertical axis). */
+export type LightRigState = { angle: number };
+
+/** Keeps the translucency light direction in view space as the rig orbits and the camera moves. */
+function BackLightTracker({ dir, rig }: { dir: { value: Vector3 }; rig: LightRigState }) {
   useFrame(({ camera }) => {
-    dir.value.copy(backLight).transformDirection(camera.matrixWorldInverse);
+    dir.value.copy(backLight).applyAxisAngle(Y_AXIS, rig.angle).transformDirection(camera.matrixWorldInverse);
   });
   return null;
+}
+
+/**
+ * The orbiting light rig: advances the angle, turns the rotating lights, and turns the environment
+ * map with them. Rotating the environment is just a uniform (no re-render). The HDRI's base
+ * orientation puts its main softbox on the key light; the orbit then carries both around together.
+ */
+function LightRig({ rig, animate }: { rig: LightRigState; animate: boolean }) {
+  const { lights } = HERO;
+  const group = useRef<Group>(null);
+  const scene = useThree((s) => s.scene);
+  const tmp = useMemo(() => ({ base: new Matrix4().makeRotationFromEuler(new Euler(...lights.hdriRotation)), m: new Matrix4() }), [lights.hdriRotation]);
+  useFrame((_, dt) => {
+    if (animate) rig.angle = (rig.angle + Math.min(dt, 0.1) * lights.orbitSpeed) % (Math.PI * 2);
+    if (group.current) group.current.rotation.y = rig.angle;
+    // World-space orbit applied after the base orientation: R = Ry(angle) · R(base).
+    tmp.m.makeRotationY(rig.angle).multiply(tmp.base);
+    scene.environmentRotation.setFromRotationMatrix(tmp.m);
+  });
+  return (
+    <group ref={group}>
+      <directionalLight color={lights.key.color} intensity={lights.key.intensity} position={lights.key.position} />
+      <directionalLight color={lights.back.color} intensity={lights.back.intensity} position={lights.back.position} />
+      <directionalLight color={lights.rim.color} intensity={lights.rim.intensity} position={lights.rim.position} />
+      <directionalLight color={lights.accent.color} intensity={lights.accent.intensity} position={lights.accent.position} />
+    </group>
+  );
 }
 
 /** Pulls the camera back on tall screens so the subject always fits the width. */
@@ -104,7 +138,6 @@ function StudioEnvironment({ theme, live }: { theme: ThemeState; live: boolean }
       resolution={512}
       frames={live ? Infinity : 1}
       environmentIntensity={lights.envIntensity}
-      environmentRotation={lights.hdriRotation}
     >
       {/* Translucent dome over the HDRI: keeps its detail but shifts it into the scene's palette. */}
       <mesh scale={50}>
@@ -171,6 +204,7 @@ export default function Scene({ pointer, eventSource, switchAnchor, signalOn, ac
   const [dpr, setDpr] = useState(1.75);
   const [lowPower, setLowPower] = useState(false);
   const backLightDir = useMemo(() => ({ value: new Vector3() }), []);
+  const rig = useMemo<LightRigState>(() => ({ angle: 0 }), []);
   const { lights, post, camera } = HERO;
   const animate = !reducedMotion;
 
@@ -214,17 +248,15 @@ export default function Scene({ pointer, eventSource, switchAnchor, signalOn, ac
         onIncline={() => setDpr(1.75)}
       />
       <Rig />
-      <BackLightTracker dir={backLightDir} />
+      <LightRig rig={rig} animate={animate} />
+      <BackLightTracker dir={backLightDir} rig={rig} />
 
       <ThemeDriver theme={theme} instant={reducedMotion} ambient={ambient} bloom={bloom} vignette={vignette} />
-      <Backdrop pointer={pointer} theme={theme} />
+      <Backdrop pointer={pointer} theme={theme} rig={rig} />
 
       <ambientLight ref={ambient} color={signalOn ? lights.ambient.color : HERO.off.ambient} intensity={lights.ambient.intensity} />
-      <directionalLight color={lights.key.color} intensity={lights.key.intensity} position={lights.key.position} />
-      <directionalLight color={lights.back.color} intensity={lights.back.intensity} position={lights.back.position} />
+      {/* Static lights; key, back, rim and accent orbit in <LightRig>. */}
       <directionalLight color={lights.fill.color} intensity={lights.fill.intensity} position={lights.fill.position} />
-      <directionalLight color={lights.rim.color} intensity={lights.rim.intensity} position={lights.rim.position} />
-      <directionalLight color={lights.accent.color} intensity={lights.accent.intensity} position={lights.accent.position} />
       <directionalLight color={lights.top.color} intensity={lights.top.intensity} position={lights.top.position} />
 
       <Suspense fallback={null}>

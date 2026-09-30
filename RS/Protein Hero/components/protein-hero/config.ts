@@ -30,6 +30,16 @@ export const HERO = {
     aoStrength: 1.3, // >1 deepens the baked crevice shading
     scale: 0.92,
     // A broad, soft undulation so the surface isn't geometrically perfect.
+    // Procedural 3D relief, generated in the shader (no texture, so no seams or streaks):
+    // lumps, smaller knobs and a fine grain, each [scale in repeats per model radius, strength].
+    bumps: {
+      octaves: [
+        [7, 0.095],
+        [17, 0.055],
+        [46, 0.022],
+      ] as [number, number][],
+      shade: 0.18, // valleys slightly darker, peaks slightly lighter
+    },
     macro: { scale: 1.6, strength: 0.25 },
     // Imperfection: nothing in nature is uniform.
     mottle: 0.16, // albedo variation across the surface (0..1)
@@ -64,6 +74,9 @@ export const HERO = {
     // Euler (x, y, z) in radians. Turns the HDRI so its brightest softbox sits top-front-left,
     // agreeing with the key light (solved from the map's brightest region).
     hdriRotation: [-1.41, -1.47, 0] as [number, number, number],
+    // The light rig (HDRI + key, back, rim and accent lights) slowly orbits the subject, so the
+    // direction of light keeps changing. Fill, top and ambient stay put so it never goes dark.
+    orbitSpeed: 0.12, // radians per second (one turn ≈ 52 s); 0 to hold still
     hdriTint: 0.6, // 0 = raw neutral HDRI, 1 = fully the slate studio dome
     envDome: "#3a4959", // dome tint colour; kept well off black so no reflected direction goes dead
   },

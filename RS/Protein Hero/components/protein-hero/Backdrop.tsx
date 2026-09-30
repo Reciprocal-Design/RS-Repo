@@ -2,13 +2,17 @@
 
 import { useFrame, useThree } from "@react-three/fiber";
 import { useMemo } from "react";
-import { Color, ShaderMaterial, Vector2 } from "three";
+import { Color, ShaderMaterial, Vector2, Vector3 } from "three";
 import { HERO } from "./config";
 import { THEME, type ThemeState } from "./theme";
 import type { PointerState } from "./usePointer";
 
 // Screen-space studio backdrop: purple falloff with a warm key glow, drawn behind everything.
-export function Backdrop({ pointer, theme }: { pointer: PointerState; theme: ThemeState }) {
+const KEY = new Vector3(...HERO.lights.key.position).normalize();
+const Y_AXIS = new Vector3(0, 1, 0);
+
+export function Backdrop({ pointer, theme, rig }: { pointer: PointerState; theme: ThemeState; rig: { angle: number } }) {
+  const key = useMemo(() => new Vector3(), []);
   const size = useThree((s) => s.size);
   const bg = HERO.background;
 
@@ -99,6 +103,10 @@ export function Backdrop({ pointer, theme }: { pointer: PointerState; theme: The
     material.uniforms.uTime.value = state.clock.elapsedTime;
     material.uniforms.uAspect.value = size.width / size.height;
     material.uniforms.uPointer.value.set(pointer.smoothX, pointer.smoothY);
+    // The glow follows the orbiting key light across the frame: it sits on the side the light
+    // comes from, and passes behind the subject when the key swings round behind it.
+    key.copy(KEY).applyAxisAngle(Y_AXIS, rig.angle);
+    material.uniforms.uGlowCenter.value.set(bg.glowCenter[0] + (key.x - KEY.x) * 0.32, bg.glowCenter[1]);
     const u = material.uniforms, t = theme.mix;
     THEME.background.deep(u.uDeep.value, t);
     THEME.background.mid(u.uMid.value, t);

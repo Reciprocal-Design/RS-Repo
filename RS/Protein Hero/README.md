@@ -11,7 +11,7 @@ An interactive, studio-lit 3D protein for a website hero, built with Next.js, Re
 ## Realism notes
 
 - **Environment:** a real studio HDRI plus softboxes, captured into the environment map. The tint dome is kept well off black, so no reflected direction goes dead.
-- **Imperfection and roughness:** baked AO, a broad triplanar undulation, albedo mottling and wide roughness variation, so the surface reads as soft and matte, never uniform.
+- **Imperfection and roughness:** baked AO, a broad triplanar undulation, and procedural 3D relief generated in the shader (simplex noise at three scales: lumps, knobs, fine grain; `protein.bumps`), plus albedo mottling and wide roughness variation. No texture is involved, so there are no seams or streaks, and the relief moves with the protein. Rim, edge and translucency effects use the smooth normal so the relief doesn't light up as bright veins.
 - **Soft edges and refraction:** light scatters back out toward the silhouettes (`protein.edgeSoftness`), and partial transmission (`protein.transmission`) lets thin ridges and edges refract what is behind them. Clear droplets drift around the protein and refract the backdrop, lines and far structures. The refraction pass renders at half resolution.
 - **Multiple lights:** key, back (translucency), fill, rim, a cool accent from low right and a soft top light, all on top of the HDRI. Two point lights sit where the strands enter and leave the protein and swell as pulses arrive.
 - **Signal meets protein:** each pulse's position is mirrored on the CPU (same formula as the line shader) and passed to the protein materials. As a pulse approaches, the surface around it glows as if the light were entering; inside, the glow shows through as it crosses, then fades as it exits. Debris near a strand catches it too. Tune with `lines.surfaceGlow` and `lines.surfaceGlowRadius`.
@@ -67,7 +67,8 @@ npm run hdri -- path/to/your.exr public/hdri/studio.hdr 1024
 ```
 
 - `hdri`: downsamples any EXR/HDR panorama to a 1k run-length-encoded `.hdr`, lifting near-black directions so reflections never go dead. The 4k source EXR (`source/hdri/`) is not committed because of its size (18.5 MB); it is Poly Haven's `studio_small_09`.
-- `lights.hdriRotation` in `config.ts` turns the map (Euler x, y, z in radians). It is set so the HDRI's brightest softbox sits top-front-left, agreeing with the key light.
+- `lights.hdriRotation` in `config.ts` sets the map's base orientation (Euler x, y, z in radians), so its brightest softbox sits on the key light.
+- The whole light rig then orbits slowly (`lights.orbitSpeed`, one turn ≈ 52 s): the HDRI, key, back, rim and accent lights turn together, so shading and reflections always agree and the direction of light keeps changing. Fill, top and ambient stay put so the protein never goes dark. The translucency backlight and the backdrop glow follow the orbit. Rotating the environment is only a uniform change, so it costs nothing. It holds still under reduced motion.
 
 ## Credits
 
