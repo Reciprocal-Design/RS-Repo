@@ -5,17 +5,22 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Bloom, DepthOfField, EffectComposer, Noise, ToneMapping, Vignette } from "@react-three/postprocessing";
 import { BlendFunction, ToneMappingMode } from "postprocessing";
 import { Suspense, useMemo, useState } from "react";
-import { ACESFilmicToneMapping, AgXToneMapping, BackSide, NeutralToneMapping, Vector3 } from "three";
+import { ACESFilmicToneMapping, AgXToneMapping, BackSide, MathUtils, NeutralToneMapping, Vector3 } from "three";
 import { Backdrop } from "./Backdrop";
 import { HERO } from "./config";
 import { Particles } from "./Particles";
 import { Debris, Dust } from "./Artifacts";
-import { Protein, useSurfaceTextures } from "./Protein";
+import { Protein, useSubjectOffset, useSurfaceTextures } from "./Protein";
+import { SignalLines } from "./SignalLines";
 import type { PointerState } from "./usePointer";
 
 type SceneProps = {
   pointer: PointerState;
   eventSource: React.RefObject<HTMLElement | null>;
+  /** Element pinned to the protein on screen (the switch). */
+  switchAnchor: React.RefObject<HTMLElement | null>;
+  /** Signalling on/off: drives the glow pulses along the lines. */
+  signalOn: boolean;
   active: boolean;
   reducedMotion: boolean;
   onReady: () => void;
@@ -70,12 +75,42 @@ function StudioEnvironment() {
   );
 }
 
+/** The strands, following the protein's place in the frame (but not its rotation). */
+function Lines({ on, animate }: { on: boolean; animate: boolean }) {
+  const [ox, oy] = useSubjectOffset();
+  return (
+    <group position={[ox, oy, 0]} scale={HERO.protein.scale}>
+      <SignalLines on={on} animate={animate} />
+    </group>
+  );
+}
+
+/** Projects the switch anchor to screen space each frame and moves the DOM element there. */
+function SwitchTracker({ target, pointer }: { target: React.RefObject<HTMLElement | null>; pointer: PointerState }) {
+  const [ox, oy] = useSubjectOffset();
+  const v = useMemo(() => new Vector3(), []);
+  useFrame(({ camera, size }) => {
+    const el = target.current;
+    if (!el) return;
+    const [ax, ay, az] = HERO.switchAnchor;
+    const s = HERO.protein.scale;
+    const { parallax } = HERO.interaction;
+    v.set(ox + ax * s + pointer.smoothX * parallax, oy + ay * s + pointer.smoothY * parallax, az * s).project(camera);
+    // Keep the whole switch on screen, with a 16px margin.
+    const hw = el.offsetWidth / 2 + 16, hh = el.offsetHeight / 2 + 16;
+    const x = MathUtils.clamp(((v.x + 1) / 2) * size.width, hw, size.width - hw);
+    const y = MathUtils.clamp(((1 - v.y) / 2) * size.height, hh, size.height - hh);
+    el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -50%)`;
+  });
+  return null;
+}
+
 function SurfaceDebris({ backLightDir, animate }: { backLightDir: { value: Vector3 }; animate: boolean }) {
   const textures = useSurfaceTextures();
   return <Debris textures={textures} backLightDir={backLightDir} animate={animate} />;
 }
 
-export default function Scene({ pointer, eventSource, active, reducedMotion, onReady }: SceneProps) {
+export default function Scene({ pointer, eventSource, switchAnchor, signalOn, active, reducedMotion, onReady }: SceneProps) {
   const [dpr, setDpr] = useState(1.75);
   const [lowPower, setLowPower] = useState(false);
   const backLightDir = useMemo(() => ({ value: new Vector3() }), []);
@@ -118,6 +153,8 @@ export default function Scene({ pointer, eventSource, active, reducedMotion, onR
         <Protein pointer={pointer} backLightDir={backLightDir} animate={animate} onReady={onReady} />
         <SurfaceDebris backLightDir={backLightDir} animate={animate} />
       </Suspense>
+      <Lines on={signalOn} animate={animate} />
+      <SwitchTracker target={switchAnchor} pointer={pointer} />
       <Particles animate={animate} />
       <Dust animate={animate} />
       <fogExp2 attach="fog" args={[HERO.background.mid, HERO.background.fog]} />

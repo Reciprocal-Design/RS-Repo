@@ -57,6 +57,18 @@ export const HERO = {
     hdriTint: 0.6, // 0 = raw neutral HDRI, 1 = fully the slate studio dome
   },
 
+  // Signalling strands: three lines merging through the protein, with travelling glow pulses.
+  lines: {
+    radius: 0.005, // tube thickness, in model radii
+    base: "#5f7387", // resting line colour
+    pulse: "#cfe8ff", // glow pulse colour
+    pulseIntensity: 8, // HDR multiplier; bloom turns this into glow
+    speed: 0.09, // pulse laps per second
+  },
+
+  // The ON/OFF switch sits on the protein's upper right; this is its anchor, relative to the protein centre.
+  switchAnchor: [0.62, 0.66, 0.9] as [number, number, number],
+
   // Environment artifacts.
   particles: { count: 22, color: "#8fa4b8", intensity: 1.1 }, // soft bokeh motes
   debris: { count: 11, color: "#4d5a66" }, // small drifting fragments

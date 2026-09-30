@@ -26,6 +26,8 @@ export default function ProteinHero({
   children,
 }: Props) {
   const root = useRef<HTMLElement>(null);
+  const switchAnchor = useRef<HTMLDivElement>(null);
+  const [signalOn, setSignalOn] = useState(true);
   const pointer = usePointer(root);
   const [ready, setReady] = useState(false);
   const [active, setActive] = useState(true);
@@ -52,7 +54,36 @@ export default function ProteinHero({
   return (
     <section ref={root} className={styles.hero} data-ready={ready || undefined}>
       <div className={styles.canvas} aria-hidden="true">
-        <Scene pointer={pointer.current} eventSource={root} active={active} reducedMotion={reducedMotion} onReady={onReady} />
+        <Scene
+          pointer={pointer.current}
+          eventSource={root}
+          switchAnchor={switchAnchor}
+          signalOn={signalOn}
+          active={active}
+          reducedMotion={reducedMotion}
+          onReady={onReady}
+        />
+      </div>
+
+      {/* Pinned to the protein by the scene each frame. */}
+      <div ref={switchAnchor} className={styles.switchAnchor}>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={signalOn}
+          aria-label="Signalling"
+          className={styles.switch}
+          data-on={signalOn || undefined}
+          onClick={() => setSignalOn((on) => !on)}
+        >
+          <span className={styles.knob} aria-hidden="true" />
+          <span className={styles.label} data-active={signalOn || undefined}>
+            ON
+          </span>
+          <span className={styles.label} data-active={!signalOn || undefined}>
+            OFF
+          </span>
+        </button>
       </div>
 
       <div className={styles.content}>

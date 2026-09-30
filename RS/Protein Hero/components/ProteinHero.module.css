@@ -80,6 +80,85 @@
   background: rgba(255, 255, 255, 0.24);
 }
 
+/* Frosted-glass ON/OFF switch, positioned over the protein by the scene. */
+.switchAnchor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  will-change: transform;
+  opacity: 0;
+  transition: opacity 1.4s ease 0.6s;
+}
+
+.hero[data-ready] .switchAnchor {
+  opacity: 1;
+}
+
+.switch {
+  --pad: clamp(5px, 0.5vw, 8px);
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: clamp(150px, 15vw, 250px);
+  height: clamp(52px, 5.2vw, 84px);
+  padding: var(--pad);
+  border-radius: clamp(16px, 1.5vw, 24px);
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(232, 237, 242, 0.74));
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  box-shadow:
+    0 24px 60px rgba(6, 12, 20, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  color: #97a2ae;
+  font: 300 clamp(1.25rem, 2.1vw, 2.05rem) / 1 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.switch:focus-visible {
+  outline: 2px solid #cfe8ff;
+  outline-offset: 4px;
+}
+
+.knob {
+  position: absolute;
+  top: var(--pad);
+  bottom: var(--pad);
+  left: var(--pad);
+  width: calc(50% - var(--pad));
+  border-radius: clamp(11px, 1.05vw, 16px);
+  background: #fff;
+  box-shadow:
+    0 10px 22px rgba(18, 28, 42, 0.24),
+    0 1px 2px rgba(18, 28, 42, 0.16);
+  transition: transform 0.55s cubic-bezier(0.65, 0, 0.25, 1);
+}
+
+.switch:not([data-on]) .knob {
+  transform: translateX(100%);
+}
+
+.label {
+  position: relative;
+  display: grid;
+  place-items: center;
+  transition: color 0.4s ease;
+}
+
+.label[data-active] {
+  color: #0f1b33;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .knob,
+  .label {
+    transition: none;
+  }
+}
+
 .hint {
   position: absolute;
   right: clamp(16px, 4vw, 48px);
@@ -93,7 +172,86 @@
 }
 
 @media (hover: none) {
-  .hint {
+  /* Frosted-glass ON/OFF switch, positioned over the protein by the scene. */
+.switchAnchor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  will-change: transform;
+  opacity: 0;
+  transition: opacity 1.4s ease 0.6s;
+}
+
+.hero[data-ready] .switchAnchor {
+  opacity: 1;
+}
+
+.switch {
+  --pad: clamp(5px, 0.5vw, 8px);
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: clamp(150px, 15vw, 250px);
+  height: clamp(52px, 5.2vw, 84px);
+  padding: var(--pad);
+  border-radius: clamp(16px, 1.5vw, 24px);
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(232, 237, 242, 0.74));
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  box-shadow:
+    0 24px 60px rgba(6, 12, 20, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  color: #97a2ae;
+  font: 300 clamp(1.25rem, 2.1vw, 2.05rem) / 1 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.switch:focus-visible {
+  outline: 2px solid #cfe8ff;
+  outline-offset: 4px;
+}
+
+.knob {
+  position: absolute;
+  top: var(--pad);
+  bottom: var(--pad);
+  left: var(--pad);
+  width: calc(50% - var(--pad));
+  border-radius: clamp(11px, 1.05vw, 16px);
+  background: #fff;
+  box-shadow:
+    0 10px 22px rgba(18, 28, 42, 0.24),
+    0 1px 2px rgba(18, 28, 42, 0.16);
+  transition: transform 0.55s cubic-bezier(0.65, 0, 0.25, 1);
+}
+
+.switch:not([data-on]) .knob {
+  transform: translateX(100%);
+}
+
+.label {
+  position: relative;
+  display: grid;
+  place-items: center;
+  transition: color 0.4s ease;
+}
+
+.label[data-active] {
+  color: #0f1b33;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .knob,
+  .label {
+    transition: none;
+  }
+}
+
+.hint {
     display: none;
   }
 }
