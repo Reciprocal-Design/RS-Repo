@@ -5,7 +5,8 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import { BufferGeometry, Group, MathUtils, Mesh, NoColorSpace, Quaternion, RepeatWrapping, Vector3 } from "three";
 import { HERO } from "./config";
-import { createProteinMaterial } from "./proteinMaterial";
+import { blendProteinTheme, createProteinMaterial } from "./proteinMaterial";
+import type { ThemeState } from "./theme";
 import type { PointerState } from "./usePointer";
 
 const X = new Vector3(1, 0, 0);
@@ -42,13 +43,14 @@ export function useSurfaceTextures() {
 
 type Props = {
   pointer: PointerState;
+  theme: ThemeState;
   backLightDir: { value: Vector3 };
   animate: boolean;
   onReady?: () => void;
 };
 
 /** The hero subject: free drag-to-spin with inertia, a gentle lean toward the cursor, and a slow idle turn. */
-export function Protein({ pointer, backLightDir, animate, onReady }: Props) {
+export function Protein({ pointer, theme, backLightDir, animate, onReady }: Props) {
   const geometries = useProteinGeometries(HERO.modelUrl);
   const textures = useSurfaceTextures();
   const material = useMemo(() => createProteinMaterial(HERO.protein, textures, backLightDir), [textures, backLightDir]);
@@ -62,6 +64,7 @@ export function Protein({ pointer, backLightDir, animate, onReady }: Props) {
 
   useFrame((_, dt) => {
     if (!lean.current || !spin.current) return;
+    blendProteinTheme(material, theme.mix);
     const { tilt, parallax, dragSpeed, inertia, autoRotate } = HERO.interaction;
     dt = Math.min(dt, 1 / 20);
 

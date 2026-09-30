@@ -74,6 +74,32 @@ export const HERO = {
   debris: { count: 11, color: "#4d5a66" }, // small drifting fragments
   dust: { count: 600, color: "#a9b8c6", opacity: 0.8 }, // fine suspended specks
 
+  // The OFF look: the switch flips the scene to a light blue protein in a light environment,
+  // and the signalling lines disappear. Everything above is the ON (dark, diseased) look.
+  off: {
+    protein: {
+      color: "#8fcbea", // light blue
+      scatter: "#58b4e0",
+      translucency: "#c4ebfb",
+      rim: "#eaf8fe",
+    },
+    debris: "#86b7d3",
+    background: {
+      deep: "#9dbdd6",
+      mid: "#c9e0f0",
+      haze: "#e8f5fc",
+      glow: "#f6fcff",
+    },
+    backgroundBoost: 1.2, // brightens the backdrop past what tone mapping would otherwise allow
+    envDome: "#b4d2e7",
+    ambient: "#a9cbe2",
+    particles: "#ffffff",
+    dust: "#ffffff",
+    bloomIntensity: 0.3, // the bright backdrop needs less bloom
+    vignetteDarkness: 0.15,
+    transitionSpeed: 1.6, // higher = faster change between looks
+  },
+
   interaction: {
     tilt: [0.18, 0.32] as [number, number], // max radians the model leans toward the cursor (x, y)
     parallax: 0.06, // how far the model drifts toward the cursor

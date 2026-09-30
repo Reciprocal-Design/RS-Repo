@@ -52,7 +52,7 @@ export default function ProteinHero({
   }, []);
 
   return (
-    <section ref={root} className={styles.hero} data-ready={ready || undefined}>
+    <section ref={root} className={styles.hero} data-ready={ready || undefined} data-signal={signalOn ? "on" : "off"}>
       <div className={styles.canvas} aria-hidden="true">
         <Scene
           pointer={pointer.current}

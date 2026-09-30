@@ -1,5 +1,13 @@
 .hero {
+  /* Text colours for the dark ON look; the light OFF look overrides them below. */
+  --fg: #ffffff;
+  --fg-shadow: rgba(10, 16, 24, 0.4);
+  --button-bg: rgba(255, 255, 255, 0.14);
+  --button-bg-hover: rgba(255, 255, 255, 0.24);
+  --button-border: rgba(255, 255, 255, 0.35);
   position: relative;
+  color: var(--fg);
+  transition: color 1.4s ease;
   height: 100svh;
   min-height: 560px;
   overflow: hidden;
@@ -12,6 +20,14 @@
   background:
     radial-gradient(ellipse 45% 50% at 46% 40%, #9aa9b4 0%, rgba(154, 169, 180, 0) 70%),
     radial-gradient(ellipse 60% 70% at 50% 50%, #34424f 0%, #10161e 100%);
+}
+
+.hero[data-signal="off"] {
+  --fg: #0f1b33;
+  --fg-shadow: rgba(255, 255, 255, 0);
+  --button-bg: rgba(255, 255, 255, 0.45);
+  --button-bg-hover: rgba(255, 255, 255, 0.7);
+  --button-border: rgba(15, 27, 51, 0.25);
 }
 
 .hero[data-dragging] {
@@ -57,7 +73,8 @@
   line-height: 1;
   font-weight: 500;
   letter-spacing: -0.03em;
-  text-shadow: 0 2px 30px rgba(10, 16, 24, 0.4);
+  text-shadow: 0 2px 30px var(--fg-shadow);
+  transition: text-shadow 1.4s ease;
 }
 
 .actions {
@@ -68,16 +85,18 @@
   display: inline-block;
   padding: 0.85rem 1.4rem;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: var(--button-bg);
+  border: 1px solid var(--button-border);
   color: inherit;
   text-decoration: none;
   backdrop-filter: blur(10px);
-  transition: background 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border-color 1.4s ease;
 }
 
 .primary:hover {
-  background: rgba(255, 255, 255, 0.24);
+  background: var(--button-bg-hover);
 }
 
 /* Frosted-glass ON/OFF switch, positioned over the protein by the scene. */

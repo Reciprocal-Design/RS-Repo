@@ -4,14 +4,27 @@ import { Environment, Lightformer, PerformanceMonitor } from "@react-three/drei"
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Bloom, DepthOfField, EffectComposer, Noise, ToneMapping, Vignette } from "@react-three/postprocessing";
 import { BlendFunction, ToneMappingMode } from "postprocessing";
-import { Suspense, useMemo, useState } from "react";
-import { ACESFilmicToneMapping, AgXToneMapping, BackSide, MathUtils, NeutralToneMapping, Vector3 } from "three";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import type { BloomEffect, VignetteEffect } from "postprocessing";
+import {
+  ACESFilmicToneMapping,
+  AgXToneMapping,
+  AmbientLight,
+  BackSide,
+  Color,
+  FogExp2,
+  MathUtils,
+  MeshBasicMaterial,
+  NeutralToneMapping,
+  Vector3,
+} from "three";
 import { Backdrop } from "./Backdrop";
 import { HERO } from "./config";
 import { Particles } from "./Particles";
 import { Debris, Dust } from "./Artifacts";
 import { Protein, useSubjectOffset, useSurfaceTextures } from "./Protein";
 import { SignalLines } from "./SignalLines";
+import { createThemeState, lerp, THEME, type ThemeState } from "./theme";
 import type { PointerState } from "./usePointer";
 
 type SceneProps = {
@@ -19,7 +32,7 @@ type SceneProps = {
   eventSource: React.RefObject<HTMLElement | null>;
   /** Element pinned to the protein on screen (the switch). */
   switchAnchor: React.RefObject<HTMLElement | null>;
-  /** Signalling on/off: drives the glow pulses along the lines. */
+  /** Signalling on/off: ON is the dark, signalling look; OFF turns light blue and removes the lines. */
   signalOn: boolean;
   active: boolean;
   reducedMotion: boolean;
@@ -47,21 +60,55 @@ function Rig() {
   return null;
 }
 
-/** A real studio HDRI for natural reflections, tinted purple and lit with custom softboxes to match the backdrop. */
-function StudioEnvironment() {
+/** Eases the theme toward the switch state and blends the scene-wide pieces (fog, ambient, bloom, vignette). */
+function ThemeDriver({
+  theme,
+  instant,
+  ambient,
+  bloom,
+  vignette,
+}: {
+  theme: ThemeState;
+  instant: boolean;
+  ambient: React.RefObject<AmbientLight | null>;
+  bloom: React.RefObject<BloomEffect | null>;
+  vignette: React.RefObject<VignetteEffect | null>;
+}) {
+  const scene = useThree((s) => s.scene);
+  useFrame((_, dt) => {
+    theme.mix = instant ? theme.target : MathUtils.damp(theme.mix, theme.target, HERO.off.transitionSpeed, Math.min(dt, 0.25));
+    if (Math.abs(theme.mix - theme.target) < 0.001) theme.mix = theme.target;
+    const t = theme.mix;
+    if (scene.fog instanceof FogExp2) THEME.background.mid(scene.fog.color, t);
+    if (ambient.current) THEME.ambient(ambient.current.color, t);
+    if (bloom.current) bloom.current.intensity = lerp(HERO.post.bloom.intensity, HERO.off.bloomIntensity, t);
+    if (vignette.current) vignette.current.darkness = lerp(HERO.post.vignette.darkness, HERO.off.vignetteDarkness, t);
+  });
+  return null;
+}
+
+/**
+ * A real studio HDRI for natural reflections, tinted to match the backdrop and lit with custom softboxes.
+ * It renders once, and re-renders every frame only while `live` (during a theme transition).
+ */
+function StudioEnvironment({ theme, live }: { theme: ThemeState; live: boolean }) {
   const { lights } = HERO;
+  const dome = useRef<MeshBasicMaterial>(null);
+  // The map renders on mount, before the first frame, so start the dome on the right colour.
+  const initial = useMemo(() => THEME.envDome(new Color(), theme.mix), []); // eslint-disable-line react-hooks/exhaustive-deps
+  useFrame(() => dome.current && THEME.envDome(dome.current.color, theme.mix));
   return (
     <Environment
       files={HERO.hdriUrl}
       resolution={512}
-      frames={1}
+      frames={live ? Infinity : 1}
       environmentIntensity={lights.envIntensity}
       environmentRotation={[0, lights.hdriRotation, 0]}
     >
       {/* Translucent dome over the HDRI: keeps its detail but shifts it into the purple studio. */}
       <mesh scale={50}>
         <sphereGeometry args={[1, 32, 16]} />
-        <meshBasicMaterial color={HERO.background.deep} side={BackSide} transparent opacity={lights.hdriTint} depthWrite={false} />
+        <meshBasicMaterial ref={dome} color={initial} side={BackSide} transparent opacity={lights.hdriTint} depthWrite={false} />
       </mesh>
       {/* Large soft overhead box, top-front-left: broad, diffuse key like the reference. */}
       <Lightformer form="rect" color="#eef3f7" intensity={2.2} position={[-3, 5, 4]} scale={[10, 8, 1]} target={[0, 0, 0]} />
@@ -105,9 +152,9 @@ function SwitchTracker({ target, pointer }: { target: React.RefObject<HTMLElemen
   return null;
 }
 
-function SurfaceDebris({ backLightDir, animate }: { backLightDir: { value: Vector3 }; animate: boolean }) {
+function SurfaceDebris({ theme, backLightDir, animate }: { theme: ThemeState; backLightDir: { value: Vector3 }; animate: boolean }) {
   const textures = useSurfaceTextures();
-  return <Debris textures={textures} backLightDir={backLightDir} animate={animate} />;
+  return <Debris textures={textures} theme={theme} backLightDir={backLightDir} animate={animate} />;
 }
 
 export default function Scene({ pointer, eventSource, switchAnchor, signalOn, active, reducedMotion, onReady }: SceneProps) {
@@ -116,6 +163,23 @@ export default function Scene({ pointer, eventSource, switchAnchor, signalOn, ac
   const backLightDir = useMemo(() => ({ value: new Vector3() }), []);
   const { lights, post, camera } = HERO;
   const animate = !reducedMotion;
+
+  // ON = dark diseased look (mix 0), OFF = light blue look (mix 1).
+  const theme = useMemo(() => createThemeState(signalOn), []); // eslint-disable-line react-hooks/exhaustive-deps
+  theme.target = signalOn ? 0 : 1;
+  const ambient = useRef<AmbientLight>(null);
+  const bloom = useRef<BloomEffect>(null);
+  const vignette = useRef<VignetteEffect>(null);
+
+  // Re-render the environment map only while the look is changing.
+  const [envLive, setEnvLive] = useState(false);
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) return void (firstRender.current = false);
+    setEnvLive(true);
+    const id = setTimeout(() => setEnvLive(false), 4000);
+    return () => clearTimeout(id);
+  }, [signalOn]);
 
   return (
     <Canvas
@@ -140,23 +204,24 @@ export default function Scene({ pointer, eventSource, switchAnchor, signalOn, ac
       <Rig />
       <BackLightTracker dir={backLightDir} />
 
-      <Backdrop pointer={pointer} />
+      <ThemeDriver theme={theme} instant={reducedMotion} ambient={ambient} bloom={bloom} vignette={vignette} />
+      <Backdrop pointer={pointer} theme={theme} />
 
-      <ambientLight color={lights.ambient.color} intensity={lights.ambient.intensity} />
+      <ambientLight ref={ambient} color={signalOn ? lights.ambient.color : HERO.off.ambient} intensity={lights.ambient.intensity} />
       <directionalLight color={lights.key.color} intensity={lights.key.intensity} position={lights.key.position} />
       <directionalLight color={lights.back.color} intensity={lights.back.intensity} position={lights.back.position} />
       <directionalLight color={lights.fill.color} intensity={lights.fill.intensity} position={lights.fill.position} />
       <directionalLight color={lights.rim.color} intensity={lights.rim.intensity} position={lights.rim.position} />
 
       <Suspense fallback={null}>
-        <StudioEnvironment />
-        <Protein pointer={pointer} backLightDir={backLightDir} animate={animate} onReady={onReady} />
-        <SurfaceDebris backLightDir={backLightDir} animate={animate} />
+        <StudioEnvironment theme={theme} live={envLive} />
+        <Protein pointer={pointer} theme={theme} backLightDir={backLightDir} animate={animate} onReady={onReady} />
+        <SurfaceDebris theme={theme} backLightDir={backLightDir} animate={animate} />
       </Suspense>
       <Lines on={signalOn} animate={animate} />
       <SwitchTracker target={switchAnchor} pointer={pointer} />
-      <Particles animate={animate} />
-      <Dust animate={animate} />
+      <Particles theme={theme} animate={animate} />
+      <Dust theme={theme} animate={animate} />
       <fogExp2 attach="fog" args={[HERO.background.mid, HERO.background.fog]} />
 
       <EffectComposer multisampling={lowPower ? 0 : 4} enableNormalPass={false}>
@@ -166,6 +231,7 @@ export default function Scene({ pointer, eventSource, switchAnchor, signalOn, ac
           bokehScale={lowPower ? post.dof.bokehScale * 0.6 : post.dof.bokehScale}
         />
         <Bloom
+          ref={bloom}
           mipmapBlur
           intensity={post.bloom.intensity}
           luminanceThreshold={post.bloom.threshold}
@@ -173,7 +239,7 @@ export default function Scene({ pointer, eventSource, switchAnchor, signalOn, ac
           radius={post.bloom.radius}
         />
         <ToneMapping mode={ToneMappingMode[post.toneMapping]} />
-        <Vignette offset={post.vignette.offset} darkness={post.vignette.darkness} />
+        <Vignette ref={vignette} offset={post.vignette.offset} darkness={post.vignette.darkness} />
         <Noise blendFunction={BlendFunction.OVERLAY} opacity={post.grain} />
       </EffectComposer>
     </Canvas>
