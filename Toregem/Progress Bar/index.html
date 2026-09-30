@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Animated tooth growth progress bar: a circle travels the line and dents it as it passes each stage, with adjustable size, gradient, timing, stage names and glow.">
+<meta name="description" content="Animated tooth growth progress bar: a circle travels the line and dents it as it passes each stage, with adjustable size, gradient, timing, stage names and glow, plus WebM/MP4 video export with an optional transparent background.">
 <style>html{color-scheme:light dark}body{margin:0}[hidden]{display:none!important}</style>
 <title>Toregem Progress Bar</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -177,6 +177,39 @@
     border:0;background:transparent;padding:6px 10px;font-size:15px;line-height:1;color:var(--ink-3);letter-spacing:0;
   }
   .stage-grid .rm:hover:not(:disabled){color:var(--ink)}
+  /* checkerboard behind the preview while the background is transparent */
+  .stage.checker{
+    background-color:var(--field);
+    background-image:conic-gradient(var(--hair) 25%, transparent 0 50%, var(--hair) 0 75%, transparent 0);
+    background-size:20px 20px;
+  }
+
+  .export{grid-column:1/-1;border-top:1px solid var(--hair);padding-top:24px;display:flex;flex-direction:column;gap:14px;min-width:0}
+  .export-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:18px 22px}
+  select, input[type="number"]{
+    font-family:var(--font-body);
+    font-size:14px;
+    color:var(--ink);
+    background:var(--field);
+    border:1px solid var(--hair);
+    border-radius:8px;
+    padding:8px 9px;
+    width:100%;
+  }
+  select{cursor:pointer}
+  select:disabled, input:disabled{opacity:.5;cursor:default}
+  .chips button{flex:1;padding:8px 0;min-width:40px}
+  .chips button[aria-pressed="true"]{border-color:var(--ink);color:var(--ink);background:var(--ground)}
+  progress{flex:1;min-width:120px;height:8px;accent-color:var(--accent)}
+  .status{
+    margin:0;
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    letter-spacing:.06em;
+    color:var(--ink-3);
+    min-height:1.3em;
+  }
+  .status.error{color:#e5484d}
   :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 </style>
 
@@ -242,6 +275,47 @@
         <button type="button" id="btnDefaults">Reset names</button>
       </div>
     </fieldset>
+
+    <section class="export" aria-labelledby="capExport">
+      <div class="cap" id="capExport">Video export <span class="val" id="exportInfo"></span></div>
+      <div class="export-grid">
+        <div class="field">
+          <label class="cap" for="format">Format</label>
+          <select id="format">
+            <option value="webm">WebM (VP9)</option>
+            <option value="mp4">MP4 (H.264)</option>
+          </select>
+          <div class="toggle"><input type="checkbox" id="transChk"><label for="transChk">Transparent background</label></div>
+        </div>
+        <div class="field">
+          <div class="cap" id="capScale">Size</div>
+          <div class="row chips" role="group" aria-labelledby="capScale" id="scaleChips"></div>
+        </div>
+        <div class="field">
+          <label class="cap" for="fps">Frame rate</label>
+          <select id="fps"></select>
+        </div>
+        <div class="field">
+          <label class="cap" for="runs">Runs <span class="val" id="runLen"></span></label>
+          <input type="number" id="runs" min="1" max="10" step="1">
+        </div>
+        <div class="field">
+          <label class="cap" for="quality">Quality</label>
+          <select id="quality">
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="veryHigh">Very high</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <button type="button" class="primary" id="btnExport">Export video</button>
+        <button type="button" id="btnCancel" hidden>Cancel</button>
+        <progress id="exportProgress" max="1" value="0" hidden></progress>
+      </div>
+      <p class="status" id="exportStatus" aria-live="polite"></p>
+      <p class="status">With a transparent background, the text, tick and circle colours still follow the Background setting, so pick one close to where the video will sit.</p>
+    </section>
   </section>
 </div>
 
@@ -264,6 +338,16 @@
   var HEX = /^#[0-9a-f]{6}$/i;
   var END_HOLD = 1400;   /* ms resting on the last stage before a loop restarts */
 
+  /* video export options */
+  var FORMATS = {
+    webm: { codec: "vp9", ext: "webm", mime: "video/webm", label: "WebM (VP9)" },
+    mp4: { codec: "avc", ext: "mp4", mime: "video/mp4", label: "MP4 (H.264)" }
+  };
+  var SCALES = [1, 2, 3, 4];
+  var FPS = [24, 25, 30, 50, 60];
+  var QUALITIES = ["medium", "high", "veryHigh"];
+  var MAX_SIDE = 4096;   /* H.264 encoders commonly top out here; kept for both formats */
+
   var state = {
     names: DEFAULT_NAMES.slice(),
     duration: 12,
@@ -275,7 +359,13 @@
     stepMode: true,
     dimAhead: true,
     vertical: true,
-    loop: true
+    loop: true,
+    transparent: true,
+    format: "webm",
+    scale: 2,
+    fps: 30,
+    runs: 1,
+    quality: "high"
   };
 
   try{
@@ -288,9 +378,15 @@
       if(HEX.test(saved.colorA)) state.colorA = saved.colorA;
       if(HEX.test(saved.colorB)) state.colorB = saved.colorB;
       if(HEX.test(saved.bg)) state.bg = saved.bg;
-      ["stepMode","dimAhead","vertical","loop"].forEach(function(k){
+      ["stepMode","dimAhead","vertical","loop","transparent"].forEach(function(k){
         if(typeof saved[k] === "boolean") state[k] = saved[k];
       });
+      if(FORMATS[saved.format]) state.format = saved.format;
+      if(SCALES.indexOf(saved.scale) > -1) state.scale = saved.scale;
+      if(FPS.indexOf(saved.fps) > -1) state.fps = saved.fps;
+      if(saved.runs >= 1 && saved.runs <= 10) state.runs = Math.round(saved.runs);
+      if(QUALITIES.indexOf(saved.quality) > -1) state.quality = saved.quality;
+      if(state.format === "mp4") state.transparent = false;
     }
   }catch(e){ /* storage unavailable: defaults stand */ }
 
@@ -350,6 +446,7 @@
       : labelTop + depth + 8 + peak + 30;
 
     geo = {
+      w: cssW,
       r: r, depth: depth, spread: r * 2.4,
       x0: pad, x1: cssW - pad,
       lineY: lineY, tickTop: tickTop, labelTop: labelTop,
@@ -381,8 +478,9 @@
 
   /* ---------- drawing ---------- */
 
-  function draw(){
-    var p = progressAt(elapsed);
+  /* paints one frame at time ms into context c, laid out by geometry G */
+  function draw(c, G, ms, transparent){
+    var p = progressAt(ms);
     var g = state.glow / 100;
     var bg = rgb(state.bg), A = rgb(state.colorA), B = rgb(state.colorB);
     var darkBg = luminance(bg) < 0.5;
@@ -390,90 +488,93 @@
     var dim = mixRgb(bg, darkBg ? [255,255,255] : [0,0,0], darkBg ? 0.22 : 0.18);
     var cur = mixRgb(A, B, p);
 
-    var r = geo.r, x0 = geo.x0, x1 = geo.x1, L = x1 - x0;
-    var kx = x0 + p * L, ly = geo.lineY;
-    var depth = geo.depth, spread = geo.spread;
+    var r = G.r, x0 = G.x0, x1 = G.x1, L = x1 - x0;
+    var kx = x0 + p * L, ly = G.lineY;
+    var depth = G.depth, spread = G.spread;
     function dent(x){
       var d = Math.abs(x - kx);
       return d >= spread ? 0 : depth * (1 + Math.cos(Math.PI * d / spread)) / 2;
     }
 
-    ctx.fillStyle = css(bg);
-    ctx.fillRect(0, 0, cssW, geo.h);
+    if(transparent) c.clearRect(0, 0, G.w, G.h);
+    else{
+      c.fillStyle = css(bg);
+      c.fillRect(0, 0, G.w, G.h);
+    }
 
     /* the dented line as a path, sampled finely around the circle */
     function tracePath(){
-      ctx.beginPath();
-      ctx.moveTo(x0, ly + dent(x0));
-      for(var x = x0; x <= x1; x += 2) ctx.lineTo(x, ly + dent(x));
-      ctx.lineTo(x1, ly + dent(x1));
+      c.beginPath();
+      c.moveTo(x0, ly + dent(x0));
+      for(var x = x0; x <= x1; x += 2) c.lineTo(x, ly + dent(x));
+      c.lineTo(x1, ly + dent(x1));
     }
 
     /* glow pooling under the dent */
     if(g > 0){
-      ctx.save();
+      c.save();
       tracePath();
-      ctx.lineTo(x1, geo.h); ctx.lineTo(x0, geo.h); ctx.closePath();
-      ctx.clip();
+      c.lineTo(x1, G.h); c.lineTo(x0, G.h); c.closePath();
+      c.clip();
       var gr = r * (2 + 3.2 * g);
-      ctx.translate(kx, ly + depth);
-      ctx.scale(1.35, 1);
-      var rg = ctx.createRadialGradient(0, 0, 0, 0, 0, gr);
+      c.translate(kx, ly + depth);
+      c.scale(1.35, 1);
+      var rg = c.createRadialGradient(0, 0, 0, 0, 0, gr);
       rg.addColorStop(0, css(cur, 0.62 * g));
       rg.addColorStop(0.4, css(cur, 0.22 * g));
       rg.addColorStop(1, css(cur, 0));
-      ctx.fillStyle = rg;
-      ctx.fillRect(-gr, -gr, gr * 2, gr * 2);
-      ctx.restore();
+      c.fillStyle = rg;
+      c.fillRect(-gr, -gr, gr * 2, gr * 2);
+      c.restore();
     }
 
     /* ticks: a major tick on every stage, minors between; they sink with the dent */
     var n = state.names.length - 1;
     var minorPer = clamp(Math.floor((L / n) / 14), 1, 6);
     var total = n * minorPer;
-    ctx.lineCap = "round";
+    c.lineCap = "round";
     for(var i = 0; i <= total; i++){
       var tx = x0 + L * i / total;
       var major = i % minorPer === 0;
       var ahead = tx > kx + 1;
       var a = major ? 0.75 : 0.32;
       if(ahead && state.dimAhead) a *= 0.55;
-      var ty = geo.tickTop + dent(tx) * 0.75;
-      ctx.strokeStyle = css(text, a);
-      ctx.lineWidth = major ? 1.6 : 1.1;
-      ctx.beginPath();
-      ctx.moveTo(tx, ty);
-      ctx.lineTo(tx, ty + (major ? 24 : 16));
-      ctx.stroke();
+      var ty = G.tickTop + dent(tx) * 0.75;
+      c.strokeStyle = css(text, a);
+      c.lineWidth = major ? 1.6 : 1.1;
+      c.beginPath();
+      c.moveTo(tx, ty);
+      c.lineTo(tx, ty + (major ? 24 : 16));
+      c.stroke();
     }
 
     /* the line: gradient start→end, fading to dim just past the circle */
-    var lg = ctx.createLinearGradient(x0, 0, x1, 0);
+    var lg = c.createLinearGradient(x0, 0, x1, 0);
     var fade = (spread * 0.9) / L;
     for(var s = 0; s <= 48; s++){
       var t = s / 48;
-      var c = mixRgb(A, B, t);
-      if(state.dimAhead) c = mixRgb(c, dim, smooth((t - p) / fade));
-      lg.addColorStop(t, css(c));
+      var col = mixRgb(A, B, t);
+      if(state.dimAhead) col = mixRgb(col, dim, smooth((t - p) / fade));
+      lg.addColorStop(t, css(col));
     }
     tracePath();
-    ctx.strokeStyle = lg;
-    ctx.lineWidth = 3;
-    ctx.lineJoin = "round";
-    ctx.stroke();
+    c.strokeStyle = lg;
+    c.lineWidth = 3;
+    c.lineJoin = "round";
+    c.stroke();
 
     /* second pass over the lit stretch only, so the halo doesn't colour the dim path */
     if(g > 0){
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, state.dimAhead ? kx + spread * 0.5 : cssW, geo.h);
-      ctx.clip();
-      ctx.shadowColor = css(cur, 0.9);
-      ctx.shadowBlur = 16 * g;
+      c.save();
+      c.beginPath();
+      c.rect(0, 0, state.dimAhead ? kx + spread * 0.5 : G.w, G.h);
+      c.clip();
+      c.shadowColor = css(cur, 0.9);
+      c.shadowBlur = 16 * g;
       tracePath();
-      ctx.strokeStyle = lg;
-      ctx.stroke();
-      ctx.restore();
+      c.strokeStyle = lg;
+      c.stroke();
+      c.restore();
     }
 
     /* stage labels: the one nearest the circle swells and drops into the dent */
@@ -483,55 +584,55 @@
       var dist = Math.abs(kx - sx);
       if(dist < best){ best = dist; activeIdx = k; }
       var e = smooth(1 - dist / (band * 0.6));
-      var size = geo.labelSize * (1 + 0.5 * e);
+      var size = G.labelSize * (1 + 0.5 * e);
       var alpha = sx <= kx + 1 || !state.dimAhead ? 0.5 : 0.26;
       alpha += (1 - alpha) * e;
-      var y = geo.labelTop + dent(sx) * 0.9 + e * 6;
+      var y = G.labelTop + dent(sx) * 0.9 + e * 6;
       var name = state.names[k] || "";
 
-      ctx.save();
-      ctx.fillStyle = css(text, alpha);
-      ctx.font = labelFont(size);
-      ctx.translate(sx, y);
+      c.save();
+      c.fillStyle = css(text, alpha);
+      c.font = labelFont(size);
+      c.translate(sx, y);
       if(state.vertical){
-        ctx.rotate(-Math.PI / 2);
-        ctx.textAlign = "right";
-        ctx.textBaseline = "middle";
+        c.rotate(-Math.PI / 2);
+        c.textAlign = "right";
+        c.textBaseline = "middle";
       }else{
         var maxW = band - 12;
-        var w = ctx.measureText(name).width;
-        if(w > maxW && k > 0 && k < n) ctx.scale(maxW / w, maxW / w);
-        ctx.textAlign = "center";
-        ctx.textBaseline = "top";
+        var w = c.measureText(name).width;
+        if(w > maxW && k > 0 && k < n) c.scale(maxW / w, maxW / w);
+        c.textAlign = "center";
+        c.textBaseline = "top";
       }
-      ctx.fillText(name, 0, 0);
-      ctx.restore();
+      c.fillText(name, 0, 0);
+      c.restore();
     }
 
     /* the circle, resting in its dent */
     var ky = ly + depth - r - r * 0.2 - 2;
-    ctx.save();
-    ctx.shadowColor = darkBg ? "rgba(0,0,0,.6)" : "rgba(0,0,0,.22)";
-    ctx.shadowBlur = r * 0.9;
-    ctx.shadowOffsetY = r * 0.22;
-    var og = ctx.createLinearGradient(kx - r, ky - r, kx + r, ky + r);
+    c.save();
+    c.shadowColor = darkBg ? "rgba(0,0,0,.6)" : "rgba(0,0,0,.22)";
+    c.shadowBlur = r * 0.9;
+    c.shadowOffsetY = r * 0.22;
+    var og = c.createLinearGradient(kx - r, ky - r, kx + r, ky + r);
     og.addColorStop(0, css(mixRgb(bg, [255,255,255], darkBg ? 0.1 : 0.7)));
     og.addColorStop(1, css(mixRgb(bg, [0,0,0], darkBg ? 0.28 : 0.08)));
-    ctx.fillStyle = og;
-    ctx.beginPath(); ctx.arc(kx, ky, r, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
+    c.fillStyle = og;
+    c.beginPath(); c.arc(kx, ky, r, 0, Math.PI * 2); c.fill();
+    c.restore();
 
-    ctx.fillStyle = css(mixRgb(bg, [0,0,0], darkBg ? 0.12 : 0.04));
-    ctx.strokeStyle = css(mixRgb(bg, [255,255,255], darkBg ? 0.07 : 0.5));
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(kx, ky, r * 0.74, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    c.fillStyle = css(mixRgb(bg, [0,0,0], darkBg ? 0.12 : 0.04));
+    c.strokeStyle = css(mixRgb(bg, [255,255,255], darkBg ? 0.07 : 0.5));
+    c.lineWidth = 1;
+    c.beginPath(); c.arc(kx, ky, r * 0.74, 0, Math.PI * 2); c.fill(); c.stroke();
 
-    ctx.save();
-    ctx.shadowColor = css(cur, 0.95);
-    ctx.shadowBlur = r * 0.8 * g;
-    ctx.fillStyle = css(cur);
-    ctx.beginPath(); ctx.arc(kx, ky, Math.max(2.5, r * 0.16), 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
+    c.save();
+    c.shadowColor = css(cur, 0.95);
+    c.shadowBlur = r * 0.8 * g;
+    c.fillStyle = css(cur);
+    c.beginPath(); c.arc(kx, ky, Math.max(2.5, r * 0.16), 0, Math.PI * 2); c.fill();
+    c.restore();
 
     return activeIdx;
   }
@@ -694,6 +795,230 @@
   }).observe(stageBox);
   else window.addEventListener("resize", layout);
 
+  /* ---------- video export ---------- */
+
+  /* Frames are rendered one by one (not screen-recorded), so every frame is exact,
+     then encoded with the browser's own WebCodecs encoder through mediabunny,
+     the same way the Pathway Animator exports. With a transparent background the
+     WebM keeps an alpha channel (VP9 alpha). The encoder library loads on first use. */
+  var MB_LOCAL = "./vendor/mediabunny.min.mjs";
+  var MB_CDN = "https://cdn.jsdelivr.net/npm/mediabunny@1.61.0/dist/bundles/mediabunny.min.mjs";
+  var videoSupported = "VideoEncoder" in window;
+  var mbPromise = null, exportJob = null;
+
+  function loadMediabunny(){
+    if(!mbPromise){
+      mbPromise = import(MB_LOCAL).catch(function(){ return import(MB_CDN); });
+      mbPromise.catch(function(){ mbPromise = null; });
+    }
+    return mbPromise;
+  }
+
+  function even(v){ return Math.max(2, 2 * Math.round(v / 2)); }
+
+  /* One run is the full sweep plus the rest on the last stage, so a video of
+     whole runs loops seamlessly: the last frame flows straight into the first. */
+  function videoPlan(){
+    var G = geo;
+    var width = even(G.w * state.scale), height = even(G.h * state.scale);
+    var run = state.duration + END_HOLD / 1000;
+    var span = run * state.runs;
+    var frames = Math.max(1, Math.round(span * state.fps));
+    return {
+      G: G, width: width, height: height,
+      kx: width / G.w, ky: height / G.h,
+      run: run, span: span, frames: frames,
+      transparent: state.transparent && state.format === "webm",
+      tooBig: width > MAX_SIDE || height > MAX_SIDE,
+      /* animation time (ms) of frame i */
+      msAt: function(i){
+        var t = (i * span / frames) % run;
+        return Math.min(t, state.duration) * 1000;
+      }
+    };
+  }
+
+  var shownInfo = "";
+  function updateExportInfo(){
+    var P = videoPlan();
+    var text = P.width + " × " + P.height + " px · " + P.frames + " frames · " + P.span.toFixed(1) + " s" +
+      (P.transparent ? " · transparent" : "");
+    if(text !== shownInfo){
+      shownInfo = text;
+      $("exportInfo").textContent = text;
+      $("runLen").textContent = P.run.toFixed(1) + " s each";
+      if(!exportJob){
+        $("btnExport").disabled = !videoSupported || P.tooBig;
+        if(!videoSupported) exportStatus("This browser can't encode video. Use a recent Chrome, Edge, Safari (17+) or Firefox (130+).", true);
+        else if(P.tooBig) exportStatus("Too large: at most " + MAX_SIDE + " px per side. Pick a smaller size.", true);
+        else if($("exportStatus").classList.contains("error")) exportStatus("");
+      }
+    }
+  }
+
+  function exportStatus(text, error){
+    var el = $("exportStatus");
+    el.textContent = text;
+    el.classList.toggle("error", !!error);
+  }
+
+  /* everything in the console except Cancel is locked while a video renders,
+     so the frames can't change halfway through */
+  function setExportUI(busy){
+    Array.prototype.forEach.call(document.querySelectorAll(".console input, .console button, .console select"), function(el){
+      if(el.id === "btnCancel") return;
+      if(busy){ el.dataset.wasDisabled = el.disabled ? "1" : ""; el.disabled = true; }
+      else{ el.disabled = el.dataset.wasDisabled === "1"; delete el.dataset.wasDisabled; }
+    });
+    $("btnCancel").hidden = !busy;
+    $("exportProgress").hidden = !busy;
+    $("btnExport").textContent = busy ? "Exporting" : "Export video";
+  }
+
+  function downloadBlob(blob, filename){
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
+  }
+
+  async function exportVideo(){
+    var P = videoPlan();
+    var job = { cancelled: false };
+    var output = null;
+    exportJob = job;
+    setExportUI(true);
+    $("exportProgress").value = 0;
+    exportStatus("Loading the encoder…");
+
+    try{
+      var mb = await loadMediabunny();
+      var quality = { medium: mb.QUALITY_MEDIUM, high: mb.QUALITY_HIGH, veryHigh: mb.QUALITY_VERY_HIGH }[state.quality];
+      /* some browsers (Firefox, some Linux builds) have no H.264 encoder: MP4 falls back to WebM */
+      var order = state.format === "mp4" ? ["mp4", "webm"] : ["webm"];
+      var format = null;
+      for(var f = 0; f < order.length && !format; f++){
+        if(await mb.canEncodeVideo(FORMATS[order[f]].codec, { width: P.width, height: P.height, quality: quality })) format = order[f];
+      }
+      if(!format){
+        throw new Error("This browser can't encode " + P.width + " × " + P.height + " as " + FORMATS[state.format].label + ". Try a smaller size.");
+      }
+      var fmt = FORMATS[format];
+
+      var cv = document.createElement("canvas");
+      cv.width = P.width;
+      cv.height = P.height;
+      var c = cv.getContext("2d", { willReadFrequently: true });
+      output = new mb.Output({
+        format: format === "mp4" ? new mb.Mp4OutputFormat({ fastStart: "in-memory" }) : new mb.WebMOutputFormat(),
+        target: new mb.BufferTarget()
+      });
+      /* Frames go to the encoder as raw RGBA from getImageData rather than captured from
+         the canvas: a canvas capture hands over premultiplied colour, which players
+         (reading VP9 alpha as straight colour) would show as dark, muddy glows and fades. */
+      var source = new mb.VideoSampleSource({
+        codec: fmt.codec,
+        bitrate: quality,
+        keyFrameInterval: 2,
+        alpha: P.transparent ? "keep" : "discard"
+      });
+      output.addVideoTrack(source, { frameRate: state.fps });
+      await output.start();
+
+      for(var i = 0; i < P.frames; i++){
+        if(job.cancelled) throw new DOMException("Export cancelled.", "AbortError");
+        c.setTransform(P.kx, 0, 0, P.ky, 0, 0);
+        draw(c, P.G, P.msAt(i), P.transparent);
+        var sample = new mb.VideoSample(c.getImageData(0, 0, P.width, P.height).data, {
+          format: "RGBA",
+          codedWidth: P.width,
+          codedHeight: P.height,
+          timestamp: i / state.fps,
+          duration: 1 / state.fps
+        });
+        try{ await source.add(sample); }finally{ sample.close(); }
+        $("exportProgress").value = (i + 1) / P.frames;
+        exportStatus("Rendering frame " + (i + 1) + " of " + P.frames + "…");
+        /* let the page repaint the progress now and then */
+        if(i % 4 === 3) await new Promise(function(r){ setTimeout(r, 0); });
+      }
+      exportStatus("Finishing…");
+      await output.finalize();
+      var buffer = output.target.buffer;
+      if(!buffer) throw new Error("Video encoding produced no data.");
+      var blob = new Blob([buffer], { type: fmt.mime });
+      var filename = "toregem-progress-" + P.width + "x" + P.height + (P.transparent ? "-transparent" : "") + "." + fmt.ext;
+      downloadBlob(blob, filename);
+      exportStatus("Saved " + filename + " (" + (blob.size / 1048576).toFixed(1) + " MB)." +
+        (format !== state.format ? " Saved as WebM: this browser can't encode MP4 (H.264). Chrome, Edge and Safari can." : ""));
+    }catch(err){
+      if(output && output.state !== "finalized") await output.cancel().catch(function(){});
+      if(err && err.name === "AbortError") exportStatus("Export cancelled.");
+      else exportStatus((err && err.message) || "Export failed.", true);
+    }finally{
+      exportJob = null;
+      setExportUI(false);
+      shownInfo = "";   /* re-check the size limits on the next frame */
+    }
+  }
+
+  function setScale(k){
+    state.scale = k;
+    Array.prototype.forEach.call($("scaleChips").children, function(b){
+      b.setAttribute("aria-pressed", String(Number(b.dataset.k) === k));
+    });
+    save();
+  }
+  SCALES.forEach(function(k){
+    var b = document.createElement("button");
+    b.type = "button";
+    b.dataset.k = k;
+    b.textContent = k + "×";
+    b.setAttribute("aria-label", k + " times the preview size");
+    b.addEventListener("click", function(){ setScale(k); });
+    $("scaleChips").appendChild(b);
+  });
+  FPS.forEach(function(f){
+    var o = document.createElement("option");
+    o.value = f;
+    o.textContent = f + " fps";
+    $("fps").appendChild(o);
+  });
+
+  /* transparency needs WebM: MP4 (H.264) has no alpha channel */
+  function setTransparent(on){
+    state.transparent = on;
+    if(on) state.format = "webm";
+    $("transChk").checked = on;
+    $("format").value = state.format;
+    stageBox.classList.toggle("checker", on);
+    save();
+  }
+  $("transChk").addEventListener("change", function(e){ setTransparent(e.target.checked); });
+  $("format").addEventListener("change", function(e){
+    state.format = e.target.value;
+    if(state.format === "mp4") setTransparent(false); else save();
+  });
+  $("fps").addEventListener("change", function(e){ state.fps = Number(e.target.value); save(); });
+  $("quality").addEventListener("change", function(e){ state.quality = e.target.value; save(); });
+  $("runs").addEventListener("change", function(e){
+    state.runs = clamp(Math.round(Number(e.target.value) || 1), 1, 10);
+    e.target.value = state.runs;
+    save();
+  });
+  $("btnExport").addEventListener("click", function(){ if(!exportJob) exportVideo(); });
+  $("btnCancel").addEventListener("click", function(){ if(exportJob) exportJob.cancelled = true; });
+
+  setScale(state.scale);
+  setTransparent(state.transparent);
+  $("fps").value = state.fps;
+  $("quality").value = state.quality;
+  $("runs").value = state.runs;
+
   /* ---------- loop ---------- */
 
   var last = 0;
@@ -714,7 +1039,8 @@
       }
     }
 
-    report(draw());
+    report(draw(ctx, geo, elapsed, state.transparent));
+    updateExportInfo();
     requestAnimationFrame(frame);
   }
 
