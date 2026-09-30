@@ -1,0 +1,99 @@
+.hero {
+  position: relative;
+  height: 100svh;
+  min-height: 560px;
+  overflow: hidden;
+  isolation: isolate;
+  cursor: grab;
+  /* Horizontal drags spin the model; vertical swipes still scroll the page on touch. */
+  touch-action: pan-y;
+  user-select: none;
+  /* Painted before WebGL is ready, matched to the 3D backdrop. */
+  background:
+    radial-gradient(ellipse 45% 50% at 30% 40%, #e8d2b0 0%, rgba(232, 210, 176, 0) 70%),
+    radial-gradient(ellipse 60% 70% at 50% 50%, #6b4c8c 0%, #2b1b40 100%);
+}
+
+.hero[data-dragging] {
+  cursor: grabbing;
+}
+
+.canvas {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 1.4s ease;
+}
+
+.hero[data-ready] .canvas {
+  opacity: 1;
+}
+
+.content {
+  position: absolute;
+  left: clamp(16px, 6vw, 96px);
+  bottom: clamp(32px, 10vh, 120px);
+  max-width: 34rem;
+  pointer-events: none;
+}
+
+.content a,
+.content button {
+  pointer-events: auto;
+}
+
+.eyebrow {
+  margin: 0 0 1rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(2.4rem, 6vw, 5rem);
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  text-shadow: 0 2px 30px rgba(30, 15, 50, 0.35);
+}
+
+.actions {
+  margin-top: 2rem;
+}
+
+.primary {
+  display: inline-block;
+  padding: 0.85rem 1.4rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: inherit;
+  text-decoration: none;
+  backdrop-filter: blur(10px);
+  transition: background 0.2s ease;
+}
+
+.primary:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.hint {
+  position: absolute;
+  right: clamp(16px, 4vw, 48px);
+  bottom: clamp(24px, 5vh, 48px);
+  margin: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+@media (hover: none) {
+  .hint {
+    display: none;
+  }
+}

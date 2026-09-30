@@ -9,5 +9,6 @@ window.RS_META = {
   // "DeepLife/Dot DNA": { description: "What it does", status: "live" },
   "DeepLife/Pathway Animator": { description: "Animated cell signalling pathways, receptor to DEGs", status: "wip" },
   "DeepLife/Cell Motion": { description: "Subtle, organic looping motion for still images, driven by painted masks", status: "wip" },
+  "RS/Protein Hero": { description: "Next.js hero: studio-lit interactive protein, drag to spin, leans to the cursor", status: "wip" },
   "Toregem/Progress Bar": { description: "Animated tooth growth stages, a circle denting the line as it travels", status: "wip" },
 };
