@@ -26,6 +26,7 @@ export function Backdrop({ pointer, theme, rig }: { pointer: PointerState; theme
           uAspect: { value: 1 },
           uPointer: { value: new Vector2() },
           uGlowCenter: { value: new Vector2(...bg.glowCenter) },
+          uGlowStrength: { value: bg.glowStrength },
           uDeep: { value: new Color(bg.deep) },
           uMid: { value: new Color(bg.mid) },
           uHaze: { value: new Color(bg.haze) },
@@ -38,7 +39,7 @@ export function Backdrop({ pointer, theme, rig }: { pointer: PointerState; theme
             gl_Position = vec4(position.xy, 0.9999, 1.0);
           }`,
         fragmentShader: /* glsl */ `
-          uniform float uTime, uAspect;
+          uniform float uTime, uAspect, uGlowStrength;
           uniform vec2 uPointer, uGlowCenter;
           uniform vec3 uDeep, uMid, uHaze, uGlow;
           varying vec2 vUv;
@@ -74,23 +75,23 @@ export function Backdrop({ pointer, theme, rig }: { pointer: PointerState; theme
             vec2 q = toShort(uv - 0.5);
             vec3 col = mix(uMid, uDeep, smoothstep(0.25, 1.15, length(q)));
             // Cool haze drifting on the right.
-            col = mix(col, uHaze, blob(uv, vec2(0.82, 0.55) + drift * 0.6, 0.38) * 0.55);
-            // Warm key glow behind the subject, upper left, with an HDR core for bloom.
+            col = mix(col, uHaze, blob(uv, vec2(0.82, 0.55) + drift * 0.6, 0.45) * 0.4);
+            // Key glow behind the subject: broad and soft, its strength set per look.
             vec2 gc = uGlowCenter + drift;
-            col = mix(col, uGlow, blob(uv, gc, 0.3) * 0.9);
-            col += uGlow * blob(uv, gc, 0.17) * 0.2;
+            col = mix(col, uGlow, blob(uv, gc, 0.36) * uGlowStrength);
+            col += uGlow * blob(uv, gc, 0.2) * 0.2 * smoothstep(0.5, 0.9, uGlowStrength);
 
             // Depth and complexity: slow cloudy variation in brightness, finer wisps of haze...
             vec2 sq = toShort(uv - 0.5);
             float clouds = fbm(sq * 2.2 + vec2(uTime * 0.012, -uTime * 0.008));
             float wisps = fbm(sq * 4.6 - vec2(uTime * 0.02, 0.0) + clouds * 1.5);
-            col *= 0.88 + 0.24 * clouds;
-            col = mix(col, uHaze, smoothstep(0.5, 0.85, wisps) * 0.2);
+            col *= 0.93 + 0.14 * clouds;
+            col = mix(col, uHaze, smoothstep(0.5, 0.85, wisps) * 0.12);
             // ...and faint rays fanning out from the key glow.
             vec2 rd = toShort(uv - gc);
             float ang = atan(rd.y, rd.x);
             float rays = pow(fbm(vec2(ang * 5.0, uTime * 0.04)), 3.0) * exp(-length(rd) * 1.8);
-            col += uGlow * rays * 0.4;
+            col += uGlow * rays * 0.4 * uGlowStrength;
 
             gl_FragColor = vec4(col, 1.0);
             #include <colorspace_fragment>
@@ -112,6 +113,7 @@ export function Backdrop({ pointer, theme, rig }: { pointer: PointerState; theme
     THEME.background.mid(u.uMid.value, t);
     THEME.background.haze(u.uHaze.value, t);
     THEME.background.glow(u.uGlow.value, t);
+    u.uGlowStrength.value = HERO.background.glowStrength + (HERO.off.glowStrength - HERO.background.glowStrength) * t;
     const boost = 1 + (HERO.off.backgroundBoost - 1) * t;
     for (const c of [u.uDeep, u.uMid, u.uHaze, u.uGlow]) c.value.multiplyScalar(boost);
   });

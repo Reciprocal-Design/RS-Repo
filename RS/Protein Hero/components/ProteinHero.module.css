@@ -18,8 +18,8 @@
   user-select: none;
   /* Painted before WebGL is ready, matched to the 3D backdrop. */
   background:
-    radial-gradient(ellipse 45% 50% at 46% 40%, #9aa9b4 0%, rgba(154, 169, 180, 0) 70%),
-    radial-gradient(ellipse 60% 70% at 50% 50%, #34424f 0%, #10161e 100%);
+    radial-gradient(ellipse 50% 55% at 46% 40%, #26313b 0%, rgba(38, 49, 59, 0) 75%),
+    radial-gradient(ellipse 65% 75% at 50% 50%, #18212a 0%, #070b10 100%);
 }
 
 .hero[data-signal="off"] {
