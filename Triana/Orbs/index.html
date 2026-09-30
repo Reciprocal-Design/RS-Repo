@@ -25,6 +25,8 @@
     --accent-text: #fffaf0;
     --shadow: rgba(33, 28, 16, 0.14);
     --focus: #a4670f;
+    --check-a: #ffffff;
+    --check-b: #e9e4d8;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -40,6 +42,8 @@
       --accent-text: #211a0a;
       --shadow: rgba(0, 0, 0, 0.45);
       --focus: #e2a53f;
+      --check-a: #242018;
+      --check-b: #1a1712;
     }
   }
 
@@ -55,6 +59,8 @@
     --accent-text: #211a0a;
     --shadow: rgba(0, 0, 0, 0.45);
     --focus: #e2a53f;
+    --check-a: #242018;
+    --check-b: #1a1712;
   }
 
   * { box-sizing: border-box; }
@@ -257,6 +263,29 @@
     color: var(--text);
   }
 
+  .swatch:has(input:disabled) { opacity: 0.45; cursor: default; }
+
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 0.82rem;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .toggle input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  /* shows through wherever the canvas is left clear */
+  .stage-wrap.is-transparent {
+    background: repeating-conic-gradient(var(--check-a) 0 25%, var(--check-b) 0 50%) 50% / 24px 24px;
+  }
+
   button#exportBtn {
     appearance: none;
     border: none;
@@ -370,6 +399,10 @@
             <span>Background</span>
           </label>
         </div>
+        <label class="toggle">
+          <input type="checkbox" id="transparentBg">
+          <span>Transparent background</span>
+        </label>
       </section>
 
       <section class="control-group export">
@@ -438,7 +471,9 @@
     bg: document.getElementById("colorBg")
   };
 
-  var railInputs = [speedSlider, rangeSlider, loopsSelect, formatSelect,
+  var transparentBg = document.getElementById("transparentBg");
+
+  var railInputs = [speedSlider, rangeSlider, loopsSelect, formatSelect, transparentBg,
     colorInputs.a, colorInputs.b, colorInputs.c, colorInputs.bg];
 
   // ---- motion model -------------------------------------------------
@@ -489,6 +524,7 @@
   var state = {
     speed: 1.0,
     range: 170,
+    transparent: false,
     colors: {
       a: colorInputs.a.value,
       b: colorInputs.b.value,
@@ -519,6 +555,14 @@
   colorInputs.b.addEventListener("input", function () { state.colors.b = colorInputs.b.value; });
   colorInputs.c.addEventListener("input", function () { state.colors.c = colorInputs.c.value; });
   colorInputs.bg.addEventListener("input", function () { state.colors.bg = colorInputs.bg.value; });
+
+  function syncTransparency() {
+    state.transparent = transparentBg.checked;
+    stageWrap.classList.toggle("is-transparent", state.transparent);
+    colorInputs.bg.disabled = state.transparent || recording;
+    refreshFormat();
+  }
+  transparentBg.addEventListener("change", syncTransparency);
 
   refreshReadouts();
 
@@ -717,8 +761,10 @@
   function draw(elapsedSec) {
     if (cssW === 0) return;
     ctx.clearRect(0, 0, cssW, cssH);
-    ctx.fillStyle = state.colors.bg;
-    ctx.fillRect(0, 0, cssW, cssH);
+    if (!state.transparent || opaqueRecording) {
+      ctx.fillStyle = state.colors.bg;
+      ctx.fillRect(0, 0, cssW, cssH);
+    }
 
     var S = Math.min(cssW, cssH);
     var cx0 = cssW / 2, cy0 = cssH / 2;
@@ -761,6 +807,9 @@
   // ---- animation loop ----------------------------------------------
   var startTime = performance.now();
   var recording = false;
+  // Browsers record MP4 without an alpha channel, so a transparent
+  // MP4 would come out black where it's clear. Paint the colour instead.
+  var opaqueRecording = false;
   var recStartTime = 0;
   var recTargetMs = 0;
 
@@ -781,6 +830,7 @@
 
   function setRailDisabled(disabled) {
     railInputs.forEach(function (el) { el.disabled = disabled; });
+    if (!disabled) colorInputs.bg.disabled = state.transparent;
   }
 
   // Inside the Claude artifact viewer the sandbox blocks downloads a page
@@ -888,11 +938,21 @@
     videoOptions.hidden = !format.video;
     if (format.video) {
       var mime = supportedMime(formatSelect.value);
-      formatNote.textContent = mime ? (codecLabel(mime) || "browser default") : "unavailable";
-      exportHint.textContent = "Recording locks the controls so the exported clip loops perfectly.";
+      var note = mime ? (codecLabel(mime) || "browser default") : "unavailable";
+      if (mime && state.transparent) note += format.ext === "webm" ? " + alpha" : ", no alpha";
+      formatNote.textContent = note;
+      if (state.transparent && format.ext !== "webm") {
+        exportHint.textContent = "Browsers can't record transparent MP4, so this clip will sit on the background colour. Pick WebM for a transparent video.";
+      } else if (state.transparent) {
+        exportHint.textContent = "WebM keeps the transparency, ready to layer in an editor. Recording locks the controls so the clip loops perfectly.";
+      } else {
+        exportHint.textContent = "Recording locks the controls so the exported clip loops perfectly.";
+      }
     } else {
       formatNote.textContent = "self-contained";
-      exportHint.textContent = "A standalone page of the animation at these exact settings — one file, no controls.";
+      exportHint.textContent = state.transparent
+        ? "A standalone page of the animation on a transparent background — drop it over anything."
+        : "A standalone page of the animation at these exact settings — one file, no controls.";
     }
     updateExportButton();
   }
@@ -908,13 +968,14 @@
     refreshFormat();
   })();
 
+  syncTransparency();
   initDownloads();
 
   var activeRecorder = null;
   var activeStream = null;
   var cancelled = false;
 
-  var EXPORT_RUNTIME = "var canvas = document.getElementById(\"driftloop\");\nvar ctx = canvas.getContext(\"2d\");\nvar cssW = 0, cssH = 0, spriteDpr = 1;\nvar spriteCanvases = [], spriteKeys = [];\n\nfunction sphereSprite(index, r, hex) {\n  var key = hex + \"|\" + r + \"|\" + spriteDpr;\n  if (spriteKeys[index] !== key) {\n    spriteCanvases[index] = makeSphereSprite(r, hex, spriteDpr);\n    spriteKeys[index] = key;\n  }\n  return spriteCanvases[index];\n}\n\nfunction fitCanvas() {\n  var dpr = Math.min(window.devicePixelRatio || 1, 2);\n  spriteDpr = dpr;\n  var rect = canvas.getBoundingClientRect();\n  cssW = rect.width;\n  cssH = rect.height;\n  canvas.width = Math.max(1, Math.round(cssW * dpr));\n  canvas.height = Math.max(1, Math.round(cssH * dpr));\n  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);\n}\n\nfunction draw(elapsedSec) {\n  if (cssW === 0) return;\n  ctx.clearRect(0, 0, cssW, cssH);\n  ctx.fillStyle = CONFIG.colors.bg;\n  ctx.fillRect(0, 0, cssW, cssH);\n\n  var S = Math.min(cssW, cssH);\n  var cx0 = cssW / 2, cy0 = cssH / 2;\n  var omega = (2 * Math.PI / BASE_PERIOD) * CONFIG.speed;\n  var phase = elapsedSec * omega + PHASE_OFFSET;\n  var rangePx = CONFIG.range * (S / REF_STAGE);\n  var layout = layoutFor(S, rangePx);\n  var focal = FOCAL_REF * (S / REF_STAGE);\n  var kSpread = layout.kMax - layout.kMin;\n\n  var order = [];\n  for (var i = 0; i < SPHERES.length; i++) {\n    var sph = SPHERES[i];\n    var w = spherePosition(sph, phase, rangePx);\n    var k = perspective(w.z, focal);\n    order.push({\n      index: i,\n      z: w.z,\n      x: cx0 + w.x * k * layout.fit,\n      y: cy0 + w.y * k * layout.fit,\n      radius: S * sph.radiusFrac * k * layout.fit,\n      depth: kSpread > 0 ? (k - layout.kMin) / kSpread : 1\n    });\n  }\n  order.sort(function (m, n) { return m.z - n.z; });\n\n  for (var d = 0; d < order.length; d++) {\n    var item = order[d];\n    var maxR = layout.maxRadius[item.index];\n    var sprite = sphereSprite(item.index, maxR, CONFIG.colors[SPHERES[item.index].key]);\n    var span = (maxR + SPRITE_PAD) * (item.radius / maxR);\n    ctx.globalAlpha = 0.84 + 0.16 * item.depth;\n    ctx.drawImage(sprite, item.x - span, item.y - span, span * 2, span * 2);\n  }\n  ctx.globalAlpha = 1;\n}\n\nfitCanvas();\nif (window.ResizeObserver) new ResizeObserver(fitCanvas).observe(canvas);\nelse window.addEventListener(\"resize\", fitCanvas);\n\nvar startTime = performance.now();\n(function tick(now) {\n  draw((now - startTime) / 1000);\n  requestAnimationFrame(tick);\n})(startTime);";
+  var EXPORT_RUNTIME = "var canvas = document.getElementById(\"driftloop\");\nvar ctx = canvas.getContext(\"2d\");\nvar cssW = 0, cssH = 0, spriteDpr = 1;\nvar spriteCanvases = [], spriteKeys = [];\n\nfunction sphereSprite(index, r, hex) {\n  var key = hex + \"|\" + r + \"|\" + spriteDpr;\n  if (spriteKeys[index] !== key) {\n    spriteCanvases[index] = makeSphereSprite(r, hex, spriteDpr);\n    spriteKeys[index] = key;\n  }\n  return spriteCanvases[index];\n}\n\nfunction fitCanvas() {\n  var dpr = Math.min(window.devicePixelRatio || 1, 2);\n  spriteDpr = dpr;\n  var rect = canvas.getBoundingClientRect();\n  cssW = rect.width;\n  cssH = rect.height;\n  canvas.width = Math.max(1, Math.round(cssW * dpr));\n  canvas.height = Math.max(1, Math.round(cssH * dpr));\n  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);\n}\n\nfunction draw(elapsedSec) {\n  if (cssW === 0) return;\n  ctx.clearRect(0, 0, cssW, cssH);\n  if (!CONFIG.transparent) {\n    ctx.fillStyle = CONFIG.colors.bg;\n    ctx.fillRect(0, 0, cssW, cssH);\n  }\n\n  var S = Math.min(cssW, cssH);\n  var cx0 = cssW / 2, cy0 = cssH / 2;\n  var omega = (2 * Math.PI / BASE_PERIOD) * CONFIG.speed;\n  var phase = elapsedSec * omega + PHASE_OFFSET;\n  var rangePx = CONFIG.range * (S / REF_STAGE);\n  var layout = layoutFor(S, rangePx);\n  var focal = FOCAL_REF * (S / REF_STAGE);\n  var kSpread = layout.kMax - layout.kMin;\n\n  var order = [];\n  for (var i = 0; i < SPHERES.length; i++) {\n    var sph = SPHERES[i];\n    var w = spherePosition(sph, phase, rangePx);\n    var k = perspective(w.z, focal);\n    order.push({\n      index: i,\n      z: w.z,\n      x: cx0 + w.x * k * layout.fit,\n      y: cy0 + w.y * k * layout.fit,\n      radius: S * sph.radiusFrac * k * layout.fit,\n      depth: kSpread > 0 ? (k - layout.kMin) / kSpread : 1\n    });\n  }\n  order.sort(function (m, n) { return m.z - n.z; });\n\n  for (var d = 0; d < order.length; d++) {\n    var item = order[d];\n    var maxR = layout.maxRadius[item.index];\n    var sprite = sphereSprite(item.index, maxR, CONFIG.colors[SPHERES[item.index].key]);\n    var span = (maxR + SPRITE_PAD) * (item.radius / maxR);\n    ctx.globalAlpha = 0.84 + 0.16 * item.depth;\n    ctx.drawImage(sprite, item.x - span, item.y - span, span * 2, span * 2);\n  }\n  ctx.globalAlpha = 1;\n}\n\nfitCanvas();\nif (window.ResizeObserver) new ResizeObserver(fitCanvas).observe(canvas);\nelse window.addEventListener(\"resize\", fitCanvas);\n\nvar startTime = performance.now();\n(function tick(now) {\n  draw((now - startTime) / 1000);\n  requestAnimationFrame(tick);\n})(startTime);";
 
   // The exported page runs this very engine: the functions below are
   // serialized straight out of the running app, so an export can never
@@ -923,6 +984,7 @@
     var config = {
       speed: state.speed,
       range: state.range,
+      transparent: state.transparent,
       colors: {
         a: state.colors.a,
         b: state.colors.b,
@@ -940,7 +1002,7 @@
       "<title>Driftloop</title>",
       "<style>",
       "  html, body { margin: 0; height: 100%; overflow: hidden;",
-      "    background: " + config.colors.bg + "; }",
+      "    background: " + (config.transparent ? "transparent" : config.colors.bg) + "; }",
       "  canvas { display: block; width: 100%; height: 100%; }",
       "</style>",
       "</head>",
@@ -1040,6 +1102,8 @@
 
     recorder.onstop = function () {
       stream.getTracks().forEach(function (t) { t.stop(); });
+      var wasOpaque = opaqueRecording;
+      opaqueRecording = false;
       recording = false;
       setRailDisabled(false);
       recBadge.hidden = true;
@@ -1057,6 +1121,7 @@
       downloadsCap.save({ filename: "driftloop." + format.ext, data: blob }).then(function () {
         var codec = codecLabel(mimeType);
         var saved = "Saved as " + format.label + ".";
+        if (wasOpaque) saved += " It sits on the background colour, since browsers can't record transparent MP4.";
         if (format.ext === "mp4" && codec !== "H.264") {
           saved += " This browser has no H.264, so the MP4 uses " +
             (codec || "its default codec") +
@@ -1077,6 +1142,7 @@
       });
     };
 
+    opaqueRecording = state.transparent && format.ext !== "webm";
     recording = true;
     setRailDisabled(true);
     exportBtn.disabled = true;
