@@ -21,6 +21,12 @@ function useProteinGeometries(url: string) {
   }, [gltf]);
 }
 
+/** Where the protein sits in the frame: right of centre on wide screens, raised on narrow ones. */
+export function useSubjectOffset() {
+  const aspect = useThree((s) => s.size.width / s.size.height);
+  return aspect > 1.15 ? HERO.layout.wideOffset : HERO.layout.narrowOffset;
+}
+
 export function useSurfaceTextures() {
   const [detail, macro] = useTexture([HERO.detailNormalUrl, HERO.macroNormalUrl]);
   return useMemo(() => {
@@ -50,8 +56,7 @@ export function Protein({ pointer, backLightDir, animate, onReady }: Props) {
   const spin = useRef<Group>(null);
   const velocity = useRef({ x: 0, y: 0 });
   const intro = useRef(animate ? 0 : 1);
-  const aspect = useThree((s) => s.size.width / s.size.height);
-  const [ox, oy] = aspect > 1.15 ? HERO.layout.wideOffset : HERO.layout.narrowOffset;
+  const [ox, oy] = useSubjectOffset();
 
   useEffect(() => onReady?.(), [onReady]);
 
