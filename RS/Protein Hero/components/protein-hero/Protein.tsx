@@ -1,0 +1,118 @@
+"use client";
+
+import { useGLTF } from "@react-three/drei";
+import { useFrame, useThree } from "@react-three/fiber";
+import { useEffect, useMemo, useRef } from "react";
+import { BufferGeometry, Group, MathUtils, Mesh, Quaternion, Vector3 } from "three";
+import { HERO } from "./config";
+import { createProteinMaterial } from "./proteinMaterial";
+import type { PointerState } from "./usePointer";
+
+const X = new Vector3(1, 0, 0);
+const Y = new Vector3(0, 1, 0);
+const q = new Quaternion();
+
+function useProteinGeometries(url: string) {
+  const gltf = useGLTF(url, false, true);
+  return useMemo(() => {
+    const list: BufferGeometry[] = [];
+    gltf.scene.traverse((o) => (o as Mesh).isMesh && list.push((o as Mesh).geometry));
+    return list;
+  }, [gltf]);
+}
+
+type Props = {
+  pointer: PointerState;
+  backLightDir: { value: Vector3 };
+  animate: boolean;
+  onReady?: () => void;
+};
+
+/** The hero subject: free drag-to-spin with inertia, a gentle lean toward the cursor, and a slow idle turn. */
+export function Protein({ pointer, backLightDir, animate, onReady }: Props) {
+  const geometries = useProteinGeometries(HERO.modelUrl);
+  const material = useMemo(() => createProteinMaterial(HERO.protein, backLightDir), [backLightDir]);
+  const lean = useRef<Group>(null);
+  const spin = useRef<Group>(null);
+  const velocity = useRef({ x: 0, y: 0 });
+  const intro = useRef(animate ? 0 : 1);
+  const aspect = useThree((s) => s.size.width / s.size.height);
+  const [ox, oy] = aspect > 1.15 ? HERO.layout.wideOffset : HERO.layout.narrowOffset;
+
+  useEffect(() => onReady?.(), [onReady]);
+
+  useFrame((_, dt) => {
+    if (!lean.current || !spin.current) return;
+    const { tilt, parallax, dragSpeed, inertia, autoRotate } = HERO.interaction;
+    dt = Math.min(dt, 1 / 20);
+
+    // Ease the cursor (shared with the backdrop and echo).
+    pointer.smoothX = MathUtils.damp(pointer.smoothX, pointer.x, 3, dt);
+    pointer.smoothY = MathUtils.damp(pointer.smoothY, pointer.y, 3, dt);
+
+    // Drag → angular velocity; release → inertia decays back to the idle turn.
+    const v = velocity.current;
+    if (pointer.dragging) {
+      v.x = (pointer.dragDX * dragSpeed) / dt;
+      v.y = (pointer.dragDY * dragSpeed) / dt;
+    } else {
+      const k = Math.exp(-inertia * dt);
+      v.x = v.x * k + (animate ? autoRotate : 0) * (1 - k);
+      v.y *= k;
+    }
+    pointer.dragDX = pointer.dragDY = 0;
+    // Rotate about screen axes so dragging always feels direct, in any orientation.
+    spin.current.quaternion.premultiply(q.setFromAxisAngle(Y, v.x * dt));
+    spin.current.quaternion.premultiply(q.setFromAxisAngle(X, v.y * dt));
+
+    // Lean and drift toward the cursor.
+    lean.current.rotation.x = -pointer.smoothY * tilt[0];
+    lean.current.rotation.y = pointer.smoothX * tilt[1];
+    lean.current.position.x = ox + pointer.smoothX * parallax;
+    lean.current.position.y = oy + pointer.smoothY * parallax;
+
+    // Intro: grow in with an ease-out, then a slow breathing float.
+    intro.current = Math.min(1, intro.current + dt / 2.2);
+    const e = 1 - Math.pow(1 - intro.current, 3);
+    const t = performance.now() / 1000;
+    lean.current.scale.setScalar(HERO.protein.scale * (0.86 + 0.14 * e));
+    if (animate) lean.current.position.y += Math.sin(t * 0.55) * 0.025;
+  });
+
+  return (
+    <group ref={lean}>
+      <group ref={spin} rotation={[0.35, -0.6, 0.1]}>
+        {geometries.map((g, i) => (
+          <mesh key={i} geometry={g} material={material} />
+        ))}
+      </group>
+    </group>
+  );
+}
+
+/** A smaller, warmer copy of the protein floating far behind, softened by depth of field. */
+export function Echo({ backLightDir, animate }: { backLightDir: { value: Vector3 }; animate: boolean }) {
+  const geometries = useProteinGeometries(HERO.modelUrl);
+  const { echo, protein } = HERO;
+  const material = useMemo(
+    () => createProteinMaterial({ ...protein, color: echo.color, translucency: echo.translucency, aoStrength: 1 }, backLightDir),
+    [backLightDir, echo, protein],
+  );
+  const ref = useRef<Group>(null);
+
+  useFrame((_, dt) => {
+    if (!ref.current || !animate) return;
+    ref.current.rotation.y += dt * 0.05;
+    ref.current.rotation.x += dt * 0.02;
+  });
+
+  return (
+    <group ref={ref} position={echo.position} scale={echo.scale} rotation={[1.2, 2.4, 0.4]}>
+      {geometries.map((g, i) => (
+        <mesh key={i} geometry={g} material={material} />
+      ))}
+    </group>
+  );
+}
+
+useGLTF.preload(HERO.modelUrl, false, true);
