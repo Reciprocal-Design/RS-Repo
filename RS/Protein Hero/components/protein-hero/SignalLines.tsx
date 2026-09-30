@@ -17,19 +17,20 @@ import {
   Vector3,
 } from "three";
 import { HERO } from "./config";
-import { pulseHead, SIGNAL } from "./signal";
+import { COMET_OFFSET, COMET_SPEED, COMETS_PER_STRAND, pulseHead, SIGNAL } from "./signal";
 
 /**
- * Three strands running top-left → bottom-right. They fan out at the edges of the frame, merge
- * into one bundle where they meet the protein (whose surface hides the merge), and split again
- * after exiting. Bright pulses travel along them to show signalling; switching "off" fades the
- * pulses and then the lines themselves away.
+ * Signalling comets on three paths running top-left → bottom-right. The paths fan out at the
+ * edges of the frame, merge into one bundle where they meet the protein (whose surface hides the
+ * merge), and split again after exiting. The paths themselves are invisible: only the comets are
+ * drawn, streaking in, passing through and streaking out. Switching "off" fades them away.
  *
- * Each strand is drawn as light rather than as a wire:
- *  - a thin opaque core tube (writes depth, so depth of field keeps it crisp), and
- *  - a wide, soft, additive halo ribbon underneath (a gaussian profile across its width).
- * Both brighten as they approach the protein, ramping up from inside it, so the signal appears
- * to concentrate where it enters and leaves. The strands differ in width, brightness and speed.
+ * Each comet is drawn as light:
+ *  - a thin core (writes depth only where a comet is, so depth of field keeps it crisp), and
+ *  - a soft, additive halo ribbon underneath (a gaussian profile across its width).
+ * Both brighten as a comet approaches the protein, so the signal appears to concentrate where it
+ * enters and leaves. The paths differ in width, brightness and speed; comets within a path
+ * differ slightly in speed and spacing.
  *
  * Coordinates are relative to the protein's centre, in model radii. The shape is art-directed.
  */
@@ -90,25 +91,27 @@ function ribbonGeometry(curve: CatmullRomCurve3) {
   return g;
 }
 
-// Shared GLSL: pulses and the brightness ramp around the protein.
+// Shared GLSL: comets and the brightness ramp around the protein.
 const signalChunk = /* glsl */ `
-  uniform float uTime, uActivity, uVisibility, uSeed, uSpeed, uBrightness;
-  uniform vec3 uBase, uPulse;
+  #define COMETS ${COMETS_PER_STRAND}
+  uniform float uTime, uActivity, uVisibility, uSeed, uSpeed, uBrightness, uTail;
+  uniform float uCometSpeed[COMETS], uCometOffset[COMETS];
+  uniform vec3 uPulse;
 
-  // A comet: bright head at p, tail trailing back toward the start of the strand.
-  float comet(float t, float p, float tail) {
+  // A comet: small bright head at p, short tail trailing back toward the start of the path.
+  // The tail falls off as a gaussian, so it ends crisply instead of lingering like an exponential.
+  float comet(float t, float p) {
     float d = p - t;
-    return d < 0.0 ? smoothstep(0.006, 0.0, -d) : exp(-d / tail);
+    return d < 0.0 ? smoothstep(0.004, 0.0, -d) : exp(-(d * d) / (uTail * uTail));
   }
 
-  // Three staggered pulses per strand, looping. They run slightly past both ends so they
-  // enter and leave the frame rather than popping in.
+  // Comets looping along the path, each with its own speed and phase (see signal.ts). They run
+  // slightly past both ends so they enter and leave the frame rather than popping in.
   float pulses(float t) {
     float glow = 0.0;
-    for (int k = 0; k < 3; k++) {
-      float fk = float(k);
-      float p = fract(uTime * uSpeed * (0.85 + 0.15 * fk) + uSeed + fk * 0.37) * 1.3 - 0.15;
-      glow += comet(t, p, 0.035 + 0.02 * fk);
+    for (int k = 0; k < COMETS; k++) {
+      float p = fract(uTime * uSpeed * uCometSpeed[k] + uSeed + uCometOffset[k]) * 1.3 - 0.15;
+      glow += comet(t, p);
     }
     return glow;
   }
@@ -138,11 +141,14 @@ const coreFragment = /* glsl */ `
   varying float vDist;
   #include <fog_pars_fragment>
   void main() {
-    float shimmer = 0.85 + 0.15 * sin(vT * 40.0 - uTime * 1.5 + uSeed * 10.0);
+    // No resting line: only comets are drawn. Everything else is discarded, so it neither shows
+    // nor writes depth (depth of field then sees only the comets).
+    float g = pulses(vT);
+    float a = clamp(g, 0.0, 1.0) * uActivity * uVisibility;
+    if (a < 0.01) discard;
     float near = nearProtein(vDist);
-    vec3 col = uBase * shimmer * mix(0.55, 1.0, uActivity) * (1.0 + near * 1.5 * uActivity);
-    col += uPulse * pulses(vT) * uActivity * uBrightness;
-    gl_FragColor = vec4(col, uVisibility);
+    vec3 col = uPulse * g * uBrightness * uActivity * (1.0 + near * 0.8);
+    gl_FragColor = vec4(col, a);
     #include <fog_fragment>
   }`;
 
@@ -178,11 +184,10 @@ const haloFragment = /* glsl */ `
     float y2 = vSide * vSide;
     float profile = exp(-y2 * 9.0) * 0.6 + exp(-y2 * 2.5) * 0.4;
     float near = nearProtein(vDist);
-    // Kept dim on purpose: stacked additive light saturates to white fast, and depth of field
-    // spreads the halo further (it sits over the far backdrop in the depth buffer).
-    float resting = 0.04 * mix(0.3, 1.0, uActivity) + near * 0.16 * uActivity;
-    float glow = pulses(vT) * 0.22 * uActivity * uBrightness;
-    vec3 col = (uBase * resting + uPulse * glow) * profile * uVisibility;
+    // Only the comets glow. Kept dim on purpose: stacked additive light saturates to white fast,
+    // and depth of field spreads the halo further (it sits over the far backdrop in the depth buffer).
+    float glow = pulses(vT) * 0.22 * uActivity * uBrightness * (1.0 + near * 0.8);
+    vec3 col = uPulse * glow * profile * uVisibility;
     gl_FragColor = vec4(col, 1.0);
   }`;
 
@@ -194,7 +199,7 @@ type Props = {
 };
 
 export function SignalLines({ on, animate, thickness = 1 }: Props) {
-  const { radius, haloWidth, base, pulse, pulseIntensity, speed } = HERO.lines;
+  const { radius, haloWidth, pulse, pulseIntensity, speed, tail } = HERO.lines;
 
   const strands = useMemo(
     () =>
@@ -207,7 +212,9 @@ export function SignalLines({ on, animate, thickness = 1 }: Props) {
           uSeed: { value: s.seed },
           uSpeed: { value: speed * s.speed },
           uBrightness: { value: s.brightness },
-          uBase: { value: new Color(base) },
+          uTail: { value: tail },
+          uCometSpeed: { value: COMET_SPEED },
+          uCometOffset: { value: COMET_OFFSET },
           uPulse: { value: new Color(pulse).multiplyScalar(pulseIntensity) },
         });
         const core = new ShaderMaterial({
@@ -238,7 +245,7 @@ export function SignalLines({ on, animate, thickness = 1 }: Props) {
           halo: { geometry: ribbonGeometry(curve), material: halo },
         };
       }),
-    [radius, haloWidth, base, pulse, pulseIntensity, speed, thickness],
+    [radius, haloWidth, pulse, pulseIntensity, speed, tail, thickness],
   );
 
   const group = useRef<Group>(null);
@@ -270,7 +277,7 @@ export function SignalLines({ on, animate, thickness = 1 }: Props) {
     let nearEntry = 0, nearExit = 0, n = 0;
     for (const s of strands) {
       const speed = s.core.material.uniforms.uSpeed.value;
-      for (let k = 0; k < 3; k++, n++) {
+      for (let k = 0; k < COMETS_PER_STRAND; k++, n++) {
         const out: Vector4 = SIGNAL.pulses.value[n];
         const head = pulseHead(time, speed, s.spec.seed, k);
         if (!lines || head < 0 || head > 1 || level < 0.001) {
@@ -285,8 +292,9 @@ export function SignalLines({ on, animate, thickness = 1 }: Props) {
       }
     }
     const base = level * HERO.lines.lightIntensity;
-    if (entryLight.current) entryLight.current.intensity = base * (0.45 + 1.1 * nearEntry);
-    if (exitLight.current) exitLight.current.intensity = base * (0.45 + 1.1 * nearExit);
+    // A low base (no lines to justify a constant glow) that swells as comets arrive.
+    if (entryLight.current) entryLight.current.intensity = base * (0.15 + 1.2 * nearEntry);
+    if (exitLight.current) exitLight.current.intensity = base * (0.15 + 1.2 * nearExit);
   });
 
   return (

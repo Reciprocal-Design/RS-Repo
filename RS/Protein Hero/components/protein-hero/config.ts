@@ -83,17 +83,20 @@ export const HERO = {
   },
 
   // Signalling strands: three lines merging through the protein, with travelling glow pulses.
+  // Signalling comets: no visible lines, just comets streaking along three paths that merge
+  // through the protein, entering on one side and exiting on the other.
   lines: {
-    radius: 0.005, // core tube thickness, in model radii
-    haloWidth: 0.032, // half-width of the soft glow ribbon around each core
-    base: "#5f7387", // resting line colour
-    pulse: "#cfe8ff", // glow pulse colour
+    radius: 0.005, // comet core thickness, in model radii
+    haloWidth: 0.024, // half-width of the soft glow around each comet
+    pulse: "#cfe8ff", // comet colour
     pulseIntensity: 8, // HDR multiplier; bloom turns this into glow
-    speed: 0.09, // pulse laps per second
+    speed: 0.09, // laps per second along a path
+    cometsPerStrand: 7, // comets travelling each of the three paths
+    tail: 0.009, // tail length, as a fraction of the path
     lightIntensity: 2.5, // point lights where the strands enter and leave the protein, lighting its surface
     // As a pulse nears the protein, the surface around it glows, as if the light were entering it;
     // inside, the glow shows through as it travels across, then fades as the pulse exits.
-    surfaceGlow: 1.1, // strength of that glow
+    surfaceGlow: 0.85, // strength of that glow (per comet; there are many)
     surfaceGlowRadius: 0.32, // how far it spreads around the pulse (model radii)
   },
 
