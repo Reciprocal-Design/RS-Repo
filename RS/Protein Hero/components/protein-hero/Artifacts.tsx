@@ -64,7 +64,12 @@ export function Debris({
 }) {
   const { count, color } = HERO.debris;
   const material = useMemo(
-    () => createProteinMaterial({ ...HERO.protein, color, aoStrength: 1 }, textures, backLightDir),
+    () => createProteinMaterial(
+        // No transmission on the small fragments: not worth the refraction pass.
+        { ...HERO.protein, color, aoStrength: 1, transmission: { ...HERO.protein.transmission, amount: 0 } },
+        textures,
+        backLightDir,
+      ),
     [color, textures, backLightDir],
   );
 

@@ -44,6 +44,19 @@ export function Backdrop({ pointer, theme }: { pointer: PointerState; theme: The
             return d * vec2(uAspect, 1.0) / min(uAspect, 1.0);
           }
 
+          // Value noise + fbm for slow, cloud-like variation.
+          float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+          float noise(vec2 p) {
+            vec2 i = floor(p), f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + 1.0), f.x), f.y);
+          }
+          float fbm(vec2 p) {
+            float v = 0.0, a = 0.5;
+            for (int i = 0; i < 5; i++) { v += a * noise(p); p = p * 2.03 + 17.0; a *= 0.5; }
+            return v;
+          }
+
           float blob(vec2 uv, vec2 c, float r) {
             vec2 d = toShort(uv - c);
             return exp(-dot(d, d) / (r * r));
@@ -62,6 +75,18 @@ export function Backdrop({ pointer, theme }: { pointer: PointerState; theme: The
             vec2 gc = uGlowCenter + drift;
             col = mix(col, uGlow, blob(uv, gc, 0.3) * 0.9);
             col += uGlow * blob(uv, gc, 0.17) * 0.2;
+
+            // Depth and complexity: slow cloudy variation in brightness, finer wisps of haze...
+            vec2 sq = toShort(uv - 0.5);
+            float clouds = fbm(sq * 2.2 + vec2(uTime * 0.012, -uTime * 0.008));
+            float wisps = fbm(sq * 4.6 - vec2(uTime * 0.02, 0.0) + clouds * 1.5);
+            col *= 0.88 + 0.24 * clouds;
+            col = mix(col, uHaze, smoothstep(0.5, 0.85, wisps) * 0.2);
+            // ...and faint rays fanning out from the key glow.
+            vec2 rd = toShort(uv - gc);
+            float ang = atan(rd.y, rd.x);
+            float rays = pow(fbm(vec2(ang * 5.0, uTime * 0.04)), 3.0) * exp(-length(rd) * 1.8);
+            col += uGlow * rays * 0.4;
 
             gl_FragColor = vec4(col, 1.0);
             #include <colorspace_fragment>

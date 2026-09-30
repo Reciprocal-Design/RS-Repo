@@ -13,7 +13,7 @@ const X = new Vector3(1, 0, 0);
 const Y = new Vector3(0, 1, 0);
 const q = new Quaternion();
 
-function useProteinGeometries(url: string) {
+export function useProteinGeometries(url: string = HERO.modelUrl) {
   const gltf = useGLTF(url, false, true);
   return useMemo(() => {
     const list: BufferGeometry[] = [];

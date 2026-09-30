@@ -10,6 +10,7 @@ import {
   Color,
   Group,
   MathUtils,
+  PointLight,
   ShaderMaterial,
   TubeGeometry,
   Vector3,
@@ -237,6 +238,8 @@ export function SignalLines({ on, animate, thickness = 1 }: Props) {
   );
 
   const group = useRef<Group>(null);
+  const entryLight = useRef<PointLight>(null);
+  const exitLight = useRef<PointLight>(null);
   useFrame((state, dt) => {
     for (const s of strands) {
       for (const m of [s.core.material, s.halo.material]) {
@@ -248,9 +251,20 @@ export function SignalLines({ on, animate, thickness = 1 }: Props) {
       }
     }
     if (group.current) group.current.visible = strands[0].core.material.uniforms.uVisibility.value > 0.003;
+
+    // The signal lights the protein where it enters and leaves, flickering gently with the pulses.
+    const u = strands[1].core.material.uniforms;
+    const t = state.clock.elapsedTime;
+    const level = u.uActivity.value * u.uVisibility.value * HERO.lines.lightIntensity;
+    if (entryLight.current) entryLight.current.intensity = level * (0.85 + 0.15 * Math.sin(t * 2.3));
+    if (exitLight.current) exitLight.current.intensity = level * (0.85 + 0.15 * Math.sin(t * 2.3 + 1.7));
   });
 
   return (
+    <>
+      {/* Lights stay mounted (hidden groups skip their lights), so they fade rather than pop. */}
+      <pointLight ref={entryLight} color={pulse} position={[-1.05, 0.46, 0.35]} distance={2.2} decay={2} intensity={0} />
+      <pointLight ref={exitLight} color={pulse} position={[1.05, -0.42, 0.35]} distance={2.2} decay={2} intensity={0} />
     <group ref={group}>
       {strands.map((s, i) => (
         <group key={i}>
@@ -259,5 +273,6 @@ export function SignalLines({ on, animate, thickness = 1 }: Props) {
         </group>
       ))}
     </group>
+    </>
   );
 }
