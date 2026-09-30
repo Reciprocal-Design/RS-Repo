@@ -50,11 +50,12 @@ export const HERO = {
   },
 
   background: {
-    deep: "#10161e", // corners
-    mid: "#34424f", // main slate
-    haze: "#6f8292", // cool haze, right
-    glow: "#b9c7d1", // pale key glow behind the subject's upper left
+    deep: "#070b10", // corners
+    mid: "#18212a", // main dark slate
+    haze: "#28343f", // cool haze, right
+    glow: "#4a5865", // faint key glow behind the subject
     glowCenter: [0.46, 0.6] as [number, number], // uv, 0..1
+    glowStrength: 0.3, // how strongly the glow (and its rays) lift the backdrop: kept low for a dark, even ground
     fog: 0.045, // depth haze density: far debris fades into the backdrop
   },
 
@@ -70,7 +71,7 @@ export const HERO = {
     // Soft overhead: separates the top of the forms from the background.
     top: { color: "#e3ecf4", intensity: 0.5, position: [0.3, 4, 0.5] as [number, number, number] },
     ambient: { color: "#4f6072", intensity: 0.3 },
-    envIntensity: 0.5,
+    envIntensity: 0.3,
     // Euler (x, y, z) in radians. Turns the HDRI so its brightest softbox sits top-front-left,
     // agreeing with the key light (solved from the map's brightest region).
     hdriRotation: [-1.41, -1.47, 0] as [number, number, number],
@@ -100,7 +101,7 @@ export const HERO = {
   switchAnchor: [0.62, 0.66, 0.9] as [number, number, number],
 
   // Background depth.
-  shafts: { count: 7, color: "#c9d9e6", intensity: 0.07 }, // volumetric light shafts from the upper left
+  shafts: { count: 7, color: "#c9d9e6", intensity: 0.035 }, // volumetric light shafts from the upper left
   far: {
     color: "#4a5a69",
     opacity: 0.35, // blended over the backdrop, so they only just emerge from the haze
@@ -125,7 +126,7 @@ export const HERO = {
   },
 
   // Environment artifacts.
-  particles: { count: 22, color: "#8fa4b8", intensity: 1.1 }, // soft bokeh motes
+  particles: { count: 22, color: "#8fa4b8", intensity: 0.75 }, // soft bokeh motes
   debris: { count: 11, color: "#4d5a66" }, // small drifting fragments
   dust: { count: 600, color: "#a9b8c6", opacity: 0.8 }, // fine suspended specks
 
@@ -145,7 +146,8 @@ export const HERO = {
       haze: "#e8f5fc",
       glow: "#f6fcff",
     },
-    backgroundBoost: 1.2, // brightens the backdrop past what tone mapping would otherwise allow
+    backgroundBoost: 1.2,
+    glowStrength: 0.9, // the light look keeps its bright, airy glow // brightens the backdrop past what tone mapping would otherwise allow
     envDome: "#b4d2e7",
     ambient: "#a9cbe2",
     particles: "#ffffff",
@@ -170,7 +172,7 @@ export const HERO = {
   post: {
     toneMapping: "ACES_FILMIC" as "ACES_FILMIC" | "AGX" | "NEUTRAL",
     exposure: 1.05,
-    bloom: { intensity: 0.6, threshold: 0.78, smoothing: 0.35, radius: 0.75 },
+    bloom: { intensity: 0.42, threshold: 0.78, smoothing: 0.35, radius: 0.75 },
     dof: { focusRange: 3.6, bokehScale: 7 },
     vignette: { offset: 0.3, darkness: 0.55 },
     grain: 0.05,
