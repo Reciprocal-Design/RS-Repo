@@ -29,16 +29,16 @@ export function useSubjectOffset() {
 }
 
 export function useSurfaceTextures() {
-  const [detail, macro] = useTexture([HERO.detailNormalUrl, HERO.macroNormalUrl]);
+  const [detail, macro, grunge] = useTexture([HERO.surfaceNormalUrl, HERO.macroNormalUrl, HERO.surfaceGrungeUrl]);
   return useMemo(() => {
-    for (const t of [detail, macro]) {
+    for (const t of [detail, macro, grunge]) {
       t.wrapS = t.wrapT = RepeatWrapping;
-      t.colorSpace = NoColorSpace; // normal data, not colour
+      t.colorSpace = NoColorSpace; // data maps (normals, grunge), not colour
       t.anisotropy = 8;
       t.needsUpdate = true;
     }
-    return { detail, macro };
-  }, [detail, macro]);
+    return { detail, macro, grunge };
+  }, [detail, macro, grunge]);
 }
 
 type Props = {
@@ -125,4 +125,4 @@ export function Protein({ pointer, theme, backLightDir, animate, onReady }: Prop
 }
 
 useGLTF.preload(HERO.modelUrl, false, true);
-useTexture.preload([HERO.detailNormalUrl, HERO.macroNormalUrl]);
+useTexture.preload([HERO.surfaceNormalUrl, HERO.macroNormalUrl, HERO.surfaceGrungeUrl]);

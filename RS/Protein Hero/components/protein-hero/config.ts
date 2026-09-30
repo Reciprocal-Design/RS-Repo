@@ -5,10 +5,13 @@ const ASSETS = process.env.NEXT_PUBLIC_ASSET_BASE ?? process.env.NEXT_PUBLIC_BAS
 
 export const HERO = {
   modelUrl: `${ASSETS}/models/protein.glb`,
-  // Poly Haven studio HDRI (CC0, via @pmndrs/assets): real softbox reflections on the surface.
-  hdriUrl: `${ASSETS}/hdri/studio.exr`,
-  // Tileable normal maps (CC0, via @pmndrs/assets), projected triplanar since the mesh has no UVs.
-  detailNormalUrl: `${ASSETS}/textures/detail-normal.webp`,
+  // Studio HDRI (Poly Haven "studio_small_09", CC0), converted to 1k by `npm run hdri`.
+  hdriUrl: `${ASSETS}/hdri/studio.hdr`,
+  // Surface texture (seamless grunge), turned into a normal map + grunge map by `npm run surface-maps`.
+  // Projected triplanar, since the mesh has no UVs.
+  surfaceNormalUrl: `${ASSETS}/textures/surface-normal.webp`,
+  surfaceGrungeUrl: `${ASSETS}/textures/surface-grunge.webp`,
+  // Broad, soft undulation (CC0, via @pmndrs/assets).
   macroNormalUrl: `${ASSETS}/textures/macro-normal.webp`,
 
   camera: { fov: 30, distance: 4.4 },
@@ -30,13 +33,15 @@ export const HERO = {
     specular: 0.35, // 0..1, lower = softer, less mirror-like highlights
     aoStrength: 1.3, // >1 deepens the baked crevice shading
     scale: 0.92,
-    // Surface texture: fine grain plus a broad, soft undulation.
-    detail: { scale: 11, strength: 0.42 }, // repeats per model radius, bump strength
+    // Surface texture: the custom surface map at two scales, plus a broad, soft undulation.
+    detail: { scale: 8, strength: 0.36 }, // repeats per model radius, bump strength
     macro: { scale: 1.6, strength: 0.25 },
     // Imperfection: nothing in nature is uniform.
     mottle: 0.16, // albedo variation across the surface (0..1)
     roughnessVariation: 0.6, // roughness varies by ± this fraction
-    grain: { scale: 31, strength: 0.28 }, // very fine third normal layer: a matte, rough micro-surface
+    grain: { scale: 21, strength: 0.18 }, // the same surface map again, finer and offset: a matte micro-surface
+    // The grunge map (bright specks and cells) at the detail scale, aligned with its bumps.
+    grunge: { roughness: 0.4, albedo: 0.16 }, // specks turn rougher (matte deposits) and a little lighter
     edgeSoftness: 0.22, // light scattering back out at the silhouettes (0..1)
     // Partial transmission: refraction through thin ridges and edges (set amount 0 to disable).
     transmission: { amount: 0.12, thickness: 0.9, ior: 1.36, distance: 0.6 },
