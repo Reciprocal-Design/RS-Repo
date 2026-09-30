@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Animated tooth growth progress bar: a circle travels the line and dents it as it passes each stage, with adjustable size, gradient, timing, stage names and glow.">
+<style>html{color-scheme:light dark}body{margin:0}[hidden]{display:none!important}</style>
+<title>Toregem Progress Bar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+</head>
+<body>
+<style>
+  :root{
+    --ground:#ecedee;
+    --ink:#17191c;
+    --ink-2:#4b5058;
+    --ink-3:#848a93;
+    --hair:#d4d7db;
+    --field:#f6f7f8;
+    --accent:#c9d62a;
+    --font-body:"Inter", system-ui, -apple-system, sans-serif;
+    --font-mono:"IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#141414;
+      --ink:#ececea;
+      --ink-2:#a3a3a0;
+      --ink-3:#74746f;
+      --hair:#2c2c2b;
+      --field:#1c1c1b;
+      --accent:#e9f23c;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#141414;
+    --ink:#ececea;
+    --ink-2:#a3a3a0;
+    --ink-3:#74746f;
+    --hair:#2c2c2b;
+    --field:#1c1c1b;
+    --accent:#e9f23c;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--ground);
+    color:var(--ink);
+    font-family:var(--font-body);
+    font-size:15px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{
+    max-width:1100px;
+    margin:0 auto;
+    padding-inline:16px;
+    padding-block:clamp(24px,5vw,52px);
+    display:flex;
+    flex-direction:column;
+    gap:clamp(22px,4vw,34px);
+  }
+
+  header{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:12px}
+  header h1{
+    font-weight:300;
+    font-size:clamp(26px,4.4vw,38px);
+    letter-spacing:-.01em;
+    margin:0;
+    line-height:1;
+  }
+  header p{
+    margin:8px 0 0;
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    color:var(--ink-3);
+  }
+  .readout{
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    color:var(--ink-2);
+    font-variant-numeric:tabular-nums;
+  }
+
+  .stage{
+    width:100%;
+    border-radius:14px;
+    overflow:hidden;
+    border:1px solid var(--hair);
+  }
+  canvas{display:block;width:100%}
+
+  .console{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+    gap:24px 28px;
+  }
+  .field{display:flex;flex-direction:column;gap:9px;min-width:0}
+  .cap{
+    font-family:var(--font-mono);
+    font-size:10px;
+    letter-spacing:.13em;
+    text-transform:uppercase;
+    color:var(--ink-3);
+    display:flex;
+    justify-content:space-between;
+    gap:10px;
+  }
+  .cap .val{color:var(--ink-2);font-variant-numeric:tabular-nums}
+  input[type="range"]{width:100%;accent-color:var(--accent);height:18px;margin:0}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  button{
+    font-family:var(--font-mono);
+    font-weight:500;
+    font-size:11px;
+    letter-spacing:.11em;
+    text-transform:uppercase;
+    color:var(--ink);
+    background:var(--field);
+    border:1px solid var(--hair);
+    border-radius:8px;
+    padding:9px 14px;
+    cursor:pointer;
+    transition:border-color .15s ease,color .15s ease;
+  }
+  button:hover:not(:disabled){border-color:var(--ink-3)}
+  button:disabled{opacity:.45;cursor:default}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#16170f}
+  .toggle{
+    display:flex;align-items:center;gap:8px;
+    font-family:var(--font-mono);font-size:10px;
+    letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);
+  }
+  .toggle input{accent-color:var(--accent);width:15px;height:15px;margin:0}
+
+  .swatches{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+  .sw{width:100%;height:26px;padding:0;border:1px solid var(--hair);border-radius:6px;cursor:pointer}
+  .sw[aria-pressed="true"]{outline:2px solid var(--ink);outline-offset:2px}
+  .pickers{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .pickers label{display:flex;flex-direction:column;gap:5px;font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+  input[type="color"]{
+    width:100%;height:28px;padding:0 2px;
+    background:var(--field);border:1px solid var(--hair);border-radius:6px;
+    cursor:pointer;
+  }
+
+  .stages{grid-column:1/-1;border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:9px;min-width:0}
+  .stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
+  .stage-grid .item{
+    display:flex;align-items:center;gap:8px;
+    background:var(--field);
+    border:1px solid var(--hair);
+    border-radius:8px;
+    padding-left:10px;
+  }
+  .stage-grid .item:focus-within{border-color:var(--accent)}
+  .stage-grid .n{
+    font-family:var(--font-mono);
+    font-size:10px;letter-spacing:.08em;color:var(--ink-3);
+    font-variant-numeric:tabular-nums;
+  }
+  .stage-grid input{
+    flex:1;min-width:0;
+    font-family:var(--font-body);
+    font-size:14px;
+    color:var(--ink);
+    background:transparent;border:0;padding:9px 0;
+  }
+  .stage-grid input:focus{outline:none}
+  .stage-grid .rm{
+    border:0;background:transparent;padding:6px 10px;font-size:15px;line-height:1;color:var(--ink-3);letter-spacing:0;
+  }
+  .stage-grid .rm:hover:not(:disabled){color:var(--ink)}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Toregem</h1>
+      <p>Stages of tooth growth</p>
+    </div>
+    <div class="readout" id="readout" aria-live="polite">Stage 1 / 5</div>
+  </header>
+
+  <div class="stage" id="stageBox">
+    <canvas id="bar" role="img" aria-label="Tooth growth progress, stage 1"></canvas>
+  </div>
+
+  <section class="console" aria-label="Controls">
+    <div class="field">
+      <div class="cap" id="capTransport">Playback <span class="val" id="stateVal">Running</span></div>
+      <div class="row" role="group" aria-labelledby="capTransport">
+        <button type="button" id="btnPlay" class="primary">Pause</button>
+        <button type="button" id="btnReset">Restart</button>
+      </div>
+      <div class="toggle"><input type="checkbox" id="loopChk"><label for="loopChk">Loop</label></div>
+      <div class="toggle"><input type="checkbox" id="stepChk"><label for="stepChk">Pause at each stage</label></div>
+      <div class="toggle"><input type="checkbox" id="dimChk"><label for="dimChk">Dim the path ahead</label></div>
+      <div class="toggle"><input type="checkbox" id="vertChk"><label for="vertChk">Vertical labels</label></div>
+    </div>
+
+    <div class="field">
+      <label class="cap" for="duration">Animation time <span class="val"><span id="durationVal">12</span>s</span></label>
+      <input type="range" id="duration" min="3" max="60" step="1">
+
+      <label class="cap" for="size">Circle size <span class="val"><span id="sizeVal">60</span>px</span></label>
+      <input type="range" id="size" min="20" max="140" step="2">
+
+      <label class="cap" for="glow">Glow intensity <span class="val"><span id="glowVal">60</span>%</span></label>
+      <input type="range" id="glow" min="0" max="100" step="1">
+    </div>
+
+    <div class="field">
+      <div class="cap">Gradient <span class="val" id="gradVal"></span></div>
+      <div class="swatches" id="gradSwatches"></div>
+      <div class="pickers">
+        <label>Start <input type="color" id="colorA"></label>
+        <label>End <input type="color" id="colorB"></label>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="cap">Background <span class="val" id="bgVal"></span></div>
+      <div class="swatches" id="bgSwatches"></div>
+      <div class="pickers">
+        <label>Custom <input type="color" id="bgPicker"></label>
+      </div>
+    </div>
+
+    <fieldset class="stages">
+      <div class="cap">Stage names <span class="val" id="stageCount"></span></div>
+      <div class="stage-grid" id="stageGrid"></div>
+      <div class="row">
+        <button type="button" id="btnAdd">Add stage</button>
+        <button type="button" id="btnDefaults">Reset names</button>
+      </div>
+    </fieldset>
+  </section>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var DEFAULT_NAMES = ["Dental Lamina","Bud","Cap","Bell","Eruption"];
+  var MIN_STAGES = 2, MAX_STAGES = 8;
+  var GRADIENTS = [
+    ["#8c8c8c","#e9f23c"],
+    ["#7be3d0","#e9f23c"],
+    ["#ffffff","#8fd3ff"],
+    ["#5b8cff","#c86bff"],
+    ["#ff7a59","#ffd166"],
+    ["#38e8ff","#2fd67b"]
+  ];
+  var BG_PRESETS = ["#1f1f1f","#0d1015","#121a2e","#26211c","#f4f4f2","#ffffff"];
+  var STORE = "toregem-progress.v1";
+  var HEX = /^#[0-9a-f]{6}$/i;
+  var END_HOLD = 1400;   /* ms resting on the last stage before a loop restarts */
+
+  var state = {
+    names: DEFAULT_NAMES.slice(),
+    duration: 12,
+    size: 60,
+    glow: 60,
+    colorA: GRADIENTS[1][0],
+    colorB: GRADIENTS[1][1],
+    bg: BG_PRESETS[0],
+    stepMode: true,
+    dimAhead: true,
+    vertical: true,
+    loop: true
+  };
+
+  try{
+    var saved = JSON.parse(localStorage.getItem(STORE) || "null");
+    if(saved && typeof saved === "object"){
+      if(Array.isArray(saved.names) && saved.names.length >= MIN_STAGES && saved.names.length <= MAX_STAGES) state.names = saved.names.map(String);
+      if(saved.duration >= 3 && saved.duration <= 60) state.duration = saved.duration;
+      if(saved.size >= 20 && saved.size <= 140) state.size = saved.size;
+      if(saved.glow >= 0 && saved.glow <= 100) state.glow = saved.glow;
+      if(HEX.test(saved.colorA)) state.colorA = saved.colorA;
+      if(HEX.test(saved.colorB)) state.colorB = saved.colorB;
+      if(HEX.test(saved.bg)) state.bg = saved.bg;
+      ["stepMode","dimAhead","vertical","loop"].forEach(function(k){
+        if(typeof saved[k] === "boolean") state[k] = saved[k];
+      });
+    }
+  }catch(e){ /* storage unavailable: defaults stand */ }
+
+  function save(){
+    try{ localStorage.setItem(STORE, JSON.stringify(state)); }catch(e){}
+  }
+
+  var $ = function(id){ return document.getElementById(id); };
+  var canvas = $("bar"), ctx = canvas.getContext("2d"), stageBox = $("stageBox");
+
+  /* ---------- colour ---------- */
+
+  function rgb(hex){
+    var n = parseInt(hex.slice(1), 16);
+    return [n >> 16 & 255, n >> 8 & 255, n & 255];
+  }
+  function mixRgb(a, b, t){
+    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  }
+  function css(c, alpha){
+    var r = Math.round(c[0]), g = Math.round(c[1]), b = Math.round(c[2]);
+    return alpha === undefined ? "rgb(" + r + "," + g + "," + b + ")" : "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
+  }
+  function luminance(c){
+    return (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
+  }
+
+  /* ---------- easing ---------- */
+
+  function clamp(v, a, b){ return v < a ? a : (v > b ? b : v); }
+  function smooth(t){ t = clamp(t, 0, 1); return t * t * (3 - 2 * t); }
+  function easeInOut(t){ return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+
+  /* ---------- geometry ---------- */
+
+  var cssW = 900, geo = {};
+
+  function labelFont(size){ return "300 " + size + 'px "Inter", system-ui, sans-serif'; }
+
+  function layout(){
+    var r = state.size / 2;
+    cssW = Math.max(280, stageBox.clientWidth);
+    var depth = r * 0.55;
+    var labelSize = clamp(Math.round(cssW / 52), 12, 20);
+    var peak = labelSize * 1.5;   /* the label under the circle grows to this */
+
+    ctx.font = labelFont(peak);
+    var longest = 0;
+    state.names.forEach(function(n){ longest = Math.max(longest, ctx.measureText(n).width); });
+
+    var pad = Math.max(r * 1.4 + 12, state.vertical ? peak : Math.min(longest / 2 + 12, cssW * 0.14));
+    var lineY = Math.round(r * 1.65 + 26);
+    var tickTop = lineY + 20;
+    var labelTop = tickTop + 40;
+    var h = state.vertical
+      ? labelTop + depth + 8 + longest + 28
+      : labelTop + depth + 8 + peak + 30;
+
+    geo = {
+      r: r, depth: depth, spread: r * 2.4,
+      x0: pad, x1: cssW - pad,
+      lineY: lineY, tickTop: tickTop, labelTop: labelTop,
+      labelSize: labelSize, h: Math.ceil(h)
+    };
+
+    var scale = Math.max(2, window.devicePixelRatio || 1);
+    canvas.style.height = geo.h + "px";
+    canvas.width = Math.round(cssW * scale);
+    canvas.height = Math.round(geo.h * scale);
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  }
+
+  /* ---------- timeline ---------- */
+
+  var elapsed = 0, holdUntil = 0, playing = true;
+
+  /* 0..1 position of the circle along the line */
+  function progressAt(ms){
+    var u = clamp(ms / (state.duration * 1000), 0, 1);
+    if(!state.stepMode) return u;
+    var n = state.names.length - 1;
+    var seg = u * n, k = Math.floor(seg);
+    if(k >= n) return 1;
+    var HOLD = 0.38;   /* share of each leg spent resting on the stage before moving on */
+    var local = seg - k;
+    return (k + (local < HOLD ? 0 : easeInOut((local - HOLD) / (1 - HOLD)))) / n;
+  }
+
+  /* ---------- drawing ---------- */
+
+  function draw(){
+    var p = progressAt(elapsed);
+    var g = state.glow / 100;
+    var bg = rgb(state.bg), A = rgb(state.colorA), B = rgb(state.colorB);
+    var darkBg = luminance(bg) < 0.5;
+    var text = darkBg ? [236,236,234] : [27,27,26];
+    var dim = mixRgb(bg, darkBg ? [255,255,255] : [0,0,0], darkBg ? 0.22 : 0.18);
+    var cur = mixRgb(A, B, p);
+
+    var r = geo.r, x0 = geo.x0, x1 = geo.x1, L = x1 - x0;
+    var kx = x0 + p * L, ly = geo.lineY;
+    var depth = geo.depth, spread = geo.spread;
+    function dent(x){
+      var d = Math.abs(x - kx);
+      return d >= spread ? 0 : depth * (1 + Math.cos(Math.PI * d / spread)) / 2;
+    }
+
+    ctx.fillStyle = css(bg);
+    ctx.fillRect(0, 0, cssW, geo.h);
+
+    /* the dented line as a path, sampled finely around the circle */
+    function tracePath(){
+      ctx.beginPath();
+      ctx.moveTo(x0, ly + dent(x0));
+      for(var x = x0; x <= x1; x += 2) ctx.lineTo(x, ly + dent(x));
+      ctx.lineTo(x1, ly + dent(x1));
+    }
+
+    /* glow pooling under the dent */
+    if(g > 0){
+      ctx.save();
+      tracePath();
+      ctx.lineTo(x1, geo.h); ctx.lineTo(x0, geo.h); ctx.closePath();
+      ctx.clip();
+      var gr = r * (2 + 3.2 * g);
+      ctx.translate(kx, ly + depth);
+      ctx.scale(1.35, 1);
+      var rg = ctx.createRadialGradient(0, 0, 0, 0, 0, gr);
+      rg.addColorStop(0, css(cur, 0.62 * g));
+      rg.addColorStop(0.4, css(cur, 0.22 * g));
+      rg.addColorStop(1, css(cur, 0));
+      ctx.fillStyle = rg;
+      ctx.fillRect(-gr, -gr, gr * 2, gr * 2);
+      ctx.restore();
+    }
+
+    /* ticks: a major tick on every stage, minors between; they sink with the dent */
+    var n = state.names.length - 1;
+    var minorPer = clamp(Math.floor((L / n) / 14), 1, 6);
+    var total = n * minorPer;
+    ctx.lineCap = "round";
+    for(var i = 0; i <= total; i++){
+      var tx = x0 + L * i / total;
+      var major = i % minorPer === 0;
+      var ahead = tx > kx + 1;
+      var a = major ? 0.75 : 0.32;
+      if(ahead && state.dimAhead) a *= 0.55;
+      var ty = geo.tickTop + dent(tx) * 0.75;
+      ctx.strokeStyle = css(text, a);
+      ctx.lineWidth = major ? 1.6 : 1.1;
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(tx, ty + (major ? 24 : 16));
+      ctx.stroke();
+    }
+
+    /* the line: gradient start→end, fading to dim just past the circle */
+    var lg = ctx.createLinearGradient(x0, 0, x1, 0);
+    var fade = (spread * 0.9) / L;
+    for(var s = 0; s <= 48; s++){
+      var t = s / 48;
+      var c = mixRgb(A, B, t);
+      if(state.dimAhead) c = mixRgb(c, dim, smooth((t - p) / fade));
+      lg.addColorStop(t, css(c));
+    }
+    tracePath();
+    ctx.strokeStyle = lg;
+    ctx.lineWidth = 3;
+    ctx.lineJoin = "round";
+    ctx.stroke();
+
+    /* second pass over the lit stretch only, so the halo doesn't colour the dim path */
+    if(g > 0){
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, state.dimAhead ? kx + spread * 0.5 : cssW, geo.h);
+      ctx.clip();
+      ctx.shadowColor = css(cur, 0.9);
+      ctx.shadowBlur = 16 * g;
+      tracePath();
+      ctx.strokeStyle = lg;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    /* stage labels: the one nearest the circle swells and drops into the dent */
+    var band = L / n, activeIdx = 0, best = 1e9;
+    for(var k = 0; k <= n; k++){
+      var sx = x0 + band * k;
+      var dist = Math.abs(kx - sx);
+      if(dist < best){ best = dist; activeIdx = k; }
+      var e = smooth(1 - dist / (band * 0.6));
+      var size = geo.labelSize * (1 + 0.5 * e);
+      var alpha = sx <= kx + 1 || !state.dimAhead ? 0.5 : 0.26;
+      alpha += (1 - alpha) * e;
+      var y = geo.labelTop + dent(sx) * 0.9 + e * 6;
+      var name = state.names[k] || "";
+
+      ctx.save();
+      ctx.fillStyle = css(text, alpha);
+      ctx.font = labelFont(size);
+      ctx.translate(sx, y);
+      if(state.vertical){
+        ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+      }else{
+        var maxW = band - 12;
+        var w = ctx.measureText(name).width;
+        if(w > maxW && k > 0 && k < n) ctx.scale(maxW / w, maxW / w);
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+      }
+      ctx.fillText(name, 0, 0);
+      ctx.restore();
+    }
+
+    /* the circle, resting in its dent */
+    var ky = ly + depth - r - r * 0.2 - 2;
+    ctx.save();
+    ctx.shadowColor = darkBg ? "rgba(0,0,0,.6)" : "rgba(0,0,0,.22)";
+    ctx.shadowBlur = r * 0.9;
+    ctx.shadowOffsetY = r * 0.22;
+    var og = ctx.createLinearGradient(kx - r, ky - r, kx + r, ky + r);
+    og.addColorStop(0, css(mixRgb(bg, [255,255,255], darkBg ? 0.1 : 0.7)));
+    og.addColorStop(1, css(mixRgb(bg, [0,0,0], darkBg ? 0.28 : 0.08)));
+    ctx.fillStyle = og;
+    ctx.beginPath(); ctx.arc(kx, ky, r, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+
+    ctx.fillStyle = css(mixRgb(bg, [0,0,0], darkBg ? 0.12 : 0.04));
+    ctx.strokeStyle = css(mixRgb(bg, [255,255,255], darkBg ? 0.07 : 0.5));
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(kx, ky, r * 0.74, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+    ctx.save();
+    ctx.shadowColor = css(cur, 0.95);
+    ctx.shadowBlur = r * 0.8 * g;
+    ctx.fillStyle = css(cur);
+    ctx.beginPath(); ctx.arc(kx, ky, Math.max(2.5, r * 0.16), 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+
+    return activeIdx;
+  }
+
+  /* ---------- readout ---------- */
+
+  var shownIdx = -1;
+  function report(idx){
+    if(idx === shownIdx) return;
+    shownIdx = idx;
+    var label = "Stage " + (idx + 1) + " / " + state.names.length + (state.names[idx] ? " · " + state.names[idx] : "");
+    $("readout").textContent = label;
+    canvas.setAttribute("aria-label", "Tooth growth progress, " + label);
+  }
+
+  /* ---------- controls ---------- */
+
+  function setPlaying(on){
+    playing = on;
+    $("btnPlay").textContent = on ? "Pause" : "Play";
+    $("stateVal").textContent = on ? "Running" : "Held";
+  }
+  function restart(){ elapsed = 0; holdUntil = 0; }
+
+  function markSwatches(box, match){
+    Array.prototype.forEach.call(box.querySelectorAll(".sw"), function(b){
+      b.setAttribute("aria-pressed", String(match(b)));
+    });
+  }
+
+  function setGradient(a, b){
+    state.colorA = a.toLowerCase(); state.colorB = b.toLowerCase();
+    $("colorA").value = state.colorA; $("colorB").value = state.colorB;
+    $("gradVal").textContent = state.colorA.toUpperCase() + " → " + state.colorB.toUpperCase();
+    markSwatches($("gradSwatches"), function(el){ return el.dataset.a === state.colorA && el.dataset.b === state.colorB; });
+    save();
+  }
+
+  function setBg(hex){
+    state.bg = hex.toLowerCase();
+    $("bgPicker").value = state.bg;
+    $("bgVal").textContent = state.bg.toUpperCase();
+    markSwatches($("bgSwatches"), function(el){ return el.dataset.hex === state.bg; });
+    save();
+  }
+
+  GRADIENTS.forEach(function(pair){
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "sw";
+    b.style.background = "linear-gradient(90deg," + pair[0] + "," + pair[1] + ")";
+    b.dataset.a = pair[0]; b.dataset.b = pair[1];
+    b.setAttribute("aria-label", "Gradient " + pair[0] + " to " + pair[1]);
+    b.addEventListener("click", function(){ setGradient(pair[0], pair[1]); });
+    $("gradSwatches").appendChild(b);
+  });
+  BG_PRESETS.forEach(function(hex){
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "sw";
+    b.style.background = hex; b.dataset.hex = hex;
+    b.setAttribute("aria-label", "Background " + hex);
+    b.addEventListener("click", function(){ setBg(hex); });
+    $("bgSwatches").appendChild(b);
+  });
+
+  function buildStages(){
+    var grid = $("stageGrid");
+    grid.replaceChildren();
+    state.names.forEach(function(name, idx){
+      var item = document.createElement("div");
+      item.className = "item";
+      var tag = document.createElement("label");
+      tag.className = "n";
+      tag.htmlFor = "stage" + idx;
+      tag.textContent = ("0" + (idx + 1)).slice(-2);
+      var input = document.createElement("input");
+      input.type = "text"; input.id = "stage" + idx;
+      input.value = name; input.maxLength = 28;
+      input.addEventListener("input", function(){
+        state.names[idx] = input.value;
+        shownIdx = -1;
+        layout(); save();
+      });
+      var rm = document.createElement("button");
+      rm.type = "button"; rm.className = "rm";
+      rm.textContent = "×";
+      rm.setAttribute("aria-label", "Remove stage " + (idx + 1));
+      rm.disabled = state.names.length <= MIN_STAGES;
+      rm.addEventListener("click", function(){
+        state.names.splice(idx, 1);
+        stagesChanged();
+      });
+      item.append(tag, input, rm);
+      grid.appendChild(item);
+    });
+    $("stageCount").textContent = state.names.length + " stages";
+    $("btnAdd").disabled = state.names.length >= MAX_STAGES;
+  }
+
+  function stagesChanged(){
+    shownIdx = -1;
+    buildStages(); layout(); save();
+  }
+
+  function bindRange(id, key, after){
+    var el = $(id), out = $(id + "Val");
+    el.value = state[key]; out.textContent = state[key];
+    el.addEventListener("input", function(){
+      state[key] = Number(el.value);
+      out.textContent = el.value;
+      if(after) after();
+      save();
+    });
+  }
+  function bindCheck(id, key, after){
+    var el = $(id);
+    el.checked = state[key];
+    el.addEventListener("change", function(){
+      state[key] = el.checked;
+      if(after) after();
+      save();
+    });
+  }
+
+  /* keep the circle where it is on screen when the timing changes */
+  var oldDuration = state.duration;
+  bindRange("duration", "duration", function(){
+    elapsed = elapsed * state.duration / oldDuration;
+    oldDuration = state.duration;
+  });
+  bindRange("size", "size", layout);
+  bindRange("glow", "glow");
+  bindCheck("loopChk", "loop");
+  bindCheck("stepChk", "stepMode");
+  bindCheck("dimChk", "dimAhead");
+  bindCheck("vertChk", "vertical", layout);
+
+  $("colorA").addEventListener("input", function(e){ setGradient(e.target.value, state.colorB); });
+  $("colorB").addEventListener("input", function(e){ setGradient(state.colorA, e.target.value); });
+  $("bgPicker").addEventListener("input", function(e){ setBg(e.target.value); });
+  $("btnPlay").addEventListener("click", function(){
+    if(!playing && elapsed >= state.duration * 1000) restart();
+    setPlaying(!playing);
+  });
+  $("btnReset").addEventListener("click", function(){ restart(); setPlaying(true); });
+  $("btnAdd").addEventListener("click", function(){
+    if(state.names.length >= MAX_STAGES) return;
+    state.names.push("Stage " + (state.names.length + 1));
+    stagesChanged();
+    var inputs = $("stageGrid").querySelectorAll("input");
+    inputs[inputs.length - 1].select();
+  });
+  $("btnDefaults").addEventListener("click", function(){
+    state.names = DEFAULT_NAMES.slice();
+    stagesChanged();
+  });
+
+  /* only width changes matter; layout() itself changes the height */
+  if(window.ResizeObserver) new ResizeObserver(function(){
+    if(Math.max(280, stageBox.clientWidth) !== cssW) layout();
+  }).observe(stageBox);
+  else window.addEventListener("resize", layout);
+
+  /* ---------- loop ---------- */
+
+  var last = 0;
+  function frame(now){
+    var dt = last ? Math.min(now - last, 100) : 0;
+    last = now;
+    var total = state.duration * 1000;
+
+    if(playing){
+      if(holdUntil){
+        if(now >= holdUntil){
+          holdUntil = 0;
+          if(state.loop) restart(); else setPlaying(false);
+        }
+      }else{
+        elapsed += dt;
+        if(elapsed >= total){ elapsed = total; holdUntil = now + END_HOLD; }
+      }
+    }
+
+    report(draw());
+    requestAnimationFrame(frame);
+  }
+
+  buildStages();
+  setGradient(state.colorA, state.colorB);
+  setBg(state.bg);
+  setPlaying(true);
+  layout();
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(layout);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
