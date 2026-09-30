@@ -4,6 +4,7 @@ import { useFrame } from "@react-three/fiber";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { Color, InstancedMesh, MeshBasicMaterial, Object3D } from "three";
 import { HERO } from "./config";
+import { THEME, type ThemeState } from "./theme";
 
 // Deterministic pseudo-random so the layout is identical on every load.
 function rng(seed: number) {
@@ -11,7 +12,7 @@ function rng(seed: number) {
 }
 
 /** Small bright motes scattered in depth; depth of field turns them into soft bokeh. */
-export function Particles({ animate }: { animate: boolean }) {
+export function Particles({ theme, animate }: { theme: ThemeState; animate: boolean }) {
   const { count, color, intensity } = HERO.particles;
   const ref = useRef<InstancedMesh>(null);
   const dummy = useMemo(() => new Object3D(), []);
@@ -48,7 +49,10 @@ export function Particles({ animate }: { animate: boolean }) {
   };
 
   useLayoutEffect(() => place(0));
-  useFrame((state) => animate && place(state.clock.elapsedTime));
+  useFrame((state) => {
+    THEME.particles(material.color, theme.mix).multiplyScalar(intensity);
+    if (animate) place(state.clock.elapsedTime);
+  });
 
   return (
     <instancedMesh ref={ref} args={[undefined, material, count]} frustumCulled={false}>

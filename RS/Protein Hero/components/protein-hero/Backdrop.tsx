@@ -4,10 +4,11 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useMemo } from "react";
 import { Color, ShaderMaterial, Vector2 } from "three";
 import { HERO } from "./config";
+import { THEME, type ThemeState } from "./theme";
 import type { PointerState } from "./usePointer";
 
 // Screen-space studio backdrop: purple falloff with a warm key glow, drawn behind everything.
-export function Backdrop({ pointer }: { pointer: PointerState }) {
+export function Backdrop({ pointer, theme }: { pointer: PointerState; theme: ThemeState }) {
   const size = useThree((s) => s.size);
   const bg = HERO.background;
 
@@ -73,6 +74,13 @@ export function Backdrop({ pointer }: { pointer: PointerState }) {
     material.uniforms.uTime.value = state.clock.elapsedTime;
     material.uniforms.uAspect.value = size.width / size.height;
     material.uniforms.uPointer.value.set(pointer.smoothX, pointer.smoothY);
+    const u = material.uniforms, t = theme.mix;
+    THEME.background.deep(u.uDeep.value, t);
+    THEME.background.mid(u.uMid.value, t);
+    THEME.background.haze(u.uHaze.value, t);
+    THEME.background.glow(u.uGlow.value, t);
+    const boost = 1 + (HERO.off.backgroundBoost - 1) * t;
+    for (const c of [u.uDeep, u.uMid, u.uHaze, u.uGlow]) c.value.multiplyScalar(boost);
   });
 
   return (

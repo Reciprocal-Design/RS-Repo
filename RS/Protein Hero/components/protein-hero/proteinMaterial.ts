@@ -1,4 +1,5 @@
 import { Color, MeshPhysicalMaterial, ShaderChunk, Texture, Vector3 } from "three";
+import { THEME } from "./theme";
 
 type DetailLayer = { scale: number; strength: number };
 
@@ -68,6 +69,8 @@ export function createProteinMaterial(
     uDetail: { value: [opts.detail.scale, opts.detail.strength] },
     uMacro: { value: [opts.macro.scale, opts.macro.strength] },
   };
+
+  material.userData.uniforms = uniforms;
 
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
@@ -164,4 +167,14 @@ export function createProteinMaterial(
   };
 
   return material;
+}
+
+/** Blends the material between its ON and OFF colours (t = 0 ON, 1 OFF). */
+export function blendProteinTheme(material: MeshPhysicalMaterial, t: number, color = THEME.protein.color) {
+  const u = material.userData.uniforms;
+  color(material.color, t);
+  THEME.protein.scatter(u.uScatter.value, t);
+  THEME.protein.translucency(u.uTranslucency.value, t);
+  THEME.protein.rim(u.uRim.value, t);
+  THEME.protein.rim(material.sheenColor, t);
 }

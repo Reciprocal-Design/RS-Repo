@@ -1,14 +1,15 @@
 "use client";
 
 import { useFrame } from "@react-three/fiber";
-import { useMemo } from "react";
-import { CatmullRomCurve3, Color, MathUtils, ShaderMaterial, TubeGeometry, Vector3 } from "three";
+import { useMemo, useRef } from "react";
+import { CatmullRomCurve3, Color, Group, MathUtils, ShaderMaterial, TubeGeometry, Vector3 } from "three";
 import { HERO } from "./config";
 
 /**
  * Three strands running top-left → bottom-right. They fan out at the edges of the frame, merge
  * into one bundle where they meet the protein (whose surface hides the merge), and split again
- * after exiting. Bright pulses travel along them to show signalling; switching "off" fades them.
+ * after exiting. Bright pulses travel along them to show signalling; switching "off" fades the
+ * pulses and then the lines themselves away.
  * Coordinates are relative to the protein's centre, in model radii.
  */
 function strandCurve(i: number) {
@@ -38,7 +39,7 @@ const vertexShader = /* glsl */ `
   }`;
 
 const fragmentShader = /* glsl */ `
-  uniform float uTime, uActivity, uSeed, uSpeed;
+  uniform float uTime, uActivity, uVisibility, uSeed, uSpeed;
   uniform vec3 uBase, uPulse;
   varying float vT;
   #include <fog_pars_fragment>
@@ -64,7 +65,7 @@ const fragmentShader = /* glsl */ `
     }
     col += uPulse * glow * uActivity;
 
-    gl_FragColor = vec4(col, 1.0);
+    gl_FragColor = vec4(col, uVisibility);
     #include <fog_fragment>
   }`;
 
@@ -79,9 +80,11 @@ export function SignalLines({ on, animate }: { on: boolean; animate: boolean }) 
           vertexShader,
           fragmentShader,
           fog: true,
+          transparent: true,
           uniforms: {
             uTime: { value: 0 },
             uActivity: { value: 1 },
+            uVisibility: { value: 1 },
             uSeed: { value: n * 0.29 },
             uSpeed: { value: speed },
             uBase: { value: new Color(base) },
@@ -97,17 +100,20 @@ export function SignalLines({ on, animate }: { on: boolean; animate: boolean }) 
     [radius, base, pulse, pulseIntensity, speed],
   );
 
+  const group = useRef<Group>(null);
   useFrame((state, dt) => {
     for (const { material } of strands) {
       const u = material.uniforms;
       if (animate) u.uTime.value = state.clock.elapsedTime;
-      // Ease the signal on/off rather than cutting it.
-      u.uActivity.value = MathUtils.damp(u.uActivity.value, on ? 1 : 0, on ? 2.5 : 1.2, dt);
+      // Ease the signal on/off rather than cutting it: pulses die first, then the lines fade away.
+      u.uActivity.value = MathUtils.damp(u.uActivity.value, on ? 1 : 0, on ? 2.5 : 2, dt);
+      u.uVisibility.value = MathUtils.damp(u.uVisibility.value, on ? 1 : 0, on ? 2 : 1.3, dt);
     }
+    if (group.current) group.current.visible = strands[0].material.uniforms.uVisibility.value > 0.003;
   });
 
   return (
-    <group>
+    <group ref={group}>
       {strands.map((s, i) => (
         <mesh key={i} geometry={s.geometry} material={s.material} frustumCulled={false} />
       ))}

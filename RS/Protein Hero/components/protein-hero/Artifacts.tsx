@@ -14,7 +14,8 @@ import {
 } from "three";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { HERO } from "./config";
-import { createProteinMaterial, type ProteinTextures } from "./proteinMaterial";
+import { blendProteinTheme, createProteinMaterial, type ProteinTextures } from "./proteinMaterial";
+import { THEME, type ThemeState } from "./theme";
 
 // Deterministic pseudo-random so the layout is identical on every load.
 function rng(seed: number) {
@@ -52,10 +53,12 @@ function makeFragment(random: () => number) {
 /** Small drifting, tumbling fragments scattered in depth around the protein. */
 export function Debris({
   textures,
+  theme,
   backLightDir,
   animate,
 }: {
   textures: ProteinTextures;
+  theme: ThemeState;
   backLightDir: { value: Vector3 };
   animate: boolean;
 }) {
@@ -97,6 +100,7 @@ export function Debris({
 
   const refs = useRef<(Group | null)[]>([]);
   useFrame((state, dt) => {
+    blendProteinTheme(material, theme.mix, THEME.debris);
     if (!animate) return;
     const t = state.clock.elapsedTime;
     pieces.forEach((p, i) => {
@@ -121,7 +125,7 @@ export function Debris({
 }
 
 /** Fine suspended specks, animated entirely on the GPU. */
-export function Dust({ animate }: { animate: boolean }) {
+export function Dust({ theme, animate }: { theme: ThemeState; animate: boolean }) {
   const { count, color, opacity } = HERO.dust;
 
   const geometry = useMemo(() => {
@@ -184,6 +188,7 @@ export function Dust({ animate }: { animate: boolean }) {
 
   useFrame((state) => {
     if (animate) material.uniforms.uTime.value = state.clock.elapsedTime;
+    THEME.dust(material.uniforms.uColor.value, theme.mix);
     material.uniforms.uPixelRatio.value = state.gl.getPixelRatio();
   });
 
