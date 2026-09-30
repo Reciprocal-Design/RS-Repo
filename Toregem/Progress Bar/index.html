@@ -1,0 +1,1198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Animated tooth growth progress bar: a circle travels the line and dents it as it passes each stage, with adjustable size, gradient, timing, stage names and glow, plus WebM/MP4 video and PNG sequence export with an optional transparent background.">
+<style>html{color-scheme:light dark}body{margin:0}[hidden]{display:none!important}</style>
+<title>Toregem Progress Bar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+</head>
+<body>
+<style>
+  :root{
+    --ground:#ecedee;
+    --ink:#17191c;
+    --ink-2:#4b5058;
+    --ink-3:#848a93;
+    --hair:#d4d7db;
+    --field:#f6f7f8;
+    --accent:#c9d62a;
+    --font-body:"Inter", system-ui, -apple-system, sans-serif;
+    --font-mono:"IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#141414;
+      --ink:#ececea;
+      --ink-2:#a3a3a0;
+      --ink-3:#74746f;
+      --hair:#2c2c2b;
+      --field:#1c1c1b;
+      --accent:#e9f23c;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#141414;
+    --ink:#ececea;
+    --ink-2:#a3a3a0;
+    --ink-3:#74746f;
+    --hair:#2c2c2b;
+    --field:#1c1c1b;
+    --accent:#e9f23c;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--ground);
+    color:var(--ink);
+    font-family:var(--font-body);
+    font-size:15px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{
+    max-width:1100px;
+    margin:0 auto;
+    padding-inline:16px;
+    padding-block:clamp(24px,5vw,52px);
+    display:flex;
+    flex-direction:column;
+    gap:clamp(22px,4vw,34px);
+  }
+
+  header{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:12px}
+  header h1{
+    font-weight:300;
+    font-size:clamp(26px,4.4vw,38px);
+    letter-spacing:-.01em;
+    margin:0;
+    line-height:1;
+  }
+  header p{
+    margin:8px 0 0;
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    color:var(--ink-3);
+  }
+  .readout{
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    color:var(--ink-2);
+    font-variant-numeric:tabular-nums;
+  }
+
+  .stage{
+    width:100%;
+    border-radius:14px;
+    overflow:hidden;
+    border:1px solid var(--hair);
+  }
+  canvas{display:block;width:100%}
+
+  .console{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+    gap:24px 28px;
+  }
+  .field{display:flex;flex-direction:column;gap:9px;min-width:0}
+  .cap{
+    font-family:var(--font-mono);
+    font-size:10px;
+    letter-spacing:.13em;
+    text-transform:uppercase;
+    color:var(--ink-3);
+    display:flex;
+    justify-content:space-between;
+    gap:10px;
+  }
+  .cap .val{color:var(--ink-2);font-variant-numeric:tabular-nums}
+  input[type="range"]{width:100%;accent-color:var(--accent);height:18px;margin:0}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  button{
+    font-family:var(--font-mono);
+    font-weight:500;
+    font-size:11px;
+    letter-spacing:.11em;
+    text-transform:uppercase;
+    color:var(--ink);
+    background:var(--field);
+    border:1px solid var(--hair);
+    border-radius:8px;
+    padding:9px 14px;
+    cursor:pointer;
+    transition:border-color .15s ease,color .15s ease;
+  }
+  button:hover:not(:disabled){border-color:var(--ink-3)}
+  button:disabled{opacity:.45;cursor:default}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#16170f}
+  .toggle{
+    display:flex;align-items:center;gap:8px;
+    font-family:var(--font-mono);font-size:10px;
+    letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);
+  }
+  .toggle input{accent-color:var(--accent);width:15px;height:15px;margin:0}
+
+  .swatches{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+  .sw{width:100%;height:26px;padding:0;border:1px solid var(--hair);border-radius:6px;cursor:pointer}
+  .sw[aria-pressed="true"]{outline:2px solid var(--ink);outline-offset:2px}
+  .pickers{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .pickers label{display:flex;flex-direction:column;gap:5px;font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+  input[type="color"]{
+    width:100%;height:28px;padding:0 2px;
+    background:var(--field);border:1px solid var(--hair);border-radius:6px;
+    cursor:pointer;
+  }
+
+  .stages{grid-column:1/-1;border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:9px;min-width:0}
+  .stage-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
+  .stage-grid .item{
+    display:flex;align-items:center;gap:8px;
+    background:var(--field);
+    border:1px solid var(--hair);
+    border-radius:8px;
+    padding-left:10px;
+  }
+  .stage-grid .item:focus-within{border-color:var(--accent)}
+  .stage-grid .n{
+    font-family:var(--font-mono);
+    font-size:10px;letter-spacing:.08em;color:var(--ink-3);
+    font-variant-numeric:tabular-nums;
+  }
+  .stage-grid input{
+    flex:1;min-width:0;
+    font-family:var(--font-body);
+    font-size:14px;
+    color:var(--ink);
+    background:transparent;border:0;padding:9px 0;
+  }
+  .stage-grid input:focus{outline:none}
+  .stage-grid .rm{
+    border:0;background:transparent;padding:6px 10px;font-size:15px;line-height:1;color:var(--ink-3);letter-spacing:0;
+  }
+  .stage-grid .rm:hover:not(:disabled){color:var(--ink)}
+  /* checkerboard behind the preview while the background is transparent */
+  .stage.checker{
+    background-color:var(--field);
+    background-image:conic-gradient(var(--hair) 25%, transparent 0 50%, var(--hair) 0 75%, transparent 0);
+    background-size:20px 20px;
+  }
+
+  .export{grid-column:1/-1;border-top:1px solid var(--hair);padding-top:24px;display:flex;flex-direction:column;gap:14px;min-width:0}
+  .export-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:18px 22px}
+  select, input[type="number"]{
+    font-family:var(--font-body);
+    font-size:14px;
+    color:var(--ink);
+    background:var(--field);
+    border:1px solid var(--hair);
+    border-radius:8px;
+    padding:8px 9px;
+    width:100%;
+  }
+  select{cursor:pointer}
+  select:disabled, input:disabled{opacity:.5;cursor:default}
+  .chips button{flex:1;padding:8px 0;min-width:40px}
+  .chips button[aria-pressed="true"]{border-color:var(--ink);color:var(--ink);background:var(--ground)}
+  progress{flex:1;min-width:120px;height:8px;accent-color:var(--accent)}
+  .status{
+    margin:0;
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    letter-spacing:.06em;
+    color:var(--ink-3);
+    min-height:1.3em;
+  }
+  .status.error{color:#e5484d}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Toregem</h1>
+      <p>Stages of tooth growth</p>
+    </div>
+    <div class="readout" id="readout" aria-live="polite">Stage 1 / 5</div>
+  </header>
+
+  <div class="stage" id="stageBox">
+    <canvas id="bar" role="img" aria-label="Tooth growth progress, stage 1"></canvas>
+  </div>
+
+  <section class="console" aria-label="Controls">
+    <div class="field">
+      <div class="cap" id="capTransport">Playback <span class="val" id="stateVal">Running</span></div>
+      <div class="row" role="group" aria-labelledby="capTransport">
+        <button type="button" id="btnPlay" class="primary">Pause</button>
+        <button type="button" id="btnReset">Restart</button>
+      </div>
+      <div class="toggle"><input type="checkbox" id="loopChk"><label for="loopChk">Loop</label></div>
+      <div class="toggle"><input type="checkbox" id="stepChk"><label for="stepChk">Pause at each stage</label></div>
+      <div class="toggle"><input type="checkbox" id="dimChk"><label for="dimChk">Dim the path ahead</label></div>
+      <div class="toggle"><input type="checkbox" id="vertChk"><label for="vertChk">Vertical labels</label></div>
+    </div>
+
+    <div class="field">
+      <label class="cap" for="duration">Animation time <span class="val"><span id="durationVal">12</span>s</span></label>
+      <input type="range" id="duration" min="3" max="60" step="1">
+
+      <label class="cap" for="size">Circle size <span class="val"><span id="sizeVal">60</span>px</span></label>
+      <input type="range" id="size" min="20" max="140" step="2">
+
+      <label class="cap" for="glow">Glow intensity <span class="val"><span id="glowVal">60</span>%</span></label>
+      <input type="range" id="glow" min="0" max="100" step="1">
+    </div>
+
+    <div class="field">
+      <div class="cap">Gradient <span class="val" id="gradVal"></span></div>
+      <div class="swatches" id="gradSwatches"></div>
+      <div class="pickers">
+        <label>Start <input type="color" id="colorA"></label>
+        <label>End <input type="color" id="colorB"></label>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="cap">Background <span class="val" id="bgVal"></span></div>
+      <div class="swatches" id="bgSwatches"></div>
+      <div class="pickers">
+        <label>Custom <input type="color" id="bgPicker"></label>
+      </div>
+    </div>
+
+    <fieldset class="stages">
+      <div class="cap">Stage names <span class="val" id="stageCount"></span></div>
+      <div class="stage-grid" id="stageGrid"></div>
+      <div class="row">
+        <button type="button" id="btnAdd">Add stage</button>
+        <button type="button" id="btnDefaults">Reset names</button>
+      </div>
+    </fieldset>
+
+    <section class="export" aria-labelledby="capExport">
+      <div class="cap" id="capExport">Export <span class="val" id="exportInfo"></span></div>
+      <div class="export-grid">
+        <div class="field">
+          <label class="cap" for="format">Format</label>
+          <select id="format">
+            <option value="webm">WebM (VP9)</option>
+            <option value="png">PNG sequence (ZIP)</option>
+            <option value="mp4">MP4 (H.264)</option>
+          </select>
+          <div class="toggle"><input type="checkbox" id="transChk"><label for="transChk">Transparent background</label></div>
+        </div>
+        <div class="field">
+          <div class="cap" id="capScale">Size</div>
+          <div class="row chips" role="group" aria-labelledby="capScale" id="scaleChips"></div>
+        </div>
+        <div class="field">
+          <label class="cap" for="fps">Frame rate</label>
+          <select id="fps"></select>
+        </div>
+        <div class="field">
+          <label class="cap" for="runs">Runs <span class="val" id="runLen"></span></label>
+          <input type="number" id="runs" min="1" max="10" step="1">
+        </div>
+        <div class="field">
+          <label class="cap" for="quality">Quality</label>
+          <select id="quality">
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="veryHigh">Very high</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <button type="button" class="primary" id="btnExport">Export</button>
+        <button type="button" id="btnCancel" hidden>Cancel</button>
+        <progress id="exportProgress" max="1" value="0" hidden></progress>
+      </div>
+      <p class="status" id="exportStatus" aria-live="polite"></p>
+      <p class="status" id="formatHint"></p>
+      <p class="status">With a transparent background, the text, tick and circle colours still follow the Background setting, so pick one close to where the video will sit.</p>
+    </section>
+  </section>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var DEFAULT_NAMES = ["Dental Lamina","Bud","Cap","Bell","Eruption"];
+  var MIN_STAGES = 2, MAX_STAGES = 8;
+  var GRADIENTS = [
+    ["#8c8c8c","#e9f23c"],
+    ["#7be3d0","#e9f23c"],
+    ["#ffffff","#8fd3ff"],
+    ["#5b8cff","#c86bff"],
+    ["#ff7a59","#ffd166"],
+    ["#38e8ff","#2fd67b"]
+  ];
+  var BG_PRESETS = ["#1f1f1f","#0d1015","#121a2e","#26211c","#f4f4f2","#ffffff"];
+  var STORE = "toregem-progress.v1";
+  var HEX = /^#[0-9a-f]{6}$/i;
+  var END_HOLD = 1400;   /* ms resting on the last stage before a loop restarts */
+
+  /* export options */
+  var FORMATS = {
+    webm: { codec: "vp9", ext: "webm", mime: "video/webm", label: "WebM (VP9)", alpha: true },
+    png: { ext: "zip", mime: "application/zip", label: "PNG sequence", alpha: true },
+    mp4: { codec: "avc", ext: "mp4", mime: "video/mp4", label: "MP4 (H.264)", alpha: false }
+  };
+  var SCALES = [1, 2, 3, 4];
+  var FPS = [24, 25, 30, 50, 60];
+  var QUALITIES = ["medium", "high", "veryHigh"];
+  var MAX_SIDE = 4096;       /* H.264 encoders commonly top out here; kept for both video formats */
+  var MAX_SIDE_PNG = 8192;   /* stills have no encoder limit, just canvas memory */
+
+  var state = {
+    names: DEFAULT_NAMES.slice(),
+    duration: 12,
+    size: 60,
+    glow: 60,
+    colorA: GRADIENTS[1][0],
+    colorB: GRADIENTS[1][1],
+    bg: BG_PRESETS[0],
+    stepMode: true,
+    dimAhead: true,
+    vertical: true,
+    loop: true,
+    transparent: true,
+    format: "webm",
+    scale: 2,
+    fps: 30,
+    runs: 1,
+    quality: "high"
+  };
+
+  try{
+    var saved = JSON.parse(localStorage.getItem(STORE) || "null");
+    if(saved && typeof saved === "object"){
+      if(Array.isArray(saved.names) && saved.names.length >= MIN_STAGES && saved.names.length <= MAX_STAGES) state.names = saved.names.map(String);
+      if(saved.duration >= 3 && saved.duration <= 60) state.duration = saved.duration;
+      if(saved.size >= 20 && saved.size <= 140) state.size = saved.size;
+      if(saved.glow >= 0 && saved.glow <= 100) state.glow = saved.glow;
+      if(HEX.test(saved.colorA)) state.colorA = saved.colorA;
+      if(HEX.test(saved.colorB)) state.colorB = saved.colorB;
+      if(HEX.test(saved.bg)) state.bg = saved.bg;
+      ["stepMode","dimAhead","vertical","loop","transparent"].forEach(function(k){
+        if(typeof saved[k] === "boolean") state[k] = saved[k];
+      });
+      if(FORMATS[saved.format]) state.format = saved.format;
+      if(SCALES.indexOf(saved.scale) > -1) state.scale = saved.scale;
+      if(FPS.indexOf(saved.fps) > -1) state.fps = saved.fps;
+      if(saved.runs >= 1 && saved.runs <= 10) state.runs = Math.round(saved.runs);
+      if(QUALITIES.indexOf(saved.quality) > -1) state.quality = saved.quality;
+      if(!FORMATS[state.format].alpha) state.transparent = false;
+    }
+  }catch(e){ /* storage unavailable: defaults stand */ }
+
+  function save(){
+    try{ localStorage.setItem(STORE, JSON.stringify(state)); }catch(e){}
+  }
+
+  var $ = function(id){ return document.getElementById(id); };
+  var canvas = $("bar"), ctx = canvas.getContext("2d"), stageBox = $("stageBox");
+
+  /* ---------- colour ---------- */
+
+  function rgb(hex){
+    var n = parseInt(hex.slice(1), 16);
+    return [n >> 16 & 255, n >> 8 & 255, n & 255];
+  }
+  function mixRgb(a, b, t){
+    return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  }
+  function css(c, alpha){
+    var r = Math.round(c[0]), g = Math.round(c[1]), b = Math.round(c[2]);
+    return alpha === undefined ? "rgb(" + r + "," + g + "," + b + ")" : "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
+  }
+  function luminance(c){
+    return (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
+  }
+
+  /* ---------- easing ---------- */
+
+  function clamp(v, a, b){ return v < a ? a : (v > b ? b : v); }
+  function smooth(t){ t = clamp(t, 0, 1); return t * t * (3 - 2 * t); }
+  function easeInOut(t){ return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+
+  /* ---------- geometry ---------- */
+
+  var cssW = 900, geo = {};
+
+  function labelFont(size){ return "300 " + size + 'px "Inter", system-ui, sans-serif'; }
+
+  function layout(){
+    var r = state.size / 2;
+    cssW = Math.max(280, stageBox.clientWidth);
+    var depth = r * 0.55;
+    var labelSize = clamp(Math.round(cssW / 52), 12, 20);
+    var peak = labelSize * 1.5;   /* the label under the circle grows to this */
+
+    ctx.font = labelFont(peak);
+    var longest = 0;
+    state.names.forEach(function(n){ longest = Math.max(longest, ctx.measureText(n).width); });
+
+    var pad = Math.max(r * 1.4 + 12, state.vertical ? peak : Math.min(longest / 2 + 12, cssW * 0.14));
+    var lineY = Math.round(r * 1.65 + 26);
+    var tickTop = lineY + 20;
+    var labelTop = tickTop + 40;
+    var h = state.vertical
+      ? labelTop + depth + 8 + longest + 28
+      : labelTop + depth + 8 + peak + 30;
+
+    geo = {
+      w: cssW,
+      r: r, depth: depth, spread: r * 2.4,
+      x0: pad, x1: cssW - pad,
+      lineY: lineY, tickTop: tickTop, labelTop: labelTop,
+      labelSize: labelSize, h: Math.ceil(h)
+    };
+
+    var scale = Math.max(2, window.devicePixelRatio || 1);
+    canvas.style.height = geo.h + "px";
+    canvas.width = Math.round(cssW * scale);
+    canvas.height = Math.round(geo.h * scale);
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  }
+
+  /* ---------- timeline ---------- */
+
+  var elapsed = 0, holdUntil = 0, playing = true;
+
+  /* 0..1 position of the circle along the line */
+  function progressAt(ms){
+    var u = clamp(ms / (state.duration * 1000), 0, 1);
+    if(!state.stepMode) return u;
+    var n = state.names.length - 1;
+    var seg = u * n, k = Math.floor(seg);
+    if(k >= n) return 1;
+    var HOLD = 0.38;   /* share of each leg spent resting on the stage before moving on */
+    var local = seg - k;
+    return (k + (local < HOLD ? 0 : easeInOut((local - HOLD) / (1 - HOLD)))) / n;
+  }
+
+  /* ---------- drawing ---------- */
+
+  /* paints one frame at time ms into context c, laid out by geometry G */
+  function draw(c, G, ms, transparent){
+    var p = progressAt(ms);
+    var g = state.glow / 100;
+    var bg = rgb(state.bg), A = rgb(state.colorA), B = rgb(state.colorB);
+    var darkBg = luminance(bg) < 0.5;
+    var text = darkBg ? [236,236,234] : [27,27,26];
+    var dim = mixRgb(bg, darkBg ? [255,255,255] : [0,0,0], darkBg ? 0.22 : 0.18);
+    var cur = mixRgb(A, B, p);
+
+    var r = G.r, x0 = G.x0, x1 = G.x1, L = x1 - x0;
+    var kx = x0 + p * L, ly = G.lineY;
+    var depth = G.depth, spread = G.spread;
+    function dent(x){
+      var d = Math.abs(x - kx);
+      return d >= spread ? 0 : depth * (1 + Math.cos(Math.PI * d / spread)) / 2;
+    }
+
+    if(transparent) c.clearRect(0, 0, G.w, G.h);
+    else{
+      c.fillStyle = css(bg);
+      c.fillRect(0, 0, G.w, G.h);
+    }
+
+    /* the dented line as a path, sampled finely around the circle */
+    function tracePath(){
+      c.beginPath();
+      c.moveTo(x0, ly + dent(x0));
+      for(var x = x0; x <= x1; x += 2) c.lineTo(x, ly + dent(x));
+      c.lineTo(x1, ly + dent(x1));
+    }
+
+    /* glow pooling under the dent */
+    if(g > 0){
+      c.save();
+      tracePath();
+      c.lineTo(x1, G.h); c.lineTo(x0, G.h); c.closePath();
+      c.clip();
+      var gr = r * (2 + 3.2 * g);
+      c.translate(kx, ly + depth);
+      c.scale(1.35, 1);
+      var rg = c.createRadialGradient(0, 0, 0, 0, 0, gr);
+      rg.addColorStop(0, css(cur, 0.62 * g));
+      rg.addColorStop(0.4, css(cur, 0.22 * g));
+      rg.addColorStop(1, css(cur, 0));
+      c.fillStyle = rg;
+      c.fillRect(-gr, -gr, gr * 2, gr * 2);
+      c.restore();
+    }
+
+    /* ticks: a major tick on every stage, minors between; they sink with the dent */
+    var n = state.names.length - 1;
+    var minorPer = clamp(Math.floor((L / n) / 14), 1, 6);
+    var total = n * minorPer;
+    c.lineCap = "round";
+    for(var i = 0; i <= total; i++){
+      var tx = x0 + L * i / total;
+      var major = i % minorPer === 0;
+      var ahead = tx > kx + 1;
+      var a = major ? 0.75 : 0.32;
+      if(ahead && state.dimAhead) a *= 0.55;
+      var ty = G.tickTop + dent(tx) * 0.75;
+      c.strokeStyle = css(text, a);
+      c.lineWidth = major ? 1.6 : 1.1;
+      c.beginPath();
+      c.moveTo(tx, ty);
+      c.lineTo(tx, ty + (major ? 24 : 16));
+      c.stroke();
+    }
+
+    /* the line: gradient start→end, fading to dim just past the circle */
+    var lg = c.createLinearGradient(x0, 0, x1, 0);
+    var fade = (spread * 0.9) / L;
+    for(var s = 0; s <= 48; s++){
+      var t = s / 48;
+      var col = mixRgb(A, B, t);
+      if(state.dimAhead) col = mixRgb(col, dim, smooth((t - p) / fade));
+      lg.addColorStop(t, css(col));
+    }
+    tracePath();
+    c.strokeStyle = lg;
+    c.lineWidth = 3;
+    c.lineJoin = "round";
+    c.stroke();
+
+    /* second pass over the lit stretch only, so the halo doesn't colour the dim path */
+    if(g > 0){
+      c.save();
+      c.beginPath();
+      c.rect(0, 0, state.dimAhead ? kx + spread * 0.5 : G.w, G.h);
+      c.clip();
+      c.shadowColor = css(cur, 0.9);
+      c.shadowBlur = 16 * g;
+      tracePath();
+      c.strokeStyle = lg;
+      c.stroke();
+      c.restore();
+    }
+
+    /* stage labels: the one nearest the circle swells and drops into the dent */
+    var band = L / n, activeIdx = 0, best = 1e9;
+    for(var k = 0; k <= n; k++){
+      var sx = x0 + band * k;
+      var dist = Math.abs(kx - sx);
+      if(dist < best){ best = dist; activeIdx = k; }
+      var e = smooth(1 - dist / (band * 0.6));
+      var size = G.labelSize * (1 + 0.5 * e);
+      var alpha = sx <= kx + 1 || !state.dimAhead ? 0.5 : 0.26;
+      alpha += (1 - alpha) * e;
+      var y = G.labelTop + dent(sx) * 0.9 + e * 6;
+      var name = state.names[k] || "";
+
+      c.save();
+      c.fillStyle = css(text, alpha);
+      c.font = labelFont(size);
+      c.translate(sx, y);
+      if(state.vertical){
+        c.rotate(-Math.PI / 2);
+        c.textAlign = "right";
+        c.textBaseline = "middle";
+      }else{
+        var maxW = band - 12;
+        var w = c.measureText(name).width;
+        if(w > maxW && k > 0 && k < n) c.scale(maxW / w, maxW / w);
+        c.textAlign = "center";
+        c.textBaseline = "top";
+      }
+      c.fillText(name, 0, 0);
+      c.restore();
+    }
+
+    /* the circle, resting in its dent */
+    var ky = ly + depth - r - r * 0.2 - 2;
+    c.save();
+    c.shadowColor = darkBg ? "rgba(0,0,0,.6)" : "rgba(0,0,0,.22)";
+    c.shadowBlur = r * 0.9;
+    c.shadowOffsetY = r * 0.22;
+    var og = c.createLinearGradient(kx - r, ky - r, kx + r, ky + r);
+    og.addColorStop(0, css(mixRgb(bg, [255,255,255], darkBg ? 0.1 : 0.7)));
+    og.addColorStop(1, css(mixRgb(bg, [0,0,0], darkBg ? 0.28 : 0.08)));
+    c.fillStyle = og;
+    c.beginPath(); c.arc(kx, ky, r, 0, Math.PI * 2); c.fill();
+    c.restore();
+
+    c.fillStyle = css(mixRgb(bg, [0,0,0], darkBg ? 0.12 : 0.04));
+    c.strokeStyle = css(mixRgb(bg, [255,255,255], darkBg ? 0.07 : 0.5));
+    c.lineWidth = 1;
+    c.beginPath(); c.arc(kx, ky, r * 0.74, 0, Math.PI * 2); c.fill(); c.stroke();
+
+    c.save();
+    c.shadowColor = css(cur, 0.95);
+    c.shadowBlur = r * 0.8 * g;
+    c.fillStyle = css(cur);
+    c.beginPath(); c.arc(kx, ky, Math.max(2.5, r * 0.16), 0, Math.PI * 2); c.fill();
+    c.restore();
+
+    return activeIdx;
+  }
+
+  /* ---------- readout ---------- */
+
+  var shownIdx = -1;
+  function report(idx){
+    if(idx === shownIdx) return;
+    shownIdx = idx;
+    var label = "Stage " + (idx + 1) + " / " + state.names.length + (state.names[idx] ? " · " + state.names[idx] : "");
+    $("readout").textContent = label;
+    canvas.setAttribute("aria-label", "Tooth growth progress, " + label);
+  }
+
+  /* ---------- controls ---------- */
+
+  function setPlaying(on){
+    playing = on;
+    $("btnPlay").textContent = on ? "Pause" : "Play";
+    $("stateVal").textContent = on ? "Running" : "Held";
+  }
+  function restart(){ elapsed = 0; holdUntil = 0; }
+
+  function markSwatches(box, match){
+    Array.prototype.forEach.call(box.querySelectorAll(".sw"), function(b){
+      b.setAttribute("aria-pressed", String(match(b)));
+    });
+  }
+
+  function setGradient(a, b){
+    state.colorA = a.toLowerCase(); state.colorB = b.toLowerCase();
+    $("colorA").value = state.colorA; $("colorB").value = state.colorB;
+    $("gradVal").textContent = state.colorA.toUpperCase() + " → " + state.colorB.toUpperCase();
+    markSwatches($("gradSwatches"), function(el){ return el.dataset.a === state.colorA && el.dataset.b === state.colorB; });
+    save();
+  }
+
+  function setBg(hex){
+    state.bg = hex.toLowerCase();
+    $("bgPicker").value = state.bg;
+    $("bgVal").textContent = state.bg.toUpperCase();
+    markSwatches($("bgSwatches"), function(el){ return el.dataset.hex === state.bg; });
+    save();
+  }
+
+  GRADIENTS.forEach(function(pair){
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "sw";
+    b.style.background = "linear-gradient(90deg," + pair[0] + "," + pair[1] + ")";
+    b.dataset.a = pair[0]; b.dataset.b = pair[1];
+    b.setAttribute("aria-label", "Gradient " + pair[0] + " to " + pair[1]);
+    b.addEventListener("click", function(){ setGradient(pair[0], pair[1]); });
+    $("gradSwatches").appendChild(b);
+  });
+  BG_PRESETS.forEach(function(hex){
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "sw";
+    b.style.background = hex; b.dataset.hex = hex;
+    b.setAttribute("aria-label", "Background " + hex);
+    b.addEventListener("click", function(){ setBg(hex); });
+    $("bgSwatches").appendChild(b);
+  });
+
+  function buildStages(){
+    var grid = $("stageGrid");
+    grid.replaceChildren();
+    state.names.forEach(function(name, idx){
+      var item = document.createElement("div");
+      item.className = "item";
+      var tag = document.createElement("label");
+      tag.className = "n";
+      tag.htmlFor = "stage" + idx;
+      tag.textContent = ("0" + (idx + 1)).slice(-2);
+      var input = document.createElement("input");
+      input.type = "text"; input.id = "stage" + idx;
+      input.value = name; input.maxLength = 28;
+      input.addEventListener("input", function(){
+        state.names[idx] = input.value;
+        shownIdx = -1;
+        layout(); save();
+      });
+      var rm = document.createElement("button");
+      rm.type = "button"; rm.className = "rm";
+      rm.textContent = "×";
+      rm.setAttribute("aria-label", "Remove stage " + (idx + 1));
+      rm.disabled = state.names.length <= MIN_STAGES;
+      rm.addEventListener("click", function(){
+        state.names.splice(idx, 1);
+        stagesChanged();
+      });
+      item.append(tag, input, rm);
+      grid.appendChild(item);
+    });
+    $("stageCount").textContent = state.names.length + " stages";
+    $("btnAdd").disabled = state.names.length >= MAX_STAGES;
+  }
+
+  function stagesChanged(){
+    shownIdx = -1;
+    buildStages(); layout(); save();
+  }
+
+  function bindRange(id, key, after){
+    var el = $(id), out = $(id + "Val");
+    el.value = state[key]; out.textContent = state[key];
+    el.addEventListener("input", function(){
+      state[key] = Number(el.value);
+      out.textContent = el.value;
+      if(after) after();
+      save();
+    });
+  }
+  function bindCheck(id, key, after){
+    var el = $(id);
+    el.checked = state[key];
+    el.addEventListener("change", function(){
+      state[key] = el.checked;
+      if(after) after();
+      save();
+    });
+  }
+
+  /* keep the circle where it is on screen when the timing changes */
+  var oldDuration = state.duration;
+  bindRange("duration", "duration", function(){
+    elapsed = elapsed * state.duration / oldDuration;
+    oldDuration = state.duration;
+  });
+  bindRange("size", "size", layout);
+  bindRange("glow", "glow");
+  bindCheck("loopChk", "loop");
+  bindCheck("stepChk", "stepMode");
+  bindCheck("dimChk", "dimAhead");
+  bindCheck("vertChk", "vertical", layout);
+
+  $("colorA").addEventListener("input", function(e){ setGradient(e.target.value, state.colorB); });
+  $("colorB").addEventListener("input", function(e){ setGradient(state.colorA, e.target.value); });
+  $("bgPicker").addEventListener("input", function(e){ setBg(e.target.value); });
+  $("btnPlay").addEventListener("click", function(){
+    if(!playing && elapsed >= state.duration * 1000) restart();
+    setPlaying(!playing);
+  });
+  $("btnReset").addEventListener("click", function(){ restart(); setPlaying(true); });
+  $("btnAdd").addEventListener("click", function(){
+    if(state.names.length >= MAX_STAGES) return;
+    state.names.push("Stage " + (state.names.length + 1));
+    stagesChanged();
+    var inputs = $("stageGrid").querySelectorAll("input");
+    inputs[inputs.length - 1].select();
+  });
+  $("btnDefaults").addEventListener("click", function(){
+    state.names = DEFAULT_NAMES.slice();
+    stagesChanged();
+  });
+
+  /* only width changes matter; layout() itself changes the height */
+  if(window.ResizeObserver) new ResizeObserver(function(){
+    if(Math.max(280, stageBox.clientWidth) !== cssW) layout();
+  }).observe(stageBox);
+  else window.addEventListener("resize", layout);
+
+  /* ---------- export ---------- */
+
+  /* Frames are rendered one by one (not screen-recorded), so every frame is exact,
+     then encoded with the browser's own WebCodecs encoder through mediabunny,
+     the same way the Pathway Animator exports. With a transparent background the
+     WebM keeps an alpha channel (VP9 alpha). The encoder library loads on first use. */
+  var MB_LOCAL = "./vendor/mediabunny.min.mjs";
+  var MB_CDN = "https://cdn.jsdelivr.net/npm/mediabunny@1.61.0/dist/bundles/mediabunny.min.mjs";
+  var videoSupported = "VideoEncoder" in window;
+  var mbPromise = null, exportJob = null;
+
+  function loadMediabunny(){
+    if(!mbPromise){
+      mbPromise = import(MB_LOCAL).catch(function(){ return import(MB_CDN); });
+      mbPromise.catch(function(){ mbPromise = null; });
+    }
+    return mbPromise;
+  }
+
+  function even(v){ return Math.max(2, 2 * Math.round(v / 2)); }
+  function maxSide(){ return state.format === "png" ? MAX_SIDE_PNG : MAX_SIDE; }
+
+  /* One run is the full sweep plus the rest on the last stage, so a video of
+     whole runs loops seamlessly: the last frame flows straight into the first. */
+  function videoPlan(){
+    var G = geo;
+    var width = even(G.w * state.scale), height = even(G.h * state.scale);
+    var run = state.duration + END_HOLD / 1000;
+    var span = run * state.runs;
+    var frames = Math.max(1, Math.round(span * state.fps));
+    return {
+      G: G, width: width, height: height,
+      kx: width / G.w, ky: height / G.h,
+      run: run, span: span, frames: frames,
+      transparent: state.transparent && FORMATS[state.format].alpha,
+      maxSide: maxSide(),
+      tooBig: width > maxSide() || height > maxSide(),
+      /* animation time (ms) of frame i */
+      msAt: function(i){
+        var t = (i * span / frames) % run;
+        return Math.min(t, state.duration) * 1000;
+      }
+    };
+  }
+
+  var shownInfo = "";
+  function updateExportInfo(){
+    var P = videoPlan();
+    var text = FORMATS[state.format].label + " · " + P.width + " × " + P.height + " px · " + P.frames + " frames · " +
+      P.span.toFixed(1) + " s" + (P.transparent ? " · transparent" : "");
+    if(text !== shownInfo){
+      shownInfo = text;
+      $("exportInfo").textContent = text;
+      $("runLen").textContent = P.run.toFixed(1) + " s each";
+      if(!exportJob){
+        var supported = state.format === "png" || videoSupported;
+        $("btnExport").disabled = !supported || P.tooBig;
+        if(!supported) exportStatus("This browser can't encode video. Use a recent Chrome, Edge, Safari (17+) or Firefox (130+).", true);
+        else if(P.tooBig) exportStatus("Too large: at most " + P.maxSide + " px per side. Pick a smaller size.", true);
+        else if($("exportStatus").classList.contains("error")) exportStatus("");
+      }
+    }
+  }
+
+  function exportStatus(text, error){
+    var el = $("exportStatus");
+    el.textContent = text;
+    el.classList.toggle("error", !!error);
+  }
+
+  /* everything in the console except Cancel is locked while a video renders,
+     so the frames can't change halfway through */
+  function setExportUI(busy){
+    Array.prototype.forEach.call(document.querySelectorAll(".console input, .console button, .console select"), function(el){
+      if(el.id === "btnCancel") return;
+      if(busy){ el.dataset.wasDisabled = el.disabled ? "1" : ""; el.disabled = true; }
+      else{ el.disabled = el.dataset.wasDisabled === "1"; delete el.dataset.wasDisabled; }
+    });
+    $("btnCancel").hidden = !busy;
+    $("exportProgress").hidden = !busy;
+    $("btnExport").textContent = busy ? "Exporting" : "Export";
+  }
+
+  function downloadBlob(blob, filename){
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
+  }
+
+  /* runs one export, whichever format, with progress, cancel and the UI locked */
+  async function runExport(){
+    var P = videoPlan();
+    var job = { cancelled: false };
+    exportJob = job;
+    setExportUI(true);
+    $("exportProgress").value = 0;
+    try{
+      var result = state.format === "png" ? await exportPngSequence(P, job) : await exportVideo(P, job);
+      downloadBlob(result.blob, result.filename);
+      exportStatus("Saved " + result.filename + " (" + (result.blob.size / 1048576).toFixed(1) + " MB)." + (result.note || ""));
+    }catch(err){
+      if(err && err.name === "AbortError") exportStatus("Export cancelled.");
+      else exportStatus((err && err.message) || "Export failed.", true);
+    }finally{
+      exportJob = null;
+      setExportUI(false);
+      shownInfo = "";   /* re-check the size limits on the next frame */
+    }
+  }
+
+  function frameProgress(i, P, job){
+    if(job.cancelled) throw new DOMException("Export cancelled.", "AbortError");
+    $("exportProgress").value = i / P.frames;
+    exportStatus("Rendering frame " + Math.min(i + 1, P.frames) + " of " + P.frames + "…");
+  }
+
+  function baseName(P){
+    return "toregem-progress-" + P.width + "x" + P.height + (P.transparent ? "-transparent" : "");
+  }
+
+  async function exportVideo(P, job){
+    var output = null;
+    exportStatus("Loading the encoder…");
+    try{
+      var mb = await loadMediabunny();
+      var quality = { medium: mb.QUALITY_MEDIUM, high: mb.QUALITY_HIGH, veryHigh: mb.QUALITY_VERY_HIGH }[state.quality];
+      /* some browsers (Firefox, some Linux builds) have no H.264 encoder: MP4 falls back to WebM */
+      var order = state.format === "mp4" ? ["mp4", "webm"] : ["webm"];
+      var format = null;
+      for(var f = 0; f < order.length && !format; f++){
+        if(await mb.canEncodeVideo(FORMATS[order[f]].codec, { width: P.width, height: P.height, quality: quality })) format = order[f];
+      }
+      if(!format){
+        throw new Error("This browser can't encode " + P.width + " × " + P.height + " as " + FORMATS[state.format].label + ". Try a smaller size.");
+      }
+      var fmt = FORMATS[format];
+
+      var cv = document.createElement("canvas");
+      cv.width = P.width;
+      cv.height = P.height;
+      var c = cv.getContext("2d", { willReadFrequently: true });
+      output = new mb.Output({
+        format: format === "mp4" ? new mb.Mp4OutputFormat({ fastStart: "in-memory" }) : new mb.WebMOutputFormat(),
+        target: new mb.BufferTarget()
+      });
+      /* Frames go to the encoder as raw RGBA from getImageData rather than captured from
+         the canvas: a canvas capture hands over premultiplied colour, which players
+         (reading VP9 alpha as straight colour) would show as dark, muddy glows and fades. */
+      var source = new mb.VideoSampleSource({
+        codec: fmt.codec,
+        bitrate: quality,
+        keyFrameInterval: 2,
+        alpha: P.transparent ? "keep" : "discard"
+      });
+      output.addVideoTrack(source, { frameRate: state.fps });
+      await output.start();
+
+      for(var i = 0; i < P.frames; i++){
+        frameProgress(i, P, job);
+        c.setTransform(P.kx, 0, 0, P.ky, 0, 0);
+        draw(c, P.G, P.msAt(i), P.transparent);
+        var sample = new mb.VideoSample(c.getImageData(0, 0, P.width, P.height).data, {
+          format: "RGBA",
+          codedWidth: P.width,
+          codedHeight: P.height,
+          timestamp: i / state.fps,
+          duration: 1 / state.fps
+        });
+        try{ await source.add(sample); }finally{ sample.close(); }
+        /* let the page repaint the progress now and then */
+        if(i % 4 === 3) await new Promise(function(r){ setTimeout(r, 0); });
+      }
+      exportStatus("Finishing…");
+      await output.finalize();
+      var buffer = output.target.buffer;
+      if(!buffer) throw new Error("Video encoding produced no data.");
+      return {
+        blob: new Blob([buffer], { type: fmt.mime }),
+        filename: baseName(P) + "." + fmt.ext,
+        note: format !== state.format ? " Saved as WebM: this browser can't encode MP4 (H.264). Chrome, Edge and Safari can." : ""
+      };
+    }catch(err){
+      if(output && output.state !== "finalized") await output.cancel().catch(function(){});
+      throw err;
+    }
+  }
+
+  /* ---------- PNG sequence ---------- */
+
+  /* One numbered PNG per frame, zipped into a folder, for compositing apps such as
+     After Effects that can't read WebM. PNGs keep full alpha, and the frame rate is
+     in the folder name because a sequence carries none of its own. */
+  async function exportPngSequence(P, job){
+    var cv = document.createElement("canvas");
+    cv.width = P.width;
+    cv.height = P.height;
+    var c = cv.getContext("2d");
+    var folder = baseName(P) + "-" + state.fps + "fps";
+    var digits = Math.max(4, String(P.frames - 1).length);
+    var zip = new ZipWriter();
+
+    for(var i = 0; i < P.frames; i++){
+      frameProgress(i, P, job);
+      c.setTransform(P.kx, 0, 0, P.ky, 0, 0);
+      draw(c, P.G, P.msAt(i), P.transparent);
+      var png = await new Promise(function(res, rej){
+        cv.toBlob(function(b){ b ? res(b) : rej(new Error("Couldn't encode frame " + (i + 1) + " as PNG.")); }, "image/png");
+      });
+      var bytes = new Uint8Array(await png.arrayBuffer());
+      zip.add(folder + "/toregem_" + String(i).padStart(digits, "0") + ".png", bytes, png);
+    }
+    exportStatus("Zipping…");
+    return {
+      blob: zip.finish(),
+      filename: folder + ".zip",
+      note: " In After Effects, import the first frame with “PNG Sequence” ticked, then set " + state.fps + " fps under Interpret Footage."
+    };
+  }
+
+  var CRC_TABLE = (function(){
+    var t = new Uint32Array(256);
+    for(var n = 0; n < 256; n++){
+      var c = n;
+      for(var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+  function crc32(bytes){
+    var c = 0xFFFFFFFF;
+    for(var i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 255] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  /* Minimal ZIP writer. Entries are "stored" (not deflated) since PNGs are already
+     compressed; each file's data stays a Blob so the browser can keep it off the heap. */
+  function ZipWriter(){
+    var parts = [], central = [], offset = 0, count = 0;
+    var d = new Date();
+    var time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+    var date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+    var LIMIT = 0xFFFFFFFF;   /* plain ZIP (no ZIP64) caps sizes and offsets at 4 GB */
+    var tooBig = "The PNG sequence is over 4 GB, too large for a ZIP. Try fewer runs, a lower frame rate or a smaller size.";
+
+    this.add = function(name, bytes, blob){
+      var nb = new TextEncoder().encode(name), crc = crc32(bytes), size = bytes.length;
+      if(offset + 30 + nb.length + size > LIMIT || count >= 0xFFFF) throw new Error(tooBig);
+
+      var local = new Uint8Array(30 + nb.length), v = new DataView(local.buffer);
+      v.setUint32(0, 0x04034b50, true);   /* local file header */
+      v.setUint16(4, 20, true);           /* version needed */
+      v.setUint16(6, 0x0800, true);       /* UTF-8 names */
+      v.setUint16(8, 0, true);            /* stored */
+      v.setUint16(10, time, true);
+      v.setUint16(12, date, true);
+      v.setUint32(14, crc, true);
+      v.setUint32(18, size, true);
+      v.setUint32(22, size, true);
+      v.setUint16(26, nb.length, true);
+      local.set(nb, 30);
+      parts.push(local, blob || bytes);
+
+      var entry = new Uint8Array(46 + nb.length), e = new DataView(entry.buffer);
+      e.setUint32(0, 0x02014b50, true);   /* central directory header */
+      e.setUint16(4, 20, true);
+      e.setUint16(6, 20, true);
+      e.setUint16(8, 0x0800, true);
+      e.setUint16(10, 0, true);
+      e.setUint16(12, time, true);
+      e.setUint16(14, date, true);
+      e.setUint32(16, crc, true);
+      e.setUint32(20, size, true);
+      e.setUint32(24, size, true);
+      e.setUint16(28, nb.length, true);
+      e.setUint32(42, offset, true);      /* where the local header starts */
+      entry.set(nb, 46);
+      central.push(entry);
+
+      offset += local.length + size;
+      count++;
+    };
+
+    this.finish = function(){
+      var size = central.reduce(function(n, b){ return n + b.length; }, 0);
+      if(offset + size > LIMIT) throw new Error(tooBig);
+      var end = new Uint8Array(22), v = new DataView(end.buffer);
+      v.setUint32(0, 0x06054b50, true);   /* end of central directory */
+      v.setUint16(8, count, true);
+      v.setUint16(10, count, true);
+      v.setUint32(12, size, true);
+      v.setUint32(16, offset, true);
+      return new Blob(parts.concat(central, [end]), { type: "application/zip" });
+    };
+  }
+
+  function setScale(k){
+    state.scale = k;
+    Array.prototype.forEach.call($("scaleChips").children, function(b){
+      b.setAttribute("aria-pressed", String(Number(b.dataset.k) === k));
+    });
+    save();
+  }
+  SCALES.forEach(function(k){
+    var b = document.createElement("button");
+    b.type = "button";
+    b.dataset.k = k;
+    b.textContent = k + "×";
+    b.setAttribute("aria-label", k + " times the preview size");
+    b.addEventListener("click", function(){ setScale(k); });
+    $("scaleChips").appendChild(b);
+  });
+  FPS.forEach(function(f){
+    var o = document.createElement("option");
+    o.value = f;
+    o.textContent = f + " fps";
+    $("fps").appendChild(o);
+  });
+
+  var FORMAT_HINTS = {
+    webm: "",
+    png: "Downloads a ZIP of numbered PNG frames with full transparency, ready for After Effects.",
+    mp4: "MP4 has no transparency, so the background is always included."
+  };
+
+  /* transparency needs WebM or PNG: MP4 (H.264) has no alpha channel */
+  function setFormat(f){
+    state.format = f;
+    if(!FORMATS[f].alpha) state.transparent = false;
+    $("format").value = f;
+    $("transChk").checked = state.transparent;
+    $("quality").disabled = f === "png";   /* PNGs are lossless */
+    $("formatHint").textContent = FORMAT_HINTS[f];
+    stageBox.classList.toggle("checker", state.transparent);
+    save();
+  }
+  $("transChk").addEventListener("change", function(e){
+    state.transparent = e.target.checked;
+    setFormat(state.transparent && !FORMATS[state.format].alpha ? "webm" : state.format);
+  });
+  $("format").addEventListener("change", function(e){ setFormat(e.target.value); });
+  $("fps").addEventListener("change", function(e){ state.fps = Number(e.target.value); save(); });
+  $("quality").addEventListener("change", function(e){ state.quality = e.target.value; save(); });
+  $("runs").addEventListener("change", function(e){
+    state.runs = clamp(Math.round(Number(e.target.value) || 1), 1, 10);
+    e.target.value = state.runs;
+    save();
+  });
+  $("btnExport").addEventListener("click", function(){ if(!exportJob) runExport(); });
+  $("btnCancel").addEventListener("click", function(){ if(exportJob) exportJob.cancelled = true; });
+
+  setScale(state.scale);
+  setFormat(state.format);
+  $("fps").value = state.fps;
+  $("quality").value = state.quality;
+  $("runs").value = state.runs;
+
+  /* ---------- loop ---------- */
+
+  var last = 0;
+  function frame(now){
+    var dt = last ? Math.min(now - last, 100) : 0;
+    last = now;
+    var total = state.duration * 1000;
+
+    if(playing){
+      if(holdUntil){
+        if(now >= holdUntil){
+          holdUntil = 0;
+          if(state.loop) restart(); else setPlaying(false);
+        }
+      }else{
+        elapsed += dt;
+        if(elapsed >= total){ elapsed = total; holdUntil = now + END_HOLD; }
+      }
+    }
+
+    report(draw(ctx, geo, elapsed, state.transparent));
+    updateExportInfo();
+    requestAnimationFrame(frame);
+  }
+
+  buildStages();
+  setGradient(state.colorA, state.colorB);
+  setBg(state.bg);
+  setPlaying(true);
+  layout();
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(layout);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
