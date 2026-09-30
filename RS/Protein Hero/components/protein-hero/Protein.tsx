@@ -1,9 +1,9 @@
 "use client";
 
-import { useGLTF } from "@react-three/drei";
+import { useGLTF, useTexture } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
-import { BufferGeometry, Group, MathUtils, Mesh, Quaternion, Vector3 } from "three";
+import { BufferGeometry, Group, MathUtils, Mesh, NoColorSpace, Quaternion, RepeatWrapping, Vector3 } from "three";
 import { HERO } from "./config";
 import { createProteinMaterial } from "./proteinMaterial";
 import type { PointerState } from "./usePointer";
@@ -21,6 +21,19 @@ function useProteinGeometries(url: string) {
   }, [gltf]);
 }
 
+function useSurfaceTextures() {
+  const [detail, macro] = useTexture([HERO.detailNormalUrl, HERO.macroNormalUrl]);
+  return useMemo(() => {
+    for (const t of [detail, macro]) {
+      t.wrapS = t.wrapT = RepeatWrapping;
+      t.colorSpace = NoColorSpace; // normal data, not colour
+      t.anisotropy = 8;
+      t.needsUpdate = true;
+    }
+    return { detail, macro };
+  }, [detail, macro]);
+}
+
 type Props = {
   pointer: PointerState;
   backLightDir: { value: Vector3 };
@@ -31,7 +44,8 @@ type Props = {
 /** The hero subject: free drag-to-spin with inertia, a gentle lean toward the cursor, and a slow idle turn. */
 export function Protein({ pointer, backLightDir, animate, onReady }: Props) {
   const geometries = useProteinGeometries(HERO.modelUrl);
-  const material = useMemo(() => createProteinMaterial(HERO.protein, backLightDir), [backLightDir]);
+  const textures = useSurfaceTextures();
+  const material = useMemo(() => createProteinMaterial(HERO.protein, textures, backLightDir), [textures, backLightDir]);
   const lean = useRef<Group>(null);
   const spin = useRef<Group>(null);
   const velocity = useRef({ x: 0, y: 0 });
@@ -90,29 +104,5 @@ export function Protein({ pointer, backLightDir, animate, onReady }: Props) {
   );
 }
 
-/** A smaller, warmer copy of the protein floating far behind, softened by depth of field. */
-export function Echo({ backLightDir, animate }: { backLightDir: { value: Vector3 }; animate: boolean }) {
-  const geometries = useProteinGeometries(HERO.modelUrl);
-  const { echo, protein } = HERO;
-  const material = useMemo(
-    () => createProteinMaterial({ ...protein, color: echo.color, translucency: echo.translucency, aoStrength: 1 }, backLightDir),
-    [backLightDir, echo, protein],
-  );
-  const ref = useRef<Group>(null);
-
-  useFrame((_, dt) => {
-    if (!ref.current || !animate) return;
-    ref.current.rotation.y += dt * 0.05;
-    ref.current.rotation.x += dt * 0.02;
-  });
-
-  return (
-    <group ref={ref} position={echo.position} scale={echo.scale} rotation={[1.2, 2.4, 0.4]}>
-      {geometries.map((g, i) => (
-        <mesh key={i} geometry={g} material={material} />
-      ))}
-    </group>
-  );
-}
-
 useGLTF.preload(HERO.modelUrl, false, true);
+useTexture.preload([HERO.detailNormalUrl, HERO.macroNormalUrl]);

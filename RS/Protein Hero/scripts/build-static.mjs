@@ -1,7 +1,7 @@
 // Builds a self-contained static copy of the hero into this folder, so it opens as a
 // plain page (e.g. on GitHub Pages or the repo dashboard) with no server or build step:
 //   index.html   the page
-//   build/       scripts, styles and the model it loads
+//   build/       scripts, styles and the model, HDRI and textures it loads
 // All paths are relative, so the folder can be moved or hosted under any URL.
 // Usage: npm run build:static
 import { execSync } from "node:child_process";
@@ -33,7 +33,8 @@ await mkdir(DEST, { recursive: true });
 // Underscore files (_buildManifest etc.) are unused by this page and skipped by Jekyll anyway.
 const nextDir = join(OUT, "_next");
 await cp(nextDir, join(DEST, "next"), { recursive: true, filter: (src) => src === nextDir || !basename(src).startsWith("_") });
-await cp(join(OUT, "models"), join(DEST, "models"), { recursive: true });
+// Everything from public/ (model, HDRI, textures).
+for (const entry of await readdir("public")) await cp(join(OUT, entry), join(DEST, entry), { recursive: true });
 
 let files = 0;
 for await (const file of walk(join(DEST, "next"))) {
