@@ -23,7 +23,7 @@ export function Backdrop({ pointer }: { pointer: PointerState }) {
           uGlowCenter: { value: new Vector2(...bg.glowCenter) },
           uDeep: { value: new Color(bg.deep) },
           uMid: { value: new Color(bg.mid) },
-          uLilac: { value: new Color(bg.lilac) },
+          uHaze: { value: new Color(bg.haze) },
           uGlow: { value: new Color(bg.glow) },
         },
         vertexShader: /* glsl */ `
@@ -35,7 +35,7 @@ export function Backdrop({ pointer }: { pointer: PointerState }) {
         fragmentShader: /* glsl */ `
           uniform float uTime, uAspect;
           uniform vec2 uPointer, uGlowCenter;
-          uniform vec3 uDeep, uMid, uLilac, uGlow;
+          uniform vec3 uDeep, uMid, uHaze, uGlow;
           varying vec2 vUv;
 
           // Distances measured against the shorter screen side, so shapes hold up in portrait.
@@ -55,8 +55,8 @@ export function Backdrop({ pointer }: { pointer: PointerState }) {
             // Base: deep corners into a mid purple centre.
             vec2 q = toShort(uv - 0.5);
             vec3 col = mix(uMid, uDeep, smoothstep(0.25, 1.15, length(q)));
-            // Cooler lilac haze drifting on the right.
-            col = mix(col, uLilac, blob(uv, vec2(0.82, 0.55) + drift * 0.6, 0.38) * 0.55);
+            // Cool haze drifting on the right.
+            col = mix(col, uHaze, blob(uv, vec2(0.82, 0.55) + drift * 0.6, 0.38) * 0.55);
             // Warm key glow behind the subject, upper left, with an HDR core for bloom.
             vec2 gc = uGlowCenter + drift;
             col = mix(col, uGlow, blob(uv, gc, 0.3) * 0.9);

@@ -10,8 +10,8 @@
   user-select: none;
   /* Painted before WebGL is ready, matched to the 3D backdrop. */
   background:
-    radial-gradient(ellipse 45% 50% at 30% 40%, #e8d2b0 0%, rgba(232, 210, 176, 0) 70%),
-    radial-gradient(ellipse 60% 70% at 50% 50%, #6b4c8c 0%, #2b1b40 100%);
+    radial-gradient(ellipse 45% 50% at 46% 40%, #9aa9b4 0%, rgba(154, 169, 180, 0) 70%),
+    radial-gradient(ellipse 60% 70% at 50% 50%, #34424f 0%, #10161e 100%);
 }
 
 .hero[data-dragging] {
@@ -57,7 +57,7 @@
   line-height: 1;
   font-weight: 500;
   letter-spacing: -0.03em;
-  text-shadow: 0 2px 30px rgba(30, 15, 50, 0.35);
+  text-shadow: 0 2px 30px rgba(10, 16, 24, 0.4);
 }
 
 .actions {

@@ -1,28 +1,42 @@
-import { Color, MeshPhysicalMaterial, Texture, Vector3 } from "three";
+import { Color, MeshPhysicalMaterial, ShaderChunk, Texture, Vector3 } from "three";
 
 type DetailLayer = { scale: number; strength: number };
 
 export type ProteinMaterialOptions = {
   color: string;
+  scatter: string;
+  scatterWrap: [number, number, number];
   translucency: string;
   rim: string;
   roughness: number;
+  specular: number;
   aoStrength: number;
-  clearcoat: number;
   detail: DetailLayer;
   macro: DetailLayer;
 };
 
 export type ProteinTextures = { detail: Texture; macro: Texture };
 
+// three's physical direct-diffuse line, swapped for a subsurface version below.
+const DIRECT_DIFFUSE = "reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );";
+const SSS_DIRECT_DIFFUSE = /* glsl */ `{
+    // Subsurface scattering (wrapped, per-channel diffuse): light entering the surface travels a
+    // little before exiting, so it bleeds past the shadow line, more in the scatter colour.
+    float NdotL = dot( geometryNormal, directLight.direction );
+    vec3 wrapped = saturate( ( vec3( NdotL ) + uScatterWrap ) / ( 1.0 + uScatterWrap ) );
+    // Tint the soft shadow-side falloff with the scatter colour.
+    vec3 bleed = mix( uScatter, vec3( 1.0 ), saturate( NdotL * 2.0 ) );
+    vec3 sssIrradiance = wrapped * bleed * directLight.color;
+    reflectedLight.directDiffuse += sssIrradiance * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );
+  }`;
+
 /**
- * MeshPhysicalMaterial with a soft, waxy "organic" look:
- *  - triplanar normal maps in object space (the mesh has no UVs): fine pores + broad undulation,
- *    under a smooth clearcoat so highlights stay glossy
- *  - baked AO from vertex colours (deepened with a power curve, also applied to reflections)
- *  - cheap subsurface translucency from a back light (light bleeding through thin ridges)
- *  - wrapped diffuse so the terminator stays soft
- *  - fresnel sheen on silhouettes
+ * MeshPhysicalMaterial with a soft, velvety "organic" look:
+ *  - subsurface scattering approximation: per-channel wrapped diffuse on every light, tinted terminator
+ *  - backlight translucency through thin ridges
+ *  - baked AO from vertex colours, tinted toward the scatter colour so crevices glow rather than go black
+ *  - triplanar normal maps in object space (the mesh has no UVs): fine grain + broad undulation
+ *  - low specular and a sheen instead of a clearcoat, so reflections stay soft
  *
  * `backLightDir` is shared so the scene can update it (view-space) every frame.
  */
@@ -35,16 +49,17 @@ export function createProteinMaterial(
     color: opts.color,
     roughness: opts.roughness,
     metalness: 0,
+    specularIntensity: opts.specular,
     vertexColors: true,
-    sheen: 0.5,
-    sheenRoughness: 0.55,
+    sheen: 0.8,
+    sheenRoughness: 0.75,
     sheenColor: new Color(opts.rim),
-    clearcoat: opts.clearcoat,
-    clearcoatRoughness: 0.3,
   });
 
   const uniforms = {
     uBackLightDir: backLightDir,
+    uScatter: { value: new Color(opts.scatter) },
+    uScatterWrap: { value: new Vector3(...opts.scatterWrap) },
     uTranslucency: { value: new Color(opts.translucency) },
     uRim: { value: new Color(opts.rim) },
     uAOPower: { value: opts.aoStrength },
@@ -56,6 +71,11 @@ export function createProteinMaterial(
 
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
+
+    const physicalLights = ShaderChunk.lights_physical_pars_fragment;
+    if (!physicalLights.includes(DIRECT_DIFFUSE)) {
+      console.warn("proteinMaterial: three.js lighting chunk changed; subsurface diffuse not applied.");
+    }
 
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -76,6 +96,8 @@ export function createProteinMaterial(
         "#include <common>",
         /* glsl */ `#include <common>
         uniform vec3 uBackLightDir;
+        uniform vec3 uScatter;
+        uniform vec3 uScatterWrap;
         uniform vec3 uTranslucency;
         uniform vec3 uRim;
         uniform float uAOPower;
@@ -99,6 +121,13 @@ export function createProteinMaterial(
           return normalize(tx.zyx * w.x + ty.xzy * w.y + tz.xyz * w.z);
         }`,
       )
+      .replace("#include <lights_physical_pars_fragment>", physicalLights.replace(DIRECT_DIFFUSE, SSS_DIRECT_DIFFUSE))
+      // Baked AO lives in vColor. Curve it, and let crevices fall toward the scatter colour, not black.
+      .replace(
+        "#include <color_fragment>",
+        /* glsl */ `float bakedAO = pow(clamp(vColor.r, 0.0, 1.0), uAOPower);
+        diffuseColor.rgb *= mix(uScatter * 0.35, vec3(1.0), bakedAO);`,
+      )
       .replace(
         "#include <normal_fragment_maps>",
         /* glsl */ `#include <normal_fragment_maps>
@@ -109,12 +138,6 @@ export function createProteinMaterial(
           normal = normalize(normalMatrix * n2);
         }`,
       )
-      // Baked AO lives in vColor; curve it rather than multiplying it in raw.
-      .replace(
-        "#include <color_fragment>",
-        /* glsl */ `float bakedAO = pow(clamp(vColor.r, 0.0, 1.0), uAOPower);
-        diffuseColor.rgb *= bakedAO;`,
-      )
       .replace(
         "#include <lights_fragment_end>",
         /* glsl */ `#include <lights_fragment_end>
@@ -122,22 +145,20 @@ export function createProteinMaterial(
           vec3 N = normal;
           vec3 V = geometryViewDir;
           vec3 L = normalize(uBackLightDir);
-          float cavity = mix(0.25, 1.0, bakedAO);
+          float cavity = mix(0.3, 1.0, bakedAO);
 
-          // Light travelling through the surface toward the viewer.
-          vec3 H = normalize(L + N * 0.45);
-          float through = pow(saturate(dot(V, -H)), 2.5);
-          // Wrapped lambert keeps the shadow side from going dead.
-          float wrap = saturate((dot(N, L) + 0.55) / 1.55);
-          reflectedLight.directDiffuse += uTranslucency * (through * 1.6 + wrap * 0.22) * cavity;
+          // Backlight travelling through thin parts toward the viewer.
+          vec3 H = normalize(L + N * 0.5);
+          float through = pow(saturate(dot(V, -H)), 2.0);
+          reflectedLight.directDiffuse += uTranslucency * through * 0.9 * cavity;
 
-          // Silhouette sheen.
-          float fresnel = pow(1.0 - saturate(dot(N, V)), 3.0);
-          reflectedLight.indirectDiffuse += uRim * fresnel * 0.35 * bakedAO;
+          // Soft silhouette glow.
+          float fresnel = pow(1.0 - saturate(dot(N, V)), 2.5);
+          reflectedLight.indirectDiffuse += uRim * fresnel * 0.3 * bakedAO;
 
           // Keep reflections out of the crevices.
-          reflectedLight.indirectSpecular *= mix(0.15, 1.0, bakedAO);
-          reflectedLight.directSpecular *= mix(0.4, 1.0, bakedAO);
+          reflectedLight.indirectSpecular *= mix(0.1, 1.0, bakedAO);
+          reflectedLight.directSpecular *= mix(0.3, 1.0, bakedAO);
         }`,
       );
   };

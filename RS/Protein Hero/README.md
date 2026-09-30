@@ -2,7 +2,7 @@
 
 An interactive, studio-lit 3D protein for a website hero, built with Next.js, React Three Fiber and three.js.
 
-- **Look:** moody purple studio with a warm key glow. The protein is lit by a real studio HDRI (tinted purple, plus custom softboxes) and has a soft waxy surface: baked ambient occlusion, backlit translucency, sheen, a triplanar micro-texture under a smooth clearcoat. Bloom, depth of field, bokeh motes, film grain and vignette on top.
+- **Look:** a diseased protein in a cool slate-blue studio. The blue-grey surface is soft and velvety: subsurface scattering (per-channel wrapped diffuse, so light bleeds softly past the shadow line), backlight translucency through thin ridges, baked ambient occlusion that falls toward the scatter colour instead of black, a fine triplanar grain, low specular with a sheen. Lit by a studio HDRI plus softboxes. The environment has drifting debris fragments, fine dust, bokeh motes and depth haze, with bloom, depth of field, film grain and vignette on top.
 - **Interaction:** drag to spin freely (with inertia), the model leans gently toward the cursor, and it turns slowly when idle. On touch, horizontal drags spin and vertical swipes still scroll the page.
 - **Performance:** meshopt-compressed GLB (~580 KB), rendering pauses when the hero is off screen, resolution drops automatically on slow devices, and `prefers-reduced-motion` is respected.
 

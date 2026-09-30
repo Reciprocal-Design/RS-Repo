@@ -9,7 +9,8 @@ import { ACESFilmicToneMapping, AgXToneMapping, BackSide, NeutralToneMapping, Ve
 import { Backdrop } from "./Backdrop";
 import { HERO } from "./config";
 import { Particles } from "./Particles";
-import { Protein } from "./Protein";
+import { Debris, Dust } from "./Artifacts";
+import { Protein, useSurfaceTextures } from "./Protein";
 import type { PointerState } from "./usePointer";
 
 type SceneProps = {
@@ -21,12 +22,12 @@ type SceneProps = {
 };
 
 const TONE_MAPPING = { ACES_FILMIC: ACESFilmicToneMapping, AGX: AgXToneMapping, NEUTRAL: NeutralToneMapping };
-const keyLight = new Vector3(...HERO.lights.key.position).normalize();
+const backLight = new Vector3(...HERO.lights.back.position).normalize();
 
 /** Keeps the translucency light direction in view space as the camera/scene changes. */
 function BackLightTracker({ dir }: { dir: { value: Vector3 } }) {
   useFrame(({ camera }) => {
-    dir.value.copy(keyLight).transformDirection(camera.matrixWorldInverse);
+    dir.value.copy(backLight).transformDirection(camera.matrixWorldInverse);
   });
   return null;
 }
@@ -57,16 +58,21 @@ function StudioEnvironment() {
         <sphereGeometry args={[1, 32, 16]} />
         <meshBasicMaterial color={HERO.background.deep} side={BackSide} transparent opacity={lights.hdriTint} depthWrite={false} />
       </mesh>
-      {/* Warm softbox behind, upper left: matches the glow in the backdrop. */}
-      <Lightformer form="rect" color={HERO.background.glow} intensity={5} position={[-5, 4, -4]} scale={[8, 8, 1]} target={[0, 0, 0]} />
-      {/* Broad, dim front fill. */}
-      <Lightformer form="rect" color="#f4e4ff" intensity={0.9} position={[2, 1.5, 6]} scale={[7, 4, 1]} target={[0, 0, 0]} />
-      {/* Violet kicker, low right. */}
-      <Lightformer form="ring" color="#8d68dc" intensity={2.2} position={[5, -2, -2]} scale={4} target={[0, 0, 0]} />
-      {/* Purple bounce from below. */}
-      <Lightformer form="rect" color="#5d3f8f" intensity={1} position={[0, -6, 0]} scale={[12, 12, 1]} target={[0, 0, 0]} />
+      {/* Large soft overhead box, top-front-left: broad, diffuse key like the reference. */}
+      <Lightformer form="rect" color="#eef3f7" intensity={2.2} position={[-3, 5, 4]} scale={[10, 8, 1]} target={[0, 0, 0]} />
+      {/* Pale glow behind, upper left: matches the backdrop. */}
+      <Lightformer form="rect" color={HERO.background.glow} intensity={2.5} position={[-5, 4, -4]} scale={[8, 8, 1]} target={[0, 0, 0]} />
+      {/* Steel-blue kicker, low right. */}
+      <Lightformer form="ring" color="#5f7a90" intensity={1.6} position={[5, -2, -2]} scale={4} target={[0, 0, 0]} />
+      {/* Slate bounce from below. */}
+      <Lightformer form="rect" color="#2e3a47" intensity={1} position={[0, -6, 0]} scale={[12, 12, 1]} target={[0, 0, 0]} />
     </Environment>
   );
+}
+
+function SurfaceDebris({ backLightDir, animate }: { backLightDir: { value: Vector3 }; animate: boolean }) {
+  const textures = useSurfaceTextures();
+  return <Debris textures={textures} backLightDir={backLightDir} animate={animate} />;
 }
 
 export default function Scene({ pointer, eventSource, active, reducedMotion, onReady }: SceneProps) {
@@ -103,14 +109,18 @@ export default function Scene({ pointer, eventSource, active, reducedMotion, onR
 
       <ambientLight color={lights.ambient.color} intensity={lights.ambient.intensity} />
       <directionalLight color={lights.key.color} intensity={lights.key.intensity} position={lights.key.position} />
+      <directionalLight color={lights.back.color} intensity={lights.back.intensity} position={lights.back.position} />
       <directionalLight color={lights.fill.color} intensity={lights.fill.intensity} position={lights.fill.position} />
       <directionalLight color={lights.rim.color} intensity={lights.rim.intensity} position={lights.rim.position} />
 
       <Suspense fallback={null}>
         <StudioEnvironment />
         <Protein pointer={pointer} backLightDir={backLightDir} animate={animate} onReady={onReady} />
+        <SurfaceDebris backLightDir={backLightDir} animate={animate} />
       </Suspense>
       <Particles animate={animate} />
+      <Dust animate={animate} />
+      <fogExp2 attach="fog" args={[HERO.background.mid, HERO.background.fog]} />
 
       <EffectComposer multisampling={lowPower ? 0 : 4} enableNormalPass={false}>
         <DepthOfField

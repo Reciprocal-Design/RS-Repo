@@ -19,38 +19,48 @@ export const HERO = {
     narrowOffset: [0, 0.3] as [number, number],
   },
 
+  // Diseased protein: cool, desaturated blue-grey, soft and velvety with light scattering under the surface.
   protein: {
-    color: "#e2917c", // salmon surface
-    translucency: "#ff7a4d", // light scattering through thin ridges
-    rim: "#ffd7c2", // soft fresnel sheen
-    roughness: 0.52,
-    aoStrength: 1.6, // >1 deepens the baked crevice shading
+    color: "#72828f", // blue-grey albedo
+    scatter: "#6c8ba3", // colour light picks up travelling under the surface
+    scatterWrap: [0.55, 0.7, 0.85] as [number, number, number], // how far each channel (r,g,b) bleeds past the shadow line
+    translucency: "#9cc0d8", // backlight glowing through thin ridges
+    rim: "#c9d8e4", // velvety sheen on silhouettes
+    roughness: 0.66,
+    specular: 0.35, // 0..1, lower = softer, less mirror-like highlights
+    aoStrength: 1.3, // >1 deepens the baked crevice shading
     scale: 0.92,
-    // Surface texture: fine skin-like pores plus a broad, soft undulation.
-    detail: { scale: 7, strength: 0.5 }, // repeats per model radius, bump strength
+    // Surface texture: fine grain plus a broad, soft undulation.
+    detail: { scale: 11, strength: 0.3 }, // repeats per model radius, bump strength
     macro: { scale: 1.6, strength: 0.25 },
-    clearcoat: 0.35, // smooth wet layer over the textured base
   },
 
   background: {
-    deep: "#2e1a47", // corners
-    mid: "#74509c", // main purple
-    lilac: "#b196d6", // right-hand haze
-    glow: "#ffdc8f", // warm key glow, behind the subject's upper left
+    deep: "#10161e", // corners
+    mid: "#34424f", // main slate
+    haze: "#6f8292", // cool haze, right
+    glow: "#b9c7d1", // pale key glow behind the subject's upper left
     glowCenter: [0.46, 0.6] as [number, number], // uv, 0..1
+    fog: 0.045, // depth haze density: far debris fades into the backdrop
   },
 
   lights: {
-    key: { color: "#ffdcae", intensity: 3.2, position: [-3, 2.6, -2.4] as [number, number, number] },
-    fill: { color: "#ffe4f0", intensity: 1.3, position: [2.5, 1.2, 4] as [number, number, number] },
-    rim: { color: "#9b78ff", intensity: 1.1, position: [3.2, -1.8, -1.2] as [number, number, number] },
-    ambient: { color: "#7a5aa8", intensity: 0.25 },
-    envIntensity: 0.55,
+    // Soft key from the top-front-left, like the reference.
+    key: { color: "#eef3f7", intensity: 2, position: [-2.2, 3, 2.6] as [number, number, number] },
+    // Behind the subject: drives the translucency through thin ridges.
+    back: { color: "#c3d6e6", intensity: 1.6, position: [-3, 2.6, -2.4] as [number, number, number] },
+    fill: { color: "#cfdbe6", intensity: 0.7, position: [2.8, 0.4, 3.5] as [number, number, number] },
+    rim: { color: "#6f8fae", intensity: 0.9, position: [3.2, -1.8, -1.2] as [number, number, number] },
+    ambient: { color: "#4f6072", intensity: 0.3 },
+    envIntensity: 0.5,
     hdriRotation: 0.6, // radians; turns the HDRI's softboxes around the subject
-    hdriTint: 0.6, // 0 = raw neutral HDRI, 1 = fully the purple studio dome
+    hdriTint: 0.6, // 0 = raw neutral HDRI, 1 = fully the slate studio dome
   },
 
-  particles: { count: 22, color: "#6f8dff", intensity: 1.6 },
+  // Environment artifacts.
+  particles: { count: 22, color: "#8fa4b8", intensity: 1.1 }, // soft bokeh motes
+  debris: { count: 11, color: "#4d5a66" }, // small drifting fragments
+  dust: { count: 600, color: "#a9b8c6", opacity: 0.8 }, // fine suspended specks
 
   interaction: {
     tilt: [0.18, 0.32] as [number, number], // max radians the model leans toward the cursor (x, y)
