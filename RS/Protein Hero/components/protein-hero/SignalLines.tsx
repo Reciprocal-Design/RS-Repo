@@ -11,11 +11,13 @@ import {
   Group,
   MathUtils,
   PointLight,
+  Vector4,
   ShaderMaterial,
   TubeGeometry,
   Vector3,
 } from "three";
 import { HERO } from "./config";
+import { pulseHead, SIGNAL } from "./signal";
 
 /**
  * Three strands running top-left → bottom-right. They fan out at the edges of the frame, merge
@@ -230,6 +232,8 @@ export function SignalLines({ on, animate, thickness = 1 }: Props) {
           uniforms: { ...uniforms(), uWidth: { value: haloWidth * s.width * thickness } },
         });
         return {
+          curve,
+          spec: s,
           core: { geometry: new TubeGeometry(curve, SEGMENTS, radius * s.width * thickness, 6, false), material: core },
           halo: { geometry: ribbonGeometry(curve), material: halo },
         };
@@ -240,6 +244,7 @@ export function SignalLines({ on, animate, thickness = 1 }: Props) {
   const group = useRef<Group>(null);
   const entryLight = useRef<PointLight>(null);
   const exitLight = useRef<PointLight>(null);
+  const tmp = useMemo(() => ({ p: new Vector3(), entry: new Vector3(), exit: new Vector3() }), []);
   useFrame((state, dt) => {
     for (const s of strands) {
       for (const m of [s.core.material, s.halo.material]) {
@@ -252,12 +257,36 @@ export function SignalLines({ on, animate, thickness = 1 }: Props) {
     }
     if (group.current) group.current.visible = strands[0].core.material.uniforms.uVisibility.value > 0.003;
 
-    // The signal lights the protein where it enters and leaves, flickering gently with the pulses.
-    const u = strands[1].core.material.uniforms;
-    const t = state.clock.elapsedTime;
-    const level = u.uActivity.value * u.uVisibility.value * HERO.lines.lightIntensity;
-    if (entryLight.current) entryLight.current.intensity = level * (0.85 + 0.15 * Math.sin(t * 2.3));
-    if (exitLight.current) exitLight.current.intensity = level * (0.85 + 0.15 * Math.sin(t * 2.3 + 1.7));
+    // Mirror the shader's pulse heads on the CPU: hand their view-space positions to the protein
+    // materials (so the surface glows where a pulse approaches), and swell the entry/exit lights
+    // as pulses arrive.
+    const { camera } = state;
+    const lines = group.current;
+    const u0 = strands[0].core.material.uniforms;
+    const level = u0.uActivity.value * u0.uVisibility.value;
+    const time = u0.uTime.value;
+    const entryPos = entryLight.current?.position ?? tmp.entry;
+    const exitPos = exitLight.current?.position ?? tmp.exit;
+    let nearEntry = 0, nearExit = 0, n = 0;
+    for (const s of strands) {
+      const speed = s.core.material.uniforms.uSpeed.value;
+      for (let k = 0; k < 3; k++, n++) {
+        const out: Vector4 = SIGNAL.pulses.value[n];
+        const head = pulseHead(time, speed, s.spec.seed, k);
+        if (!lines || head < 0 || head > 1 || level < 0.001) {
+          out.w = 0;
+          continue;
+        }
+        s.curve.getPointAt(head, tmp.p); // strand-local
+        nearEntry = Math.max(nearEntry, Math.exp(-tmp.p.distanceToSquared(entryPos) / 0.5));
+        nearExit = Math.max(nearExit, Math.exp(-tmp.p.distanceToSquared(exitPos) / 0.5));
+        tmp.p.applyMatrix4(lines.matrixWorld).applyMatrix4(camera.matrixWorldInverse);
+        out.set(tmp.p.x, tmp.p.y, tmp.p.z, level * s.spec.brightness);
+      }
+    }
+    const base = level * HERO.lines.lightIntensity;
+    if (entryLight.current) entryLight.current.intensity = base * (0.45 + 1.1 * nearEntry);
+    if (exitLight.current) exitLight.current.intensity = base * (0.45 + 1.1 * nearExit);
   });
 
   return (
