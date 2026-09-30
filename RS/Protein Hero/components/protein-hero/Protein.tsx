@@ -21,7 +21,7 @@ function useProteinGeometries(url: string) {
   }, [gltf]);
 }
 
-function useSurfaceTextures() {
+export function useSurfaceTextures() {
   const [detail, macro] = useTexture([HERO.detailNormalUrl, HERO.macroNormalUrl]);
   return useMemo(() => {
     for (const t of [detail, macro]) {
@@ -60,7 +60,7 @@ export function Protein({ pointer, backLightDir, animate, onReady }: Props) {
     const { tilt, parallax, dragSpeed, inertia, autoRotate } = HERO.interaction;
     dt = Math.min(dt, 1 / 20);
 
-    // Ease the cursor (shared with the backdrop and echo).
+    // Ease the cursor (shared with the backdrop).
     pointer.smoothX = MathUtils.damp(pointer.smoothX, pointer.x, 3, dt);
     pointer.smoothY = MathUtils.damp(pointer.smoothY, pointer.y, 3, dt);
 
