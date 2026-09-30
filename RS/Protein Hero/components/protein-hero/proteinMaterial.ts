@@ -1,4 +1,5 @@
 import { Color, MeshPhysicalMaterial, ShaderChunk, Texture, Vector3 } from "three";
+import { PULSE_COUNT, SIGNAL } from "./signal";
 import { THEME } from "./theme";
 
 type DetailLayer = { scale: number; strength: number };
@@ -45,6 +46,7 @@ const SSS_DIRECT_DIFFUSE = /* glsl */ `{
  *  - triplanar normal maps in object space (the mesh has no UVs): fine grain + broad undulation
  *  - low specular and a sheen instead of a clearcoat, so reflections stay soft
  *  - partial transmission with volume attenuation: refraction through thin ridges and soft edges
+ *  - signalling glow: the surface lights up around approaching pulses (positions from signal.ts)
  *
  * `backLightDir` is shared so the scene can update it (view-space) every frame.
  */
@@ -84,6 +86,11 @@ export function createProteinMaterial(
     uRoughVar: { value: opts.roughnessVariation },
     uGrain: { value: [opts.grain.scale, opts.grain.strength] },
     uEdgeSoftness: { value: opts.edgeSoftness },
+    // Shared with every protein-style material; written by the signal lines each frame.
+    uPulses: SIGNAL.pulses,
+    uPulseColor: SIGNAL.color,
+    uPulseGlow: SIGNAL.glow,
+    uPulseRadius: SIGNAL.radius,
   };
 
   material.userData.uniforms = uniforms;
@@ -123,6 +130,9 @@ export function createProteinMaterial(
         uniform sampler2D uDetailMap, uMacroMap;
         uniform vec2 uDetail, uMacro; // (scale, strength)
         uniform float uMottle, uRoughVar, uEdgeSoftness;
+        uniform vec4 uPulses[${PULSE_COUNT}];
+        uniform vec3 uPulseColor;
+        uniform float uPulseGlow, uPulseRadius;
         uniform vec2 uGrain;
         uniform mat3 normalMatrix;
         varying vec3 vObjPos;
@@ -202,6 +212,17 @@ export function createProteinMaterial(
           // so edges lift toward the scatter colour instead of ending in a hard dark line.
           float edge = pow(1.0 - saturate(dot(geometryNormal, V)), 1.6);
           reflectedLight.indirectDiffuse += uScatter * edge * uEdgeSoftness * mix(0.4, 1.0, bakedAO);
+
+          // Signalling glow: light from each nearby pulse spreads under the surface around it.
+          // Pulses outside approach and brighten it; pulses inside show through as they cross.
+          vec3 P = -vViewPosition;
+          float pulseGlow = 0.0;
+          for (int i = 0; i < ${PULSE_COUNT}; i++) {
+            vec3 d = P - uPulses[i].xyz;
+            pulseGlow += uPulses[i].w * exp(-dot(d, d) / (uPulseRadius * uPulseRadius));
+          }
+          vec3 glowTint = mix(uScatter, uPulseColor, 0.5);
+          reflectedLight.directDiffuse += glowTint * pulseGlow * uPulseGlow * mix(0.5, 1.0, bakedAO);
 
           // Keep reflections out of the crevices.
           reflectedLight.indirectSpecular *= mix(0.1, 1.0, bakedAO);

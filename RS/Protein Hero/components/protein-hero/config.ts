@@ -78,6 +78,10 @@ export const HERO = {
     pulseIntensity: 8, // HDR multiplier; bloom turns this into glow
     speed: 0.09, // pulse laps per second
     lightIntensity: 2.5, // point lights where the strands enter and leave the protein, lighting its surface
+    // As a pulse nears the protein, the surface around it glows, as if the light were entering it;
+    // inside, the glow shows through as it travels across, then fades as the pulse exits.
+    surfaceGlow: 1.1, // strength of that glow
+    surfaceGlowRadius: 0.32, // how far it spreads around the pulse (model radii)
   },
 
   // The ON/OFF switch sits on the protein's upper right; this is its anchor, relative to the protein centre.
