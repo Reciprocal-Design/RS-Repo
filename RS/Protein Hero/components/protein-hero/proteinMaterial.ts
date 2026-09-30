@@ -14,6 +14,8 @@ export type ProteinMaterialOptions = {
   aoStrength: number;
   detail: DetailLayer;
   macro: DetailLayer;
+  mottle: number;
+  roughnessVariation: number;
 };
 
 export type ProteinTextures = { detail: Texture; macro: Texture };
@@ -68,6 +70,8 @@ export function createProteinMaterial(
     uMacroMap: { value: textures.macro },
     uDetail: { value: [opts.detail.scale, opts.detail.strength] },
     uMacro: { value: [opts.macro.scale, opts.macro.strength] },
+    uMottle: { value: opts.mottle },
+    uRoughVar: { value: opts.roughnessVariation },
   };
 
   material.userData.uniforms = uniforms;
@@ -106,9 +110,19 @@ export function createProteinMaterial(
         uniform float uAOPower;
         uniform sampler2D uDetailMap, uMacroMap;
         uniform vec2 uDetail, uMacro; // (scale, strength)
+        uniform float uMottle, uRoughVar;
         uniform mat3 normalMatrix;
         varying vec3 vObjPos;
         varying vec3 vObjNormal;
+
+        // A signed -1..1 variation signal from a normal map's slope channels, projected triplanar.
+        float triplanarVariation(sampler2D map, vec3 p, vec3 n, float scale) {
+          vec3 w = pow(abs(n), vec3(4.0));
+          w /= w.x + w.y + w.z;
+          vec2 a = texture2D(map, p.zy * scale).xy, b = texture2D(map, p.xz * scale).xy, c = texture2D(map, p.xy * scale).xy;
+          vec2 s = (a * w.x + b * w.y + c * w.z) * 2.0 - 1.0;
+          return clamp((s.x + s.y) * 1.4, -1.0, 1.0);
+        }
 
         // Triplanar normal mapping with whiteout blending (object space in, object space out).
         vec3 triplanarNormal(sampler2D map, vec3 p, vec3 n, float scale, float strength) {
@@ -129,7 +143,17 @@ export function createProteinMaterial(
       .replace(
         "#include <color_fragment>",
         /* glsl */ `float bakedAO = pow(clamp(vColor.r, 0.0, 1.0), uAOPower);
-        diffuseColor.rgb *= mix(uScatter * 0.35, vec3(1.0), bakedAO);`,
+        diffuseColor.rgb *= mix(uScatter * 0.35, vec3(1.0), bakedAO);
+        // Imperfection: broad blotchy albedo variation, and an independent, finer roughness variation.
+        vec3 objN = normalize(vObjNormal);
+        float mottle = triplanarVariation(uMacroMap, vObjPos + 3.7, objN, 0.9);
+        float roughVar = triplanarVariation(uMacroMap, vObjPos * 1.9 - 1.3, objN, 2.3);
+        diffuseColor.rgb *= 1.0 + mottle * uMottle;`,
+      )
+      .replace(
+        "#include <roughnessmap_fragment>",
+        /* glsl */ `#include <roughnessmap_fragment>
+        roughnessFactor = clamp(roughnessFactor * (1.0 + roughVar * uRoughVar), 0.05, 1.0);`,
       )
       .replace(
         "#include <normal_fragment_maps>",
