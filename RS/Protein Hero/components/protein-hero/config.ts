@@ -30,16 +30,6 @@ export const HERO = {
     aoStrength: 1.3, // >1 deepens the baked crevice shading
     scale: 0.92,
     // A broad, soft undulation so the surface isn't geometrically perfect.
-    // Procedural 3D relief, generated in the shader (no texture, so no seams or streaks):
-    // lumps, smaller knobs and a fine grain, each [scale in repeats per model radius, strength].
-    bumps: {
-      octaves: [
-        [15, 0.042],
-        [32, 0.026],
-        [62, 0.012],
-      ] as [number, number][],
-      shade: 0.1, // valleys slightly darker, peaks slightly lighter
-    },
     macro: { scale: 1.6, strength: 0.25 },
     // Imperfection: nothing in nature is uniform.
     mottle: 0.16, // albedo variation across the surface (0..1)
@@ -86,13 +76,13 @@ export const HERO = {
   // Signalling comets: no visible lines, just comets streaking along three paths that merge
   // through the protein, entering on one side and exiting on the other.
   lines: {
-    radius: 0.005, // comet core thickness, in model radii
-    haloWidth: 0.024, // half-width of the soft glow around each comet
+    radius: 0.0032, // comet core thickness, in model radii
+    haloWidth: 0.013, // half-width of the soft glow around each comet
     pulse: "#cfe8ff", // comet colour
     pulseIntensity: 8, // HDR multiplier; bloom turns this into glow
     speed: 0.09, // laps per second along a path
     cometsPerStrand: 7, // comets travelling each of the three paths
-    tail: 0.009, // tail length, as a fraction of the path
+    tail: 0.028, // tail length, as a fraction of the path
     lightIntensity: 2.5, // point lights where the strands enter and leave the protein, lighting its surface
     // As a pulse nears the protein, the surface around it glows, as if the light were entering it;
     // inside, the glow shows through as it travels across, then fades as the pulse exits.
