@@ -93,8 +93,11 @@
     border-radius:14px;
     overflow:hidden;
     border:1px solid var(--hair);
+    background:var(--field);
+    display:flex;
+    justify-content:center;
   }
-  canvas{display:block;width:100%}
+  canvas{display:block;max-width:100%}
 
   .console{
     display:grid;
@@ -178,7 +181,7 @@
   }
   .stage-grid .rm:hover:not(:disabled){color:var(--ink)}
   /* checkerboard behind the preview while the background is transparent */
-  .stage.checker{
+  canvas.checker{
     background-color:var(--field);
     background-image:conic-gradient(var(--hair) 25%, transparent 0 50%, var(--hair) 0 75%, transparent 0);
     background-size:20px 20px;
@@ -248,6 +251,15 @@
 
       <label class="cap" for="glow">Glow intensity <span class="val"><span id="glowVal">60</span>%</span></label>
       <input type="range" id="glow" min="0" max="100" step="1">
+    </div>
+
+    <div class="field">
+      <label class="cap" for="length">Line length <span class="val"><span id="lengthVal">1000</span>px</span></label>
+      <input type="range" id="length" min="300" max="4000" step="20">
+
+      <label class="cap" for="textSize">Text size <span class="val"><span id="textSizeVal">18</span>px</span></label>
+      <input type="range" id="textSize" min="8" max="60" step="1">
+      <p class="status" id="frameNote"></p>
     </div>
 
     <div class="field">
@@ -349,14 +361,16 @@
   var SCALES = [1, 2, 3, 4];
   var FPS = [24, 25, 30, 50, 60];
   var QUALITIES = ["medium", "high", "veryHigh"];
-  var MAX_SIDE = 4096;       /* H.264 encoders commonly top out here; kept for both video formats */
-  var MAX_SIDE_PNG = 8192;   /* stills have no encoder limit, just canvas memory */
+  var MAX_SIDE_MP4 = 4096;   /* H.264 encoders commonly top out here */
+  var MAX_SIDE = 8192;       /* VP9 (level 6) and PNG stills: long lines need the room */
 
   var state = {
     names: DEFAULT_NAMES.slice(),
     duration: 12,
     size: 60,
     glow: 60,
+    length: 1000,
+    textSize: 18,
     colorA: GRADIENTS[1][0],
     colorB: GRADIENTS[1][1],
     bg: BG_PRESETS[0],
@@ -379,6 +393,8 @@
       if(saved.duration >= 3 && saved.duration <= 60) state.duration = saved.duration;
       if(saved.size >= 20 && saved.size <= 140) state.size = saved.size;
       if(saved.glow >= 0 && saved.glow <= 100) state.glow = saved.glow;
+      if(saved.length >= 300 && saved.length <= 4000) state.length = saved.length;
+      if(saved.textSize >= 8 && saved.textSize <= 60) state.textSize = saved.textSize;
       if(HEX.test(saved.colorA)) state.colorA = saved.colorA;
       if(HEX.test(saved.colorB)) state.colorB = saved.colorB;
       if(HEX.test(saved.bg)) state.bg = saved.bg;
@@ -426,42 +442,62 @@
 
   /* ---------- geometry ---------- */
 
-  var cssW = 900, geo = {};
+  var geo = {}, shownAvail = 0;
 
   function labelFont(size){ return "300 " + size + 'px "Inter", system-ui, sans-serif'; }
 
+  /* how far the glow reaches from its centre, before the 1.35× horizontal stretch */
+  function glowRadius(r){ return state.glow > 0 ? r * (2 + 3.2 * state.glow / 100) : 0; }
+
+  /* The frame is sized from the line length, the circle, the text and the glow, so
+     nothing (the glow at the ends included) is ever cut off by the frame's edge.
+     The preview then scales that frame down to fit the page. */
   function layout(){
     var r = state.size / 2;
-    cssW = Math.max(280, stageBox.clientWidth);
     var depth = r * 0.55;
-    var labelSize = clamp(Math.round(cssW / 52), 12, 20);
+    var gr = glowRadius(r);
+    var labelSize = state.textSize;
     var peak = labelSize * 1.5;   /* the label under the circle grows to this */
 
     ctx.font = labelFont(peak);
     var longest = 0;
     state.names.forEach(function(n){ longest = Math.max(longest, ctx.measureText(n).width); });
 
-    var pad = Math.max(r * 1.4 + 12, state.vertical ? peak : Math.min(longest / 2 + 12, cssW * 0.14));
-    var lineY = Math.round(r * 1.65 + 26);
+    var pad = Math.ceil(Math.max(
+      r * 1.4 + 12,
+      state.vertical ? peak : longest / 2 + 12,
+      gr * 1.35 * 0.96
+    ));
+    var lineY = Math.round(Math.max(r * 1.65 + 26, gr * 0.96 - depth + 4));
     var tickTop = lineY + 20;
     var labelTop = tickTop + 40;
-    var h = state.vertical
-      ? labelTop + depth + 8 + longest + 28
-      : labelTop + depth + 8 + peak + 30;
+    var h = Math.max(
+      state.vertical ? labelTop + depth + 8 + longest + 28 : labelTop + depth + 8 + peak + 30,
+      lineY + depth + gr * 0.96 + 4
+    );
+    var w = state.length + pad * 2;
 
     geo = {
-      w: cssW,
+      w: w,
       r: r, depth: depth, spread: r * 2.4,
-      x0: pad, x1: cssW - pad,
+      x0: pad, x1: w - pad,
       lineY: lineY, tickTop: tickTop, labelTop: labelTop,
       labelSize: labelSize, h: Math.ceil(h)
     };
 
-    var scale = Math.max(2, window.devicePixelRatio || 1);
-    canvas.style.height = geo.h + "px";
-    canvas.width = Math.round(cssW * scale);
-    canvas.height = Math.round(geo.h * scale);
-    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    var avail = Math.max(200, stageBox.clientWidth - 2);
+    shownAvail = stageBox.clientWidth;
+    var dispW = Math.min(geo.w, avail), dispH = geo.h * dispW / geo.w;
+    var dpr = Math.max(2, window.devicePixelRatio || 1);
+    canvas.style.width = dispW + "px";
+    canvas.style.height = dispH + "px";
+    canvas.width = Math.round(dispW * dpr);
+    canvas.height = Math.round(dispH * dpr);
+    var k = canvas.width / geo.w;
+    ctx.setTransform(k, 0, 0, k, 0, 0);
+
+    $("frameNote").textContent = "Frame " + geo.w + " × " + geo.h + " px" +
+      (dispW < geo.w ? ", previewed at " + Math.round(dispW / geo.w * 100) + "%" : "");
   }
 
   /* ---------- timeline ---------- */
@@ -481,6 +517,24 @@
   }
 
   /* ---------- drawing ---------- */
+
+  /* offscreen layers for the glow, one per pixel size (the preview, and the export while it runs) */
+  var glowLayers = {};
+  function glowLayer(c){
+    var w = c.canvas.width, h = c.canvas.height, key = w + "x" + h;
+    var lc = glowLayers[key];
+    if(!lc){
+      if(Object.keys(glowLayers).length >= 3) glowLayers = {};
+      var cv = document.createElement("canvas");
+      cv.width = w;
+      cv.height = h;
+      lc = glowLayers[key] = cv.getContext("2d");
+    }
+    lc.setTransform(1, 0, 0, 1, 0, 0);
+    lc.clearRect(0, 0, w, h);
+    lc.setTransform(c.getTransform());
+    return lc;
+  }
 
   /* paints one frame at time ms into context c, laid out by geometry G */
   function draw(c, G, ms, transparent){
@@ -514,21 +568,46 @@
       c.lineTo(x1, ly + dent(x1));
     }
 
-    /* glow pooling under the dent */
+    /* Glow pooling under the dent, painted on its own layer. Above the line it is cut
+       away, but only along the line itself: past the start and end the cut fades out,
+       so at either end the light spills round freely instead of stopping in a hard edge. */
     if(g > 0){
-      c.save();
-      tracePath();
-      c.lineTo(x1, G.h); c.lineTo(x0, G.h); c.closePath();
-      c.clip();
-      var gr = r * (2 + 3.2 * g);
-      c.translate(kx, ly + depth);
-      c.scale(1.35, 1);
-      var rg = c.createRadialGradient(0, 0, 0, 0, 0, gr);
+      var lc = glowLayer(c);
+      var gr = glowRadius(r);
+      lc.save();
+      lc.translate(kx, ly + depth);
+      lc.scale(1.35, 1);
+      var rg = lc.createRadialGradient(0, 0, 0, 0, 0, gr);
       rg.addColorStop(0, css(cur, 0.62 * g));
       rg.addColorStop(0.4, css(cur, 0.22 * g));
       rg.addColorStop(1, css(cur, 0));
-      c.fillStyle = rg;
-      c.fillRect(-gr, -gr, gr * 2, gr * 2);
+      lc.fillStyle = rg;
+      lc.fillRect(-gr, -gr, gr * 2, gr * 2);
+      lc.restore();
+
+      /* the cut releases quickly past each end, so it leaves no visible edge of its own */
+      var f = r * 1.6, span = L + f * 2;
+      var cut = lc.createLinearGradient(x0 - f, 0, x1 + f, 0);
+      cut.addColorStop(0, "rgba(0,0,0,0)");
+      cut.addColorStop(f * 0.5 / span, "rgba(0,0,0,0.25)");
+      cut.addColorStop(f / span, "rgba(0,0,0,1)");
+      cut.addColorStop((f + L) / span, "rgba(0,0,0,1)");
+      cut.addColorStop((f * 1.5 + L) / span, "rgba(0,0,0,0.25)");
+      cut.addColorStop(1, "rgba(0,0,0,0)");
+      lc.globalCompositeOperation = "destination-out";
+      lc.fillStyle = cut;
+      lc.beginPath();
+      lc.moveTo(-1, -1);
+      lc.lineTo(G.w + 1, -1);
+      for(var gx = G.w + 1; gx > -1; gx -= 2) lc.lineTo(gx, ly + dent(gx));
+      lc.lineTo(-1, ly + dent(-1));
+      lc.closePath();
+      lc.fill();
+      lc.globalCompositeOperation = "source-over";
+
+      c.save();
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.drawImage(lc.canvas, 0, 0);
       c.restore();
     }
 
@@ -567,16 +646,19 @@
     c.lineJoin = "round";
     c.stroke();
 
-    /* second pass over the lit stretch only, so the halo doesn't colour the dim path */
+    /* second pass for the halo, fading out with the lit stretch (rather than being
+       clipped) so it doesn't colour the dim path and has no hard edge */
     if(g > 0){
+      var hg = c.createLinearGradient(x0, 0, x1, 0);
+      for(var hs = 0; hs <= 48; hs++){
+        var ht = hs / 48;
+        hg.addColorStop(ht, css(mixRgb(A, B, ht), state.dimAhead ? 1 - smooth((ht - p) / fade) : 1));
+      }
       c.save();
-      c.beginPath();
-      c.rect(0, 0, state.dimAhead ? kx + spread * 0.5 : G.w, G.h);
-      c.clip();
       c.shadowColor = css(cur, 0.9);
       c.shadowBlur = 16 * g;
       tracePath();
-      c.strokeStyle = lg;
+      c.strokeStyle = hg;
       c.stroke();
       c.restore();
     }
@@ -767,7 +849,9 @@
     oldDuration = state.duration;
   });
   bindRange("size", "size", layout);
-  bindRange("glow", "glow");
+  bindRange("glow", "glow", layout);   /* the frame grows to hold a bigger glow */
+  bindRange("length", "length", layout);
+  bindRange("textSize", "textSize", layout);
   bindCheck("loopChk", "loop");
   bindCheck("stepChk", "stepMode");
   bindCheck("dimChk", "dimAhead");
@@ -795,7 +879,7 @@
 
   /* only width changes matter; layout() itself changes the height */
   if(window.ResizeObserver) new ResizeObserver(function(){
-    if(Math.max(280, stageBox.clientWidth) !== cssW) layout();
+    if(stageBox.clientWidth !== shownAvail) layout();
   }).observe(stageBox);
   else window.addEventListener("resize", layout);
 
@@ -819,7 +903,7 @@
   }
 
   function even(v){ return Math.max(2, 2 * Math.round(v / 2)); }
-  function maxSide(){ return state.format === "png" ? MAX_SIDE_PNG : MAX_SIDE; }
+  function maxSide(){ return state.format === "mp4" ? MAX_SIDE_MP4 : MAX_SIDE; }
 
   /* One run is the full sweep plus the rest on the last stage, so a video of
      whole runs loops seamlessly: the last frame flows straight into the first. */
@@ -1136,7 +1220,7 @@
     $("transChk").checked = state.transparent;
     $("quality").disabled = f === "png";   /* PNGs are lossless */
     $("formatHint").textContent = FORMAT_HINTS[f];
-    stageBox.classList.toggle("checker", state.transparent);
+    canvas.classList.toggle("checker", state.transparent);
     save();
   }
   $("transChk").addEventListener("change", function(e){
