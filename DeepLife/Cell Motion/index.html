@@ -1,0 +1,1815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cell Motion</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --app-bg: #04051a;
+    --panel-bg: #0a0b1e;
+    --panel-border: #1d1f38;
+    --ink: #eceefb;
+    --ink-dim: #8688a3;
+    --accent: #8a7fe0;
+    --accent-ink: #f4f5fb;
+    --track: #23253e;
+    --field-bg: #12142a;
+    --danger: #ff7a8a;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:var(--app-bg); color:var(--ink);
+    font-family:'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace; }
+  .app{ display:flex; height:100vh; width:100vw; overflow:hidden; }
+
+  .sidebar{
+    width:300px; min-width:300px; background:var(--panel-bg);
+    border-right:1px solid var(--panel-border);
+    display:flex; flex-direction:column; overflow-y:auto;
+  }
+  .sidebar-head{ padding:20px 18px 14px; border-bottom:1px solid var(--panel-border); }
+  .eyebrow{ font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--accent); font-weight:600; margin-bottom:4px; }
+  .sidebar-head h1{ font-size:16px; margin:0 0 3px; font-weight:600; letter-spacing:-.01em; }
+  .sidebar-head p{ font-size:11px; color:var(--ink-dim); margin:0; line-height:1.5; }
+
+  .section{ padding:16px 18px; border-bottom:1px solid var(--panel-border); }
+  .section h2, .section summary{ font-size:10px; text-transform:uppercase; letter-spacing:.1em; color:var(--ink-dim); margin:0 0 12px; font-weight:600; }
+  details.section > summary{ cursor:pointer; list-style:none; margin:0; display:flex; justify-content:space-between; }
+  details.section > summary::-webkit-details-marker{ display:none; }
+  details.section > summary::after{ content:'+'; color:var(--accent); }
+  details.section[open] > summary::after{ content:'–'; }
+  details.section[open] > summary{ margin-bottom:12px; }
+  details.sub{ margin-top:14px; border:1px solid var(--panel-border); border-radius:8px; padding:10px 12px; }
+  details.sub > summary{ font-size:11px; color:var(--ink); cursor:pointer; }
+  details.sub[open] > summary{ margin-bottom:10px; }
+
+  label.field{ display:block; font-size:11px; color:var(--ink-dim); margin:13px 0 6px; }
+  label.field:first-child{ margin-top:0; }
+  .range-val{ float:right; color:var(--accent); font-weight:600; }
+  input[type=range]{
+    width:100%; -webkit-appearance:none; appearance:none; height:3px; border-radius:2px;
+    background:var(--track); outline:none; margin:0;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:13px; height:13px; border-radius:50%;
+    background:var(--accent); cursor:pointer; border:2px solid var(--panel-bg); box-shadow:0 0 0 1px var(--accent);
+  }
+  input[type=range]::-moz-range-thumb{
+    width:13px; height:13px; border-radius:50%; background:var(--accent); cursor:pointer; border:2px solid var(--panel-bg); box-shadow:0 0 0 1px var(--accent);
+  }
+  input[type=text], select{
+    width:100%; background:var(--field-bg); border:1px solid var(--panel-border); color:var(--ink);
+    border-radius:6px; padding:7px 9px; font-family:inherit; font-size:12px;
+  }
+
+  button{
+    font-family:inherit; font-size:12px; font-weight:600; cursor:pointer;
+    border-radius:7px; border:1px solid transparent; padding:9px 12px; width:100%;
+    transition: transform .08s ease, background .15s, border-color .15s, opacity .15s;
+  }
+  button:active{ transform:scale(0.98); }
+  button:disabled{ opacity:.45; cursor:default; transform:none; }
+  .btn-primary{ background:var(--accent); color:var(--accent-ink); }
+  .btn-primary:hover:not(:disabled){ background:#a198ec; }
+  .btn-secondary{ background:transparent; color:var(--ink); border-color:var(--panel-border); }
+  .btn-secondary:hover:not(:disabled){ border-color:var(--accent); color:var(--accent); }
+  .row{ display:flex; gap:6px; margin-top:8px; }
+  .row:first-child{ margin-top:0; }
+  .row > *{ flex:1; min-width:0; }
+  .row.tight button{ padding:7px 6px; font-size:11px; }
+
+  .toggle-row{ display:flex; gap:6px; }
+  .toggle-row button{ flex:1; background:transparent; color:var(--ink-dim); border:1px solid var(--panel-border); padding:7px 6px; font-size:11px; }
+  .toggle-row button.active{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .toggle-row button:hover:not(.active){ border-color:var(--accent); color:var(--ink); }
+
+  .checkbox-row{ display:flex; align-items:center; gap:8px; font-size:11.5px; color:var(--ink-dim); cursor:pointer; margin-top:12px; }
+  .checkbox-row input{ accent-color:var(--accent); width:14px; height:14px; margin:0; }
+
+  .layers{ display:grid; gap:6px; }
+  .layer{
+    display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px;
+    border:1px solid var(--panel-border); cursor:pointer; font-size:12px; user-select:none;
+  }
+  .layer:hover{ border-color:var(--accent); }
+  .layer.active{ background:#15173a; border-color:var(--accent); }
+  .layer .dot{ width:12px; height:12px; border-radius:50%; flex-shrink:0; }
+  .layer .lname{ flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .layer .key{ color:var(--ink-dim); font-size:10px; }
+  .layer input{ accent-color:var(--accent); margin:0; width:14px; height:14px; }
+  .layer.off .lname{ color:var(--ink-dim); text-decoration:line-through; }
+
+  .status-line{ font-size:10.5px; color:var(--accent); margin-top:10px; min-height:13px; line-height:1.5; }
+  .status-line.err{ color:var(--danger); }
+  .hint{ font-size:10.5px; color:var(--ink-dim); line-height:1.6; margin:10px 0 0; }
+  .hint:first-child{ margin-top:0; }
+  .kbd{ display:grid; grid-template-columns:auto 1fr; gap:4px 12px; font-size:10.5px; color:var(--ink-dim); }
+  .kbd b{ color:var(--ink); font-weight:500; white-space:nowrap; }
+  .progress{ height:4px; border-radius:2px; background:var(--track); margin-top:10px; overflow:hidden; display:none; }
+  .progress > div{ height:100%; width:0; background:var(--accent); }
+
+  .stage{ flex:1; position:relative; overflow:hidden; background:var(--app-bg); touch-action:none; }
+  #gl{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+  .stage.pan, .stage.pan #gl{ cursor:grab; }
+  .stage.panning, .stage.panning #gl{ cursor:grabbing; }
+  .stage.paint #gl{ cursor:none; }
+  #brush{
+    position:absolute; left:0; top:0; border-radius:50%; pointer-events:none; display:none;
+    border:1px solid rgba(255,255,255,.9); box-shadow:0 0 0 1px rgba(0,0,0,.55);
+  }
+  #brush::after{ content:''; position:absolute; inset:var(--inner,0); border-radius:50%; border:1px dashed rgba(255,255,255,.45); }
+
+  .topbar{ position:absolute; top:14px; left:14px; right:14px; display:flex; justify-content:space-between; gap:10px; pointer-events:none; flex-wrap:wrap; }
+  .topbar > *{ pointer-events:auto; }
+  .pill{ display:flex; gap:2px; background:rgba(10,11,30,.86); border:1px solid var(--panel-border); border-radius:9px; padding:3px; backdrop-filter:blur(6px); }
+  .pill button{ width:auto; padding:6px 10px; font-size:11px; background:transparent; color:var(--ink-dim); border:none; border-radius:6px; }
+  .pill button.active{ background:var(--accent); color:var(--accent-ink); }
+  .pill button:hover:not(.active){ color:var(--ink); }
+  .pill .zoom{ font-size:11px; color:var(--ink-dim); padding:6px 8px; min-width:52px; text-align:center; }
+
+  .bottombar{ position:absolute; left:14px; right:14px; bottom:14px; display:flex; align-items:center; gap:12px;
+    background:rgba(10,11,30,.86); border:1px solid var(--panel-border); border-radius:10px; padding:8px 12px; backdrop-filter:blur(6px); }
+  .bottombar button{ width:auto; padding:6px 12px; font-size:11px; }
+  .bottombar .time{ font-size:11px; color:var(--ink-dim); white-space:nowrap; min-width:92px; text-align:right; }
+
+  .empty{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+  .empty-card{ text-align:center; color:var(--ink-dim); font-size:12px; line-height:1.7; border:1px dashed var(--panel-border); border-radius:14px; padding:36px 44px; pointer-events:auto; max-width:420px; }
+  .empty-card b{ color:var(--ink); font-size:14px; font-weight:600; display:block; margin-bottom:6px; }
+  .empty-card .row{ margin-top:18px; }
+  .drop{ position:absolute; inset:10px; border:2px dashed var(--accent); border-radius:14px; display:none; align-items:center; justify-content:center; background:rgba(138,127,224,.08); font-size:13px; color:var(--ink); pointer-events:none; }
+  .stage.dragover .drop{ display:flex; }
+  .fatal{ position:absolute; inset:0; display:none; align-items:center; justify-content:center; padding:24px; text-align:center; color:var(--danger); font-size:13px; }
+
+  @media (max-width: 760px){
+    .app{ flex-direction:column-reverse; height:auto; min-height:100vh; overflow:visible; }
+    .sidebar{ width:100%; min-width:0; border-right:none; border-top:1px solid var(--panel-border); overflow:visible; }
+    .stage{ height:62vh; flex:none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <div class="eyebrow">DeepLife</div>
+      <h1>Cell Motion</h1>
+      <p>Bring a still image to life with subtle, organic motion. Paint where things move, then tune how they move. Every animation is a seamless loop.</p>
+    </div>
+
+    <div class="section">
+      <h2>Image</h2>
+      <div class="row">
+        <button class="btn-primary" id="btn-open">Upload image</button>
+        <button class="btn-secondary" id="btn-sample">Load sample</button>
+      </div>
+      <p class="hint" id="img-info">Or drop an image onto the canvas. Re-uploading an image of the same size keeps your masks.</p>
+    </div>
+
+    <div class="section">
+      <h2>Mask layers</h2>
+      <div class="layers" id="layers"></div>
+      <p class="hint">Each layer moves in its own way. White in a mask means full motion, black means none.</p>
+
+      <label class="field" style="margin-top:16px">Layer name</label>
+      <input type="text" id="layer-name" maxlength="40">
+
+      <label class="field">Tool</label>
+      <div class="toggle-row" id="tool-row">
+        <button data-tool="paint" class="active">Paint (B)</button>
+        <button data-tool="erase">Erase (E)</button>
+        <button data-tool="pan">Pan (H)</button>
+      </div>
+
+      <label class="field">Brush size <span class="range-val" data-out="brush.size"></span></label>
+      <input type="range" data-bind="brush.size" data-map="log" data-min="2" data-max="1200">
+      <label class="field">Hardness <span class="range-val" data-out="brush.hardness"></span></label>
+      <input type="range" data-bind="brush.hardness" min="0" max="1" step="0.01">
+      <label class="field">Strength <span class="range-val" data-out="brush.strength"></span></label>
+      <input type="range" data-bind="brush.strength" min="0.02" max="1" step="0.01">
+
+      <label class="field">Mask softness <span class="range-val" data-out="layer.soft"></span></label>
+      <input type="range" data-bind="layer.soft" data-map="pow" data-min="0" data-max="120">
+
+      <div class="row tight" style="margin-top:14px">
+        <button class="btn-secondary" id="btn-fill">Fill</button>
+        <button class="btn-secondary" id="btn-clear">Clear</button>
+        <button class="btn-secondary" id="btn-invert">Invert</button>
+        <button class="btn-secondary" id="btn-undo" title="Undo (Ctrl/Cmd+Z)">Undo</button>
+      </div>
+
+      <details class="sub" id="tone-panel">
+        <summary>Select by tone</summary>
+        <p class="hint" style="margin-top:0">Build the mask from the image's brightness. Dark tones pick out stained nuclei; light tones pick out cytoplasm. Sliders update the last selection live.</p>
+        <label class="field">Darkest <span class="range-val" data-out="tone.lo"></span></label>
+        <input type="range" data-bind="tone.lo" min="0" max="1" step="0.01">
+        <label class="field">Lightest <span class="range-val" data-out="tone.hi"></span></label>
+        <input type="range" data-bind="tone.hi" min="0" max="1" step="0.01">
+        <label class="field">Edge softness <span class="range-val" data-out="tone.soft"></span></label>
+        <input type="range" data-bind="tone.soft" min="0.005" max="0.3" step="0.005">
+        <label class="field">Smooth texture <span class="range-val" data-out="tone.smooth"></span></label>
+        <input type="range" data-bind="tone.smooth" min="0" max="30" step="1">
+        <label class="field">Grow / shrink <span class="range-val" data-out="tone.grow"></span></label>
+        <input type="range" data-bind="tone.grow" min="-30" max="30" step="1">
+        <div class="row tight" style="margin-top:14px">
+          <button class="btn-secondary" data-tone="replace">Replace</button>
+          <button class="btn-secondary" data-tone="add">Add</button>
+          <button class="btn-secondary" data-tone="subtract">Subtract</button>
+        </div>
+      </details>
+
+      <details class="sub">
+        <summary>Import / export mask</summary>
+        <p class="hint" style="margin-top:0">Paint masks in Photoshop if you prefer: a greyscale PNG at any size, white where things should move.</p>
+        <div class="row tight">
+          <button class="btn-secondary" id="btn-mask-in">Import PNG</button>
+          <button class="btn-secondary" id="btn-mask-out">Export PNG</button>
+        </div>
+      </details>
+    </div>
+
+    <div class="section">
+      <h2 id="motion-title">Motion</h2>
+      <label class="field">Preset</label>
+      <select id="preset"></select>
+
+      <label class="field">Amount <span class="range-val" data-out="layer.amount"></span></label>
+      <input type="range" data-bind="layer.amount" data-map="pow" data-min="0" data-max="40">
+      <label class="field">Size of movement <span class="range-val" data-out="layer.scale"></span></label>
+      <input type="range" data-bind="layer.scale" data-map="log" data-min="8" data-max="1000">
+      <label class="field">Speed <span class="range-val" data-out="layer.speed"></span></label>
+      <input type="range" data-bind="layer.speed" min="0" max="1" step="0.01">
+      <label class="field">Pulse ↔ Swirl <span class="range-val" data-out="layer.swirl"></span></label>
+      <input type="range" data-bind="layer.swirl" min="0" max="1" step="0.01">
+      <label class="field">Fine detail <span class="range-val" data-out="layer.detail"></span></label>
+      <input type="range" data-bind="layer.detail" min="0" max="1" step="0.01">
+      <div class="row" style="margin-top:14px">
+        <button class="btn-secondary" id="btn-reseed">New variation</button>
+      </div>
+      <p class="hint"><b style="color:var(--ink);font-weight:500">Pulse</b> swells and settles like breathing. <b style="color:var(--ink);font-weight:500">Swirl</b> flows sideways like cytoplasm. Size is in image pixels: set it near a cell's width to move whole cells, smaller to wobble their edges.</p>
+    </div>
+
+    <div class="section">
+      <h2>All layers</h2>
+      <label class="field">Overall intensity <span class="range-val" data-out="g.intensity"></span></label>
+      <input type="range" data-bind="g.intensity" min="0" max="2" step="0.01">
+      <label class="field">Loop length <span class="range-val" data-out="g.loop"></span></label>
+      <input type="range" data-bind="g.loop" min="2" max="30" step="0.5">
+      <label class="field">Density shading <span class="range-val" data-out="g.shade"></span></label>
+      <input type="range" data-bind="g.shade" min="0" max="1" step="0.01">
+      <p class="hint">Darkens tissue as it bunches up and lightens it as it stretches, as stain would.</p>
+      <label class="checkbox-row"><input type="checkbox" data-bind="g.pin"> Pin the image edges</label>
+      <label class="field">Mask overlay opacity <span class="range-val" data-out="g.overlay"></span></label>
+      <input type="range" data-bind="g.overlay" min="0.1" max="1" step="0.01">
+    </div>
+
+    <details class="section" id="export-panel">
+      <summary>Export</summary>
+      <label class="field">Format</label>
+      <div class="toggle-row" id="fmt-row">
+        <button data-fmt="mp4" class="active">MP4</button>
+        <button data-fmt="webm">WebM</button>
+      </div>
+      <label class="field">Size</label>
+      <select id="exp-scale">
+        <option value="1">100%</option>
+        <option value="0.75">75%</option>
+        <option value="0.5">50%</option>
+        <option value="0.25">25%</option>
+      </select>
+      <div class="row">
+        <div>
+          <label class="field">Frame rate</label>
+          <select id="exp-fps">
+            <option value="24">24 fps</option>
+            <option value="25">25 fps</option>
+            <option value="30" selected>30 fps</option>
+            <option value="60">60 fps</option>
+          </select>
+        </div>
+        <div>
+          <label class="field">Loops</label>
+          <select id="exp-loops">
+            <option value="1" selected>1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="6">6</option>
+          </select>
+        </div>
+      </div>
+      <label class="field">Quality</label>
+      <select id="exp-quality">
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+        <option value="veryHigh" selected>Very high</option>
+      </select>
+      <div class="row" style="margin-top:14px">
+        <button class="btn-primary" id="btn-export">Export video</button>
+      </div>
+      <div class="progress" id="exp-progress"><div></div></div>
+      <div class="status-line" id="exp-status"></div>
+      <div class="row tight" style="margin-top:12px">
+        <button class="btn-secondary" id="btn-frame">Save frame PNG</button>
+      </div>
+      <p class="hint">A single loop plays back seamlessly when set to repeat. Frames are rendered one by one, so the export is smooth whatever your machine's speed.</p>
+    </details>
+
+    <details class="section">
+      <summary>Project</summary>
+      <div class="row tight">
+        <button class="btn-secondary" id="btn-save">Save project</button>
+        <button class="btn-secondary" id="btn-load">Open project</button>
+      </div>
+      <p class="hint">A project file holds the image, all masks and every setting.</p>
+    </details>
+
+    <details class="section">
+      <summary>Shortcuts</summary>
+      <div class="kbd">
+        <b>B / E / H</b><span>Paint / erase / pan</span>
+        <b>Alt + drag</b><span>Erase while painting</span>
+        <b>[ &nbsp;]</b><span>Brush size</span>
+        <b>Shift + [ &nbsp;]</b><span>Hardness</span>
+        <b>1 2 3</b><span>Select layer</span>
+        <b>M</b><span>Toggle mask view</span>
+        <b>Hold O</b><span>Show the original</span>
+        <b>Space</b><span>Play / pause (hold + drag to pan)</span>
+        <b>Wheel</b><span>Zoom</span>
+        <b>F</b><span>Fit to screen</span>
+        <b>Ctrl/Cmd + Z</b><span>Undo (Shift for redo)</span>
+      </div>
+    </details>
+
+    <div class="section" style="border-bottom:none">
+      <div class="status-line" id="status" style="margin-top:0"></div>
+    </div>
+  </aside>
+
+  <main class="stage paint" id="stage">
+    <canvas id="gl"></canvas>
+    <div id="brush"></div>
+    <div class="topbar">
+      <div class="pill" id="view-row">
+        <button data-view="motion" class="active" title="The animated result">Motion</button>
+        <button data-view="mask" title="Masks over the still image (M)">Mask</button>
+        <button data-view="original" title="The untouched image (hold O)">Original</button>
+      </div>
+      <div class="pill">
+        <button id="btn-zoom-out" title="Zoom out">−</button>
+        <span class="zoom" id="zoom-read">100%</span>
+        <button id="btn-zoom-in" title="Zoom in">+</button>
+        <button id="btn-fit" title="Fit (F)">Fit</button>
+        <button id="btn-100" title="Actual pixels">1:1</button>
+      </div>
+    </div>
+    <div class="bottombar">
+      <button class="btn-primary" id="btn-play">Pause</button>
+      <input type="range" id="scrub" min="0" max="1000" step="1" value="0" aria-label="Position in loop">
+      <span class="time" id="time-read">0.0 / 8.0 s</span>
+    </div>
+    <div class="empty" id="empty">
+      <div class="empty-card">
+        <b>Drop an image here</b>
+        PNG, JPEG or WebP. Then paint masks over the areas you want to move.
+        <div class="row">
+          <button class="btn-primary" id="btn-open2">Upload image</button>
+          <button class="btn-secondary" id="btn-sample2">Load sample</button>
+        </div>
+      </div>
+    </div>
+    <div class="drop">Drop to open</div>
+    <div class="fatal" id="fatal"></div>
+  </main>
+</div>
+
+<input type="file" id="file-img" accept="image/*" hidden>
+<input type="file" id="file-mask" accept="image/*" hidden>
+<input type="file" id="file-proj" accept=".json,application/json" hidden>
+
+<script type="module">
+// ---------------------------------------------------------------------------
+// Cell Motion
+//
+// The motion is a displacement field: every pixel of the output samples the
+// image a little way off from where it sits. Each mask layer adds its own
+// field, weighted by the (feathered) mask. A field is the gradient of 4D
+// simplex noise, rotated between "pulse" (straight gradient: tissue gathers
+// and spreads) and "swirl" (perpendicular to the gradient: divergence-free
+// flow). The noise's time axis travels round a circle, so the motion loops
+// seamlessly at the loop length.
+// ---------------------------------------------------------------------------
+
+const MEDIABUNNY_URL = 'https://cdn.jsdelivr.net/npm/mediabunny@1.61.0/dist/bundles/mediabunny.min.mjs';
+const MAX_IMAGE = 4096;   // longest side of the working image
+const MAX_MASK = 2048;    // longest side of the mask canvases
+const MAX_FIELD = 1280;   // longest side of the displacement field
+const LAYER_COLORS = ['#ff5fa2', '#3fd0ff', '#ffc233'];
+const UNDO_LIMIT = 12;
+// "Amount" is roughly the peak displacement: 99% of the raw noise gradient
+// falls under 3.4 (measured), so scale by its inverse.
+const GRAD_NORM = 1 / 3.4;
+const NOISE_RATE = 0.5;   // noise units per second at speed 1
+
+const PRESETS = {
+  breathe: { label: 'Breathe', amount: 3, scale: 260, speed: 0.16, swirl: 0.08, detail: 0.2, soft: 24 },
+  nucleus: { label: 'Nucleus drift', amount: 3.5, scale: 200, speed: 0.2, swirl: 0.55, detail: 0.1, soft: 14 },
+  flow: { label: 'Cytoplasm flow', amount: 5, scale: 90, speed: 0.28, swirl: 0.85, detail: 0.5, soft: 20 },
+  ripple: { label: 'Membrane ripple', amount: 1.8, scale: 40, speed: 0.4, swirl: 0.3, detail: 0.6, soft: 6 },
+  jitter: { label: 'Brownian jitter', amount: 1, scale: 22, speed: 0.85, swirl: 0.5, detail: 0.8, soft: 4 },
+};
+
+const $ = (s) => document.querySelector(s);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+// ----------------------------------------------------------------- state
+
+const state = {
+  img: null, imgW: 0, imgH: 0, imgName: 'image', imgDataURL: null,
+  maskW: 0, maskH: 0, maskK: 1, fieldW: 0, fieldH: 0,
+  layers: [0, 1, 2].map((i) => ({
+    name: ['Base', 'Nuclei', 'Extra'][i],
+    enabled: true,
+    color: LAYER_COLORS[i],
+    p: { ...PRESETS[['breathe', 'nucleus', 'ripple'][i]], seed: i * 7.31 + 1.3 },
+    canvas: null, ctx: null, dirty: true,
+  })),
+  active: 0,
+  g: { intensity: 1, loop: 8, shade: 0.35, pin: true, overlay: 0.55 },
+  brush: { size: 120, hardness: 0.35, strength: 1, tool: 'paint' },
+  tone: { lo: 0, hi: 0.5, soft: 0.05, smooth: 4, grow: 6 },
+  view: { zoom: 1, x: 0, y: 0 },
+  mode: 'motion', holdOriginal: false,
+  playing: true, t: 0,
+  fmt: 'mp4',
+  exporting: false,
+  dirty: true, maskDirty: true,
+};
+for (const L of state.layers) delete L.p.label;
+
+// ----------------------------------------------------------------- WebGL
+
+const canvas = $('#gl');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false });
+
+function fatal(msg) {
+  const f = $('#fatal');
+  f.textContent = msg;
+  f.style.display = 'flex';
+  $('#empty').style.display = 'none';
+  throw new Error(msg);
+}
+if (!gl) fatal('This tool needs WebGL 2. Please use a recent Chrome, Edge, Firefox or Safari.');
+if (!gl.getExtension('EXT_color_buffer_float') && !gl.getExtension('EXT_color_buffer_half_float')) {
+  fatal('This browser cannot render to floating-point textures, which the motion needs. Please try Chrome or Edge.');
+}
+
+const VS = `#version 300 es
+void main(){
+  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+// 4D simplex noise: Ian McEwan, Stefan Gustavson (Ashima Arts), MIT licence.
+const NOISE = `
+vec4 mod289(vec4 x){ return x - floor(x * (1.0 / 289.0)) * 289.0; }
+float mod289(float x){ return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 permute(vec4 x){ return mod289(((x * 34.0) + 1.0) * x); }
+float permute(float x){ return mod289(((x * 34.0) + 1.0) * x); }
+vec4 taylorInvSqrt(vec4 r){ return 1.79284291400159 - 0.85373472095314 * r; }
+float taylorInvSqrt(float r){ return 1.79284291400159 - 0.85373472095314 * r; }
+vec4 grad4(float j, vec4 ip){
+  const vec4 ones = vec4(1.0, 1.0, 1.0, -1.0);
+  vec4 p, s;
+  p.xyz = floor(fract(vec3(j) * ip.xyz) * 7.0) * ip.z - 1.0;
+  p.w = 1.5 - dot(abs(p.xyz), ones.xyz);
+  s = vec4(lessThan(p, vec4(0.0)));
+  p.xyz = p.xyz + (s.xyz * 2.0 - 1.0) * s.www;
+  return p;
+}
+float snoise(vec4 v){
+  const vec4 C = vec4(0.138196601125011, 0.276393202250021, 0.414589803375032, -0.447213595499958);
+  vec4 i = floor(v + dot(v, vec4(0.309016994374947451)));
+  vec4 x0 = v - i + dot(i, C.xxxx);
+  vec4 i0;
+  vec3 isX = step(x0.yzw, x0.xxx);
+  vec3 isYZ = step(x0.zww, x0.yyz);
+  i0.x = isX.x + isX.y + isX.z;
+  i0.yzw = 1.0 - isX;
+  i0.y += isYZ.x + isYZ.y;
+  i0.zw += 1.0 - isYZ.xy;
+  i0.z += isYZ.z;
+  i0.w += 1.0 - isYZ.z;
+  vec4 i3 = clamp(i0, 0.0, 1.0);
+  vec4 i2 = clamp(i0 - 1.0, 0.0, 1.0);
+  vec4 i1 = clamp(i0 - 2.0, 0.0, 1.0);
+  vec4 x1 = x0 - i1 + C.xxxx;
+  vec4 x2 = x0 - i2 + C.yyyy;
+  vec4 x3 = x0 - i3 + C.zzzz;
+  vec4 x4 = x0 + C.wwww;
+  i = mod289(i);
+  float j0 = permute(permute(permute(permute(i.w) + i.z) + i.y) + i.x);
+  vec4 j1 = permute(permute(permute(permute(
+      i.w + vec4(i1.w, i2.w, i3.w, 1.0))
+    + i.z + vec4(i1.z, i2.z, i3.z, 1.0))
+    + i.y + vec4(i1.y, i2.y, i3.y, 1.0))
+    + i.x + vec4(i1.x, i2.x, i3.x, 1.0));
+  vec4 ip = vec4(1.0 / 294.0, 1.0 / 49.0, 1.0 / 7.0, 0.0);
+  vec4 p0 = grad4(j0, ip);
+  vec4 p1 = grad4(j1.x, ip);
+  vec4 p2 = grad4(j1.y, ip);
+  vec4 p3 = grad4(j1.z, ip);
+  vec4 p4 = grad4(j1.w, ip);
+  vec4 norm = taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
+  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+  p4 *= taylorInvSqrt(dot(p4, p4));
+  vec3 m0 = max(0.6 - vec3(dot(x0, x0), dot(x1, x1), dot(x2, x2)), 0.0);
+  vec2 m1 = max(0.6 - vec2(dot(x3, x3), dot(x4, x4)), 0.0);
+  m0 = m0 * m0;
+  m1 = m1 * m1;
+  return 49.0 * (dot(m0 * m0, vec3(dot(p0, x0), dot(p1, x1), dot(p2, x2)))
+               + dot(m1 * m1, vec2(dot(p3, x3), dot(p4, x4))));
+}`;
+
+// Separable Gaussian blur of the three mask layers into one RGB texture.
+const FS_BLUR = `#version 300 es
+precision highp float;
+uniform sampler2D uM0, uM1, uM2, uSrc;
+uniform bool uCombine;   // first pass reads the three raw layers
+uniform vec2 uDir;       // texel-space direction
+uniform vec3 uStep;      // tap spacing (texels) per layer
+uniform vec2 uSize;      // mask size in texels
+uniform float uW[7];
+out vec4 o;
+vec3 tap(vec2 uv, float k){
+  if (uCombine) return vec3(
+    texture(uM0, uv + uDir * (k * uStep.r)).r,
+    texture(uM1, uv + uDir * (k * uStep.g)).r,
+    texture(uM2, uv + uDir * (k * uStep.b)).r);
+  return vec3(
+    texture(uSrc, uv + uDir * (k * uStep.r)).r,
+    texture(uSrc, uv + uDir * (k * uStep.g)).g,
+    texture(uSrc, uv + uDir * (k * uStep.b)).b);
+}
+void main(){
+  vec2 uv = gl_FragCoord.xy / uSize;
+  vec3 s = tap(uv, 0.0) * uW[0];
+  for (int i = 1; i < 7; i++) {
+    float k = float(i);
+    s += (tap(uv, k) + tap(uv, -k)) * uW[i];
+  }
+  o = vec4(s, 1.0);
+}`;
+
+// Displacement field, in image pixels, over the whole image.
+const FS_FIELD = `#version 300 es
+precision highp float;
+uniform sampler2D uMask;
+uniform vec2 uImgSize, uFieldSize;
+uniform vec4 uA[3];   // amount (px), 1/scale, time radius, swirl angle
+uniform vec4 uB[3];   // detail, seed
+uniform float uPhase;
+uniform float uPin;   // edge margin in px, 0 = off
+out vec4 o;
+${NOISE}
+// Gradient (xy) and value (z) of the noise potential.
+vec3 ngrad(vec4 p){
+  const float e = 0.02;
+  float n = snoise(p);
+  return vec3(vec2(snoise(p + vec4(e, 0.0, 0.0, 0.0)) - n, snoise(p + vec4(0.0, e, 0.0, 0.0)) - n) / e, n);
+}
+void main(){
+  vec2 uv = gl_FragCoord.xy / uFieldSize;
+  vec2 px = uv * uImgSize;
+  vec3 m = texture(uMask, uv).rgb;
+  vec2 cs = vec2(cos(uPhase), sin(uPhase));
+  vec2 d = vec2(0.0);
+  float div = 0.0;
+  for (int i = 0; i < 3; i++) {
+    float w = m[i] * uA[i].x;
+    if (w < 1e-4) continue;
+    vec4 seed = fract(uB[i].y * vec4(0.1731, 0.2917, 0.4113, 0.3371)) * 97.0;
+    vec2 q = px * uA[i].y;
+    vec3 n = ngrad(vec4(q, cs * uA[i].z) + seed);
+    vec2 g = n.xy;
+    float lap = -n.z;   // for band-limited noise the Laplacian is roughly -k^2 * value
+    if (uB[i].x > 0.0) {
+      vec3 n2 = ngrad(vec4(q * 2.31 + 13.7, cs * (uA[i].z * 2.0)) + seed.wzyx);
+      g += uB[i].x * 0.55 * n2.xy;
+      lap -= uB[i].x * 0.55 * 2.31 * n2.z;
+    }
+    float a = uA[i].w;
+    g = cos(a) * g + sin(a) * vec2(-g.y, g.x);
+    d += w * g;
+    // Only the pulse part compresses or stretches; swirl is divergence-free.
+    div += w * cos(a) * lap * uA[i].y;
+  }
+  if (uPin > 0.0) {
+    vec2 e = min(px, uImgSize - px);
+    float k = smoothstep(0.0, uPin, min(e.x, e.y));
+    d *= k;
+    div *= k;
+  }
+  o = vec4(d, div, 1.0);
+}`;
+
+// Final image: view transform, displaced lookup, density shading, overlays.
+const FS_COMPOSITE = `#version 300 es
+precision highp float;
+uniform sampler2D uImg, uField, uMask;
+uniform vec2 uImgSize, uFieldSize, uCanvasSize;
+uniform vec3 uView;        // offset x, y (device px from top-left), zoom
+uniform int uMode;         // 0 motion, 1 mask, 2 original
+uniform float uShade, uOverlay;
+uniform vec3 uCol[3];
+uniform vec3 uEnabled;
+uniform vec3 uBg;
+out vec4 o;
+void main(){
+  vec2 fc = vec2(gl_FragCoord.x, uCanvasSize.y - gl_FragCoord.y);
+  vec2 uv = (fc - uView.xy) / uView.z / uImgSize;
+  if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) { o = vec4(uBg, 1.0); return; }
+  vec3 c;
+  if (uMode == 0) {
+    vec3 f = texture(uField, uv).xyz;
+    vec2 d = f.xy;
+    c = texture(uImg, uv - d / uImgSize).rgb;
+    if (uShade > 0.0) {
+      // f.z estimates the divergence of the motion. Stain behaves like
+      // absorbance: stretched tissue thins out, squeezed tissue deepens.
+      c = pow(max(c, vec3(1e-4)), vec3(clamp(1.0 - f.z * uShade, 0.6, 1.4)));
+    }
+  } else {
+    c = texture(uImg, uv).rgb;
+  }
+  if (uMode == 1) {
+    vec3 m = texture(uMask, uv).rgb * uEnabled;
+    for (int i = 0; i < 3; i++) c = mix(c, uCol[i], m[i] * uOverlay);
+  }
+  o = vec4(c, 1.0);
+}`;
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(s);
+    console.error(log, src);
+    fatal('Shader failed to compile: ' + log);
+  }
+  return s;
+}
+function program(fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, VS));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) fatal('Shader failed to link: ' + gl.getProgramInfoLog(p));
+  const locs = {};
+  const u = (name) => (name in locs ? locs[name] : (locs[name] = gl.getUniformLocation(p, name)));
+  return { p, u };
+}
+const progBlur = program(FS_BLUR);
+const progField = program(FS_FIELD);
+const progComp = program(FS_COMPOSITE);
+gl.bindVertexArray(gl.createVertexArray());
+
+function makeTex(w, h, { internal = gl.RGBA8, format = gl.RGBA, type = gl.UNSIGNED_BYTE } = {}) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, type, null);
+  setSampling(gl.LINEAR);
+  return t;
+}
+function setSampling(min, mag = gl.LINEAR) {
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, min);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, mag);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+}
+function makeFbo(tex) {
+  const f = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) fatal('Could not create a render target.');
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return f;
+}
+function bindTex(unit, tex) {
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+}
+
+const T = { img: null, raw: [], maskTmp: null, mask: null, field: null, fbTmp: null, fbMask: null, fbField: null };
+
+function freeGpu() {
+  for (const k of ['img', 'maskTmp', 'mask', 'field']) if (T[k]) gl.deleteTexture(T[k]);
+  for (const t of T.raw) gl.deleteTexture(t);
+  for (const k of ['fbTmp', 'fbMask', 'fbField']) if (T[k]) gl.deleteFramebuffer(T[k]);
+  T.raw = [];
+}
+
+function setupGpu() {
+  freeGpu();
+  const { imgW, imgH, maskW, maskH, fieldW, fieldH } = state;
+  T.img = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, T.img);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, state.img);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  setSampling(gl.LINEAR_MIPMAP_LINEAR);
+  T.raw = state.layers.map(() => makeTex(maskW, maskH));
+  T.maskTmp = makeTex(maskW, maskH);
+  T.mask = makeTex(maskW, maskH);
+  T.field = makeTex(fieldW, fieldH, { internal: gl.RGBA16F, type: gl.HALF_FLOAT });
+  T.fbTmp = makeFbo(T.maskTmp);
+  T.fbMask = makeFbo(T.mask);
+  T.fbField = makeFbo(T.field);
+  for (const L of state.layers) L.dirty = true;
+  state.maskDirty = true;
+}
+
+// Gaussian weights for 13 taps, sigma = 2.5 taps.
+const BLUR_W = (() => {
+  const w = [];
+  for (let i = 0; i < 7; i++) w.push(Math.exp(-(i * i) / (2 * 2.5 * 2.5)));
+  const sum = w[0] + 2 * w.slice(1).reduce((a, b) => a + b, 0);
+  return w.map((x) => x / sum);
+})();
+
+function processMask() {
+  state.layers.forEach((L, i) => {
+    if (!L.dirty) return;
+    gl.bindTexture(gl.TEXTURE_2D, T.raw[i]);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, L.canvas);
+    L.dirty = false;
+  });
+  // Softness is a blur radius in image px (~2 sigma); sigma = 2.5 taps.
+  const step = state.layers.map((L) => (L.p.soft * state.maskK) / 2 / 2.5);
+  gl.useProgram(progBlur.p);
+  gl.viewport(0, 0, state.maskW, state.maskH);
+  gl.uniform1fv(progBlur.u('uW'), BLUR_W);
+  gl.uniform3fv(progBlur.u('uStep'), step);
+  gl.uniform2f(progBlur.u('uSize'), state.maskW, state.maskH);
+  gl.uniform1i(progBlur.u('uM0'), 0);
+  gl.uniform1i(progBlur.u('uM1'), 1);
+  gl.uniform1i(progBlur.u('uM2'), 2);
+  gl.uniform1i(progBlur.u('uSrc'), 3);
+  T.raw.forEach((t, i) => bindTex(i, t));
+  bindTex(3, T.mask); // unused in pass 1, but keep the unit valid
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, T.fbTmp);
+  gl.uniform1i(progBlur.u('uCombine'), 1);
+  gl.uniform2f(progBlur.u('uDir'), 1 / state.maskW, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  bindTex(3, T.maskTmp);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, T.fbMask);
+  gl.uniform1i(progBlur.u('uCombine'), 0);
+  gl.uniform2f(progBlur.u('uDir'), 0, 1 / state.maskH);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  state.maskDirty = false;
+}
+
+function renderField(t) {
+  const { g } = state;
+  const loop = g.loop;
+  gl.useProgram(progField.p);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, T.fbField);
+  gl.viewport(0, 0, state.fieldW, state.fieldH);
+  bindTex(0, T.mask);
+  gl.uniform1i(progField.u('uMask'), 0);
+  gl.uniform2f(progField.u('uImgSize'), state.imgW, state.imgH);
+  gl.uniform2f(progField.u('uFieldSize'), state.fieldW, state.fieldH);
+  const A = [], B = [];
+  for (const L of state.layers) {
+    const p = L.p;
+    const amount = L.enabled ? p.amount * g.intensity * GRAD_NORM : 0;
+    const radius = (p.speed * NOISE_RATE * loop) / (2 * Math.PI);
+    A.push(amount, 1 / p.scale, radius, p.swirl * Math.PI / 2);
+    B.push(p.detail, p.seed, 0, 0);
+  }
+  gl.uniform4fv(progField.u('uA'), A);
+  gl.uniform4fv(progField.u('uB'), B);
+  gl.uniform1f(progField.u('uPhase'), (2 * Math.PI * t) / loop);
+  gl.uniform1f(progField.u('uPin'), g.pin ? Math.min(state.imgW, state.imgH) * 0.04 : 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+
+function hexToRgb(h) {
+  const n = parseInt(h.slice(1), 16);
+  return [(n >> 16) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+}
+const BG = hexToRgb('#04051a');
+
+function renderComposite(w, h, view, mode) {
+  gl.useProgram(progComp.p);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, w, h);
+  bindTex(0, T.img); bindTex(1, T.field); bindTex(2, T.mask);
+  gl.uniform1i(progComp.u('uImg'), 0);
+  gl.uniform1i(progComp.u('uField'), 1);
+  gl.uniform1i(progComp.u('uMask'), 2);
+  gl.uniform2f(progComp.u('uImgSize'), state.imgW, state.imgH);
+  gl.uniform2f(progComp.u('uFieldSize'), state.fieldW, state.fieldH);
+  gl.uniform2f(progComp.u('uCanvasSize'), w, h);
+  gl.uniform3f(progComp.u('uView'), view.x, view.y, view.zoom);
+  gl.uniform1i(progComp.u('uMode'), { motion: 0, mask: 1, original: 2 }[mode]);
+  gl.uniform1f(progComp.u('uShade'), state.g.shade * 150);
+  gl.uniform1f(progComp.u('uOverlay'), state.g.overlay);
+  gl.uniform3fv(progComp.u('uCol'), state.layers.flatMap((L) => hexToRgb(L.color)));
+  gl.uniform3fv(progComp.u('uEnabled'), state.layers.map((L) => (L.enabled ? 1 : 0)));
+  gl.uniform3fv(progComp.u('uBg'), BG);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+// ----------------------------------------------------------------- view
+
+const stage = $('#stage');
+let dpr = window.devicePixelRatio || 1;
+
+function resizeCanvas() {
+  if (state.exporting) return;
+  dpr = window.devicePixelRatio || 1;
+  const r = stage.getBoundingClientRect();
+  canvas.width = Math.max(1, Math.round(r.width * dpr));
+  canvas.height = Math.max(1, Math.round(r.height * dpr));
+  state.dirty = true;
+}
+new ResizeObserver(() => {
+  const hadImage = !!state.img;
+  const wasFit = state.fitted;
+  resizeCanvas();
+  if (hadImage && wasFit) fit();
+}).observe(stage);
+
+function fit() {
+  if (!state.img) return;
+  const r = stage.getBoundingClientRect();
+  const pad = 28, bottom = 64, top = 56;
+  const z = Math.min((r.width - pad * 2) / state.imgW, (r.height - top - bottom) / state.imgH);
+  setZoom(z, null);
+  state.view.x = (r.width - state.imgW * state.view.zoom) / 2;
+  state.view.y = top + (r.height - top - bottom - state.imgH * state.view.zoom) / 2;
+  state.fitted = true;
+  state.dirty = true;
+}
+function setZoom(z, anchor) {
+  z = clamp(z, 0.02, 32);
+  const v = state.view;
+  if (anchor) {
+    v.x = anchor.x - ((anchor.x - v.x) * z) / v.zoom;
+    v.y = anchor.y - ((anchor.y - v.y) * z) / v.zoom;
+  }
+  v.zoom = z;
+  state.fitted = false;
+  $('#zoom-read').textContent = Math.round(z * 100) + '%';
+  updateBrushCursor();
+  state.dirty = true;
+}
+const stagePoint = (e) => {
+  const r = stage.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+};
+const toImage = (p) => ({ x: (p.x - state.view.x) / state.view.zoom, y: (p.y - state.view.y) / state.view.zoom });
+
+// ----------------------------------------------------------------- frame loop
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  if (state.img && !state.exporting) {
+    if (state.playing) {
+      state.t = (state.t + dt) % state.g.loop;
+      state.dirty = true;
+    }
+    if (state.dirty || state.maskDirty) {
+      if (state.maskDirty) processMask();
+      const mode = state.holdOriginal ? 'original' : state.mode;
+      if (mode === 'motion') renderField(state.t);
+      const v = state.view;
+      renderComposite(canvas.width, canvas.height, { x: v.x * dpr, y: v.y * dpr, zoom: v.zoom * dpr }, mode);
+      state.dirty = false;
+      updateTimeReadout();
+    }
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+function updateTimeReadout() {
+  $('#time-read').textContent = `${state.t.toFixed(1)} / ${state.g.loop.toFixed(1)} s`;
+  if (!scrubbing) $('#scrub').value = Math.round((state.t / state.g.loop) * 1000);
+}
+let scrubbing = false;
+$('#scrub').addEventListener('input', (e) => {
+  scrubbing = true;
+  state.t = (e.target.value / 1000) * state.g.loop;
+  state.dirty = true;
+});
+$('#scrub').addEventListener('change', () => { scrubbing = false; });
+
+function setPlaying(p) {
+  state.playing = p;
+  $('#btn-play').textContent = p ? 'Pause' : 'Play';
+  state.dirty = true;
+}
+$('#btn-play').onclick = () => setPlaying(!state.playing);
+
+// ----------------------------------------------------------------- image loading
+
+function status(msg, err = false) {
+  const s = $('#status');
+  s.textContent = msg || '';
+  s.classList.toggle('err', err);
+}
+
+const readAsDataURL = (blob) => new Promise((res, rej) => {
+  const r = new FileReader();
+  r.onload = () => res(r.result);
+  r.onerror = () => rej(r.error);
+  r.readAsDataURL(blob);
+});
+const loadImageEl = (src) => new Promise((res, rej) => {
+  const im = new Image();
+  im.onload = () => res(im);
+  im.onerror = () => rej(new Error('That file could not be read as an image.'));
+  im.src = src;
+});
+
+function newMaskCanvas() {
+  const c = document.createElement('canvas');
+  c.width = state.maskW;
+  c.height = state.maskH;
+  const ctx = c.getContext('2d', { willReadFrequently: false });
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, c.width, c.height);
+  return { c, ctx };
+}
+
+async function openImage(blob, name, { project = null } = {}) {
+  const dataURL = await readAsDataURL(blob);
+  const im = await loadImageEl(dataURL);
+  const maxSide = Math.min(MAX_IMAGE, gl.getParameter(gl.MAX_TEXTURE_SIZE));
+  let w = im.naturalWidth, h = im.naturalHeight;
+  const k = Math.min(1, maxSide / Math.max(w, h));
+  w = Math.round(w * k); h = Math.round(h * k);
+  // Draw into a canvas so every source (and any downscale) uploads the same way.
+  const src = document.createElement('canvas');
+  src.width = w; src.height = h;
+  src.getContext('2d').drawImage(im, 0, 0, w, h);
+
+  const sameSize = state.img && state.imgW === w && state.imgH === h && !project;
+  state.img = src;
+  state.imgW = w; state.imgH = h;
+  state.imgName = (name || 'image').replace(/\.[^.]+$/, '');
+  state.imgDataURL = dataURL;
+  lumCache = null;
+
+  if (!sameSize) {
+    const mk = Math.min(1, MAX_MASK / Math.max(w, h));
+    state.maskW = Math.max(1, Math.round(w * mk));
+    state.maskH = Math.max(1, Math.round(h * mk));
+    state.maskK = state.maskW / w;
+    const fk = Math.min(1, MAX_FIELD / Math.max(w, h));
+    state.fieldW = Math.max(1, Math.round(w * fk));
+    state.fieldH = Math.max(1, Math.round(h * fk));
+    stroke.buf = newMaskCanvas();
+    for (const L of state.layers) {
+      const { c, ctx } = newMaskCanvas();
+      L.canvas = c; L.ctx = ctx;
+    }
+    undoStack.length = 0; redoStack.length = 0;
+    toneSession = null;
+  }
+  setupGpu();
+
+  $('#empty').style.display = 'none';
+  $('#img-info').textContent = `${state.imgName} · ${w} × ${h} px` + (k < 1 ? ` (scaled from ${im.naturalWidth} × ${im.naturalHeight})` : '');
+
+  if (project) {
+    await applyProject(project);
+  } else if (!sameSize) {
+    setupDefaultMasks();
+  }
+  fit();
+  refreshUI();
+  status(sameSize ? 'Image replaced. Masks and settings kept.' : project ? 'Project opened.' : 'Ready. Press M to see the masks; paint to change where things move.');
+}
+
+// A useful starting point for any stained image: a gentle breathe over
+// everything, plus a drift on the darkest tones (usually nuclei).
+function setupDefaultMasks() {
+  const [base, nuclei, extra] = state.layers;
+  Object.assign(base, { name: 'Base', enabled: true });
+  Object.assign(base.p, stripLabel(PRESETS.breathe));
+  base.ctx.fillStyle = '#fff';
+  base.ctx.fillRect(0, 0, state.maskW, state.maskH);
+  base.dirty = true;
+
+  Object.assign(nuclei, { name: 'Nuclei', enabled: true });
+  Object.assign(nuclei.p, stripLabel(PRESETS.nucleus));
+  const prevActive = state.active;
+  state.active = 1;
+  runTone('replace', { recordUndo: false });
+  toneSession = null;
+  state.active = prevActive;
+
+  Object.assign(extra, { name: 'Extra', enabled: true });
+  Object.assign(extra.p, stripLabel(PRESETS.ripple));
+  state.maskDirty = true;
+}
+const stripLabel = ({ label, ...rest }) => rest;
+
+async function openFile(file) {
+  if (!file) return;
+  status(`Opening ${file.name}…`);
+  try {
+    if (/json$/i.test(file.type) || /\.json$/i.test(file.name)) {
+      const proj = JSON.parse(await file.text());
+      await openProject(proj);
+    } else {
+      await openImage(file, file.name);
+    }
+  } catch (e) {
+    console.error(e);
+    status(e.message || String(e), true);
+  }
+}
+
+async function loadSample() {
+  try {
+    status('Loading sample…');
+    const res = await fetch('samples/cells.webp');
+    if (!res.ok) throw new Error(`Sample not found (${res.status}).`);
+    await openImage(await res.blob(), 'cells.webp');
+  } catch (e) {
+    status(`Could not load the sample: ${e.message}`, true);
+  }
+}
+
+for (const id of ['#btn-open', '#btn-open2']) $(id).onclick = () => $('#file-img').click();
+for (const id of ['#btn-sample', '#btn-sample2']) $(id).onclick = loadSample;
+$('#file-img').onchange = (e) => { openFile(e.target.files[0]); e.target.value = ''; };
+
+let dragDepth = 0;
+window.addEventListener('dragenter', (e) => { e.preventDefault(); dragDepth++; stage.classList.add('dragover'); });
+window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; stage.classList.remove('dragover'); } });
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dragDepth = 0;
+  stage.classList.remove('dragover');
+  openFile(e.dataTransfer.files[0]);
+});
+
+// ----------------------------------------------------------------- undo
+
+const undoStack = [];
+const redoStack = [];
+function snapshot(i) {
+  const c = document.createElement('canvas');
+  c.width = state.maskW; c.height = state.maskH;
+  c.getContext('2d').drawImage(state.layers[i].canvas, 0, 0);
+  return { layer: i, canvas: c };
+}
+function pushUndo(i = state.active) {
+  const s = snapshot(i);
+  undoStack.push(s);
+  if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+  redoStack.length = 0;
+  return s;
+}
+function restore(from, to) {
+  const s = from.pop();
+  if (!s) return;
+  to.push(snapshot(s.layer));
+  const L = state.layers[s.layer];
+  L.ctx.globalCompositeOperation = 'copy';
+  L.ctx.drawImage(s.canvas, 0, 0);
+  L.ctx.globalCompositeOperation = 'source-over';
+  markMask(s.layer);
+  toneSession = null;
+  selectLayer(s.layer);
+}
+const undo = () => restore(undoStack, redoStack);
+const redo = () => restore(redoStack, undoStack);
+$('#btn-undo').onclick = undo;
+
+function markMask(i) {
+  state.layers[i].dirty = true;
+  state.maskDirty = true;
+  state.dirty = true;
+}
+
+// ----------------------------------------------------------------- painting
+
+// Strokes are drawn into a buffer as max() of opaque soft dabs, so a stroke
+// never builds up on itself; the buffer is then blended onto the layer at the
+// brush strength. Repeated strokes do build up, like an airbrush at low flow.
+const stroke = { active: false, erase: false, base: null, buf: null, last: null };
+
+function dab(ctx, x, y, r, hard, erase) {
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  const on = erase ? '#000' : '#fff';
+  g.addColorStop(0, on);
+  const h = clamp(hard, 0, 0.99);
+  g.addColorStop(h, on);
+  for (let i = 1; i <= 6; i++) {
+    const t = i / 6;
+    const s = 1 - t * t * (3 - 2 * t); // smoothstep falloff
+    const v = Math.round((erase ? 1 - s : s) * 255);
+    g.addColorStop(h + (1 - h) * t, `rgb(${v},${v},${v})`);
+  }
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function strokeTo(pt) {
+  const k = state.maskK;
+  const r = Math.max(0.5, (state.brush.size / 2) * k);
+  const ctx = stroke.buf.ctx;
+  ctx.globalCompositeOperation = stroke.erase ? 'darken' : 'lighten';
+  const p = { x: pt.x * k, y: pt.y * k };
+  if (!stroke.last) {
+    dab(ctx, p.x, p.y, r, state.brush.hardness, stroke.erase);
+  } else {
+    const dx = p.x - stroke.last.x, dy = p.y - stroke.last.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1e-6) return;
+    const spacing = Math.max(0.5, r * 0.12);
+    let s = stroke.residual;
+    while (s <= dist) {
+      dab(ctx, stroke.last.x + (dx * s) / dist, stroke.last.y + (dy * s) / dist, r, state.brush.hardness, stroke.erase);
+      s += spacing;
+    }
+    stroke.residual = s - dist;
+  }
+  stroke.last = p;
+  const L = state.layers[state.active];
+  L.ctx.globalCompositeOperation = 'copy';
+  L.ctx.globalAlpha = 1;
+  L.ctx.drawImage(stroke.base, 0, 0);
+  L.ctx.globalCompositeOperation = stroke.erase ? 'darken' : 'lighten';
+  L.ctx.globalAlpha = state.brush.strength;
+  L.ctx.drawImage(stroke.buf.c, 0, 0);
+  L.ctx.globalAlpha = 1;
+  L.ctx.globalCompositeOperation = 'source-over';
+  markMask(state.active);
+}
+
+function beginStroke(pt, erase) {
+  toneSession = null;
+  stroke.active = true;
+  stroke.erase = erase;
+  stroke.base = pushUndo().canvas;
+  stroke.last = null;
+  stroke.residual = 0;
+  const ctx = stroke.buf.ctx;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = erase ? '#fff' : '#000';
+  ctx.fillRect(0, 0, state.maskW, state.maskH);
+  strokeTo(pt);
+}
+
+// ----------------------------------------------------------------- pointer
+
+const brushEl = $('#brush');
+let pointer = null;     // last stage point
+let spaceDown = false, spaceUsedForPan = false;
+let pan = null;
+
+function panMode() { return spaceDown || state.brush.tool === 'pan'; }
+function updateStageCursor() {
+  stage.classList.toggle('pan', panMode() && !pan);
+  stage.classList.toggle('panning', !!pan);
+  stage.classList.toggle('paint', !panMode() && !!state.img);
+  updateBrushCursor();
+}
+function updateBrushCursor() {
+  const show = pointer && state.img && !panMode() && !pan;
+  brushEl.style.display = show ? 'block' : 'none';
+  if (!show) return;
+  const d = Math.max(4, state.brush.size * state.view.zoom);
+  brushEl.style.width = brushEl.style.height = d + 'px';
+  brushEl.style.transform = `translate(${pointer.x - d / 2}px, ${pointer.y - d / 2}px)`;
+  brushEl.style.setProperty('--inner', ((d / 2) * (1 - state.brush.hardness)) + 'px');
+  brushEl.style.borderColor = state.brush.tool === 'erase' ? 'rgba(255,140,150,.95)' : 'rgba(255,255,255,.9)';
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (!state.img || state.exporting) return;
+  canvas.setPointerCapture(e.pointerId);
+  const p = stagePoint(e);
+  pointer = p;
+  if (e.button === 1 || panMode()) {
+    if (spaceDown) spaceUsedForPan = true;
+    pan = { x: p.x, y: p.y, vx: state.view.x, vy: state.view.y };
+    updateStageCursor();
+    return;
+  }
+  if (e.button !== 0) return;
+  beginStroke(toImage(p), state.brush.tool === 'erase' || e.altKey);
+});
+canvas.addEventListener('pointermove', (e) => {
+  const p = stagePoint(e);
+  pointer = p;
+  if (pan) {
+    state.view.x = pan.vx + p.x - pan.x;
+    state.view.y = pan.vy + p.y - pan.y;
+    state.fitted = false;
+    state.dirty = true;
+  } else if (stroke.active) {
+    const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    for (const ce of events.length ? events : [e]) strokeTo(toImage(stagePoint(ce)));
+  }
+  updateBrushCursor();
+});
+const endPointer = () => {
+  stroke.active = false;
+  pan = null;
+  updateStageCursor();
+};
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('pointerleave', () => { if (!stroke.active && !pan) { pointer = null; updateBrushCursor(); } });
+canvas.addEventListener('auxclick', (e) => e.preventDefault());
+canvas.addEventListener('wheel', (e) => {
+  if (!state.img) return;
+  e.preventDefault();
+  const scale = e.deltaMode === 1 ? 16 : 1;
+  setZoom(state.view.zoom * Math.exp(-e.deltaY * scale * (e.ctrlKey ? 0.01 : 0.0015)), stagePoint(e));
+}, { passive: false });
+
+$('#btn-fit').onclick = fit;
+$('#btn-100').onclick = () => {
+  const r = stage.getBoundingClientRect();
+  setZoom(1, { x: r.width / 2, y: r.height / 2 });
+};
+$('#btn-zoom-in').onclick = () => { const r = stage.getBoundingClientRect(); setZoom(state.view.zoom * 1.25, { x: r.width / 2, y: r.height / 2 }); };
+$('#btn-zoom-out').onclick = () => { const r = stage.getBoundingClientRect(); setZoom(state.view.zoom / 1.25, { x: r.width / 2, y: r.height / 2 }); };
+
+// ----------------------------------------------------------------- keyboard
+
+const typing = (e) => {
+  const t = e.target;
+  return t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && t.type === 'text') || t.isContentEditable);
+};
+window.addEventListener('keydown', (e) => {
+  if (typing(e)) return;
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+  if (mod) return;
+  switch (e.key) {
+    case ' ':
+      e.preventDefault();
+      // Space belongs to play/pan, not to whichever control was clicked last.
+      if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+      if (!spaceDown) { spaceDown = true; spaceUsedForPan = false; updateStageCursor(); }
+      break;
+    case 'b': case 'B': setTool('paint'); break;
+    case 'e': case 'E': setTool('erase'); break;
+    case 'h': case 'H': setTool('pan'); break;
+    case 'm': case 'M': setView(state.mode === 'mask' ? 'motion' : 'mask'); break;
+    case 'o': case 'O': if (!state.holdOriginal) { state.holdOriginal = true; state.dirty = true; } break;
+    case 'f': case 'F': fit(); break;
+    case '1': case '2': case '3': selectLayer(+e.key - 1); break;
+    case '[': case '{': case ']': case '}': {
+      const up = e.key === ']' || e.key === '}';
+      if (e.shiftKey) state.brush.hardness = clamp(state.brush.hardness + (up ? 0.1 : -0.1), 0, 1);
+      else state.brush.size = clamp(state.brush.size * (up ? 1.15 : 1 / 1.15), 2, 1200);
+      refreshUI();
+      updateBrushCursor();
+      break;
+    }
+  }
+});
+window.addEventListener('keyup', (e) => {
+  if (e.key === ' ') {
+    if (spaceDown && !spaceUsedForPan && !typing(e)) setPlaying(!state.playing);
+    spaceDown = false;
+    updateStageCursor();
+  }
+  if (e.key === 'o' || e.key === 'O') { state.holdOriginal = false; state.dirty = true; }
+});
+window.addEventListener('blur', () => { spaceDown = false; state.holdOriginal = false; state.dirty = true; updateStageCursor(); });
+
+function setTool(tool) {
+  state.brush.tool = tool;
+  document.querySelectorAll('#tool-row button').forEach((b) => b.classList.toggle('active', b.dataset.tool === tool));
+  updateStageCursor();
+}
+document.querySelectorAll('#tool-row button').forEach((b) => (b.onclick = () => setTool(b.dataset.tool)));
+
+function setView(mode) {
+  state.mode = mode;
+  document.querySelectorAll('#view-row button').forEach((b) => b.classList.toggle('active', b.dataset.view === mode));
+  state.dirty = true;
+}
+document.querySelectorAll('#view-row button').forEach((b) => (b.onclick = () => setView(b.dataset.view)));
+
+// ----------------------------------------------------------------- layers UI
+
+function renderLayers() {
+  const box = $('#layers');
+  box.replaceChildren();
+  state.layers.forEach((L, i) => {
+    const row = document.createElement('div');
+    row.className = 'layer' + (i === state.active ? ' active' : '') + (L.enabled ? '' : ' off');
+    row.innerHTML = `<span class="dot"></span><span class="lname"></span><span class="key">${i + 1}</span><input type="checkbox" title="Motion on / off">`;
+    row.querySelector('.dot').style.background = L.color;
+    row.querySelector('.lname').textContent = L.name;
+    const cb = row.querySelector('input');
+    cb.checked = L.enabled;
+    cb.onclick = (e) => e.stopPropagation();
+    cb.onchange = () => { L.enabled = cb.checked; state.dirty = true; renderLayers(); };
+    row.onclick = () => selectLayer(i);
+    box.append(row);
+  });
+}
+function selectLayer(i) {
+  if (i !== state.active) toneSession = null;
+  state.active = i;
+  refreshUI();
+}
+$('#layer-name').addEventListener('input', (e) => {
+  state.layers[state.active].name = e.target.value || `Layer ${state.active + 1}`;
+  renderLayers();
+  $('#motion-title').textContent = `Motion · ${state.layers[state.active].name}`;
+});
+
+const maskOp = (fn) => () => {
+  if (!state.img) return;
+  toneSession = null;
+  pushUndo();
+  const L = state.layers[state.active];
+  fn(L.ctx);
+  L.ctx.globalCompositeOperation = 'source-over';
+  markMask(state.active);
+};
+$('#btn-fill').onclick = maskOp((ctx) => { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, state.maskW, state.maskH); });
+$('#btn-clear').onclick = maskOp((ctx) => { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, state.maskW, state.maskH); });
+$('#btn-invert').onclick = maskOp((ctx) => {
+  ctx.globalCompositeOperation = 'difference';
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, state.maskW, state.maskH);
+});
+
+// ----------------------------------------------------------------- select by tone
+
+let lumCache = null;        // { lum: Float32Array, blurred: Map<radius, Float32Array> }
+let toneSession = null;     // { layer, op, base: Uint8ClampedArray }
+let tonePending = false;
+
+function luminance() {
+  if (lumCache) return lumCache;
+  const { maskW: w, maskH: h } = state;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(state.img, 0, 0, w, h);
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const lum = new Float32Array(w * h);
+  for (let i = 0, j = 0; i < lum.length; i++, j += 4) lum[i] = (0.2126 * d[j] + 0.7152 * d[j + 1] + 0.0722 * d[j + 2]) / 255;
+  lumCache = { lum, blurred: new Map() };
+  return lumCache;
+}
+
+// Two box-blur passes in each direction, roughly Gaussian.
+function boxBlur(src, w, h, r) {
+  r = Math.round(r);
+  if (r < 1) return src.slice();
+  let a = src.slice(), b = new Float32Array(src.length);
+  const pass = (from, to, horizontal) => {
+    const n = horizontal ? w : h, lines = horizontal ? h : w;
+    const stride = horizontal ? 1 : w, lineStep = horizontal ? w : 1;
+    const inv = 1 / (2 * r + 1);
+    for (let l = 0; l < lines; l++) {
+      const o = l * lineStep;
+      let acc = 0;
+      for (let k = -r; k <= r; k++) acc += from[o + clamp(k, 0, n - 1) * stride];
+      for (let i = 0; i < n; i++) {
+        to[o + i * stride] = acc * inv;
+        acc += from[o + Math.min(i + r + 1, n - 1) * stride] - from[o + Math.max(i - r, 0) * stride];
+      }
+    }
+  };
+  for (let it = 0; it < 2; it++) {
+    pass(a, b, true);
+    pass(b, a, false);
+  }
+  return a;
+}
+
+const smooth01 = (e0, e1, x) => {
+  const t = clamp((x - e0) / (e1 - e0 || 1e-6), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+
+function runTone(op, { recordUndo = true } = {}) {
+  if (!state.img) return;
+  const { maskW: w, maskH: h, maskK: k } = state;
+  const L = state.layers[state.active];
+  if (!toneSession || toneSession.layer !== state.active || toneSession.op !== op) {
+    if (recordUndo) pushUndo();
+    toneSession = { layer: state.active, op, base: L.ctx.getImageData(0, 0, w, h).data };
+  }
+  const cache = luminance();
+  const sr = Math.round(state.tone.smooth * k / 2);
+  if (!cache.blurred.has(sr)) cache.blurred.set(sr, boxBlur(cache.lum, w, h, sr));
+  const lum = cache.blurred.get(sr);
+  const { lo, hi, soft } = state.tone;
+  // No cut at the ends of the range, so pure black or white can be included.
+  const v = new Float32Array(w * h);
+  for (let i = 0; i < v.length; i++) {
+    const x = lum[i];
+    const above = lo <= 0 ? 1 : smooth01(lo - soft, lo + soft, x);
+    const below = hi >= 1 ? 1 : 1 - smooth01(hi - soft, hi + soft, x);
+    v[i] = above * below;
+  }
+  const grow = state.tone.grow * k;
+  if (Math.abs(grow) >= 0.5) {
+    const b = boxBlur(v, w, h, Math.abs(grow) / 2);
+    for (let i = 0; i < v.length; i++) v[i] = clamp(grow > 0 ? b[i] * 2 : b[i] * 2 - 1, 0, 1);
+  }
+  const base = toneSession.base;
+  const out = new ImageData(w, h);
+  const d = out.data;
+  for (let i = 0, j = 0; i < v.length; i++, j += 4) {
+    const cur = base[j] / 255;
+    const val = op === 'replace' ? v[i] : op === 'add' ? Math.max(cur, v[i]) : cur * (1 - v[i]);
+    const byte = Math.round(val * 255);
+    d[j] = d[j + 1] = d[j + 2] = byte;
+    d[j + 3] = 255;
+  }
+  L.ctx.putImageData(out, 0, 0);
+  markMask(state.active);
+}
+document.querySelectorAll('[data-tone]').forEach((b) => (b.onclick = () => {
+  if (toneSession && toneSession.layer === state.active && toneSession.op === b.dataset.tone) toneSession = null; // a second click stacks
+  runTone(b.dataset.tone);
+}));
+function toneLive() {
+  if (!toneSession || toneSession.layer !== state.active || tonePending) return;
+  tonePending = true;
+  requestAnimationFrame(() => { tonePending = false; if (toneSession) runTone(toneSession.op); });
+}
+
+// ----------------------------------------------------------------- mask import / export
+
+$('#btn-mask-in').onclick = () => state.img && $('#file-mask').click();
+$('#file-mask').onchange = async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  try {
+    const im = await loadImageEl(await readAsDataURL(f));
+    const { maskW: w, maskH: h } = state;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(im, 0, 0, w, h);
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    for (let j = 0; j < d.length; j += 4) {
+      const v = Math.round(0.2126 * d[j] + 0.7152 * d[j + 1] + 0.0722 * d[j + 2]);
+      d[j] = d[j + 1] = d[j + 2] = v;
+      d[j + 3] = 255;
+    }
+    toneSession = null;
+    pushUndo();
+    state.layers[state.active].ctx.putImageData(img, 0, 0);
+    markMask(state.active);
+    status(`Mask imported into “${state.layers[state.active].name}”.`);
+  } catch (err) {
+    status(err.message, true);
+  }
+};
+$('#btn-mask-out').onclick = () => {
+  if (!state.img) return;
+  const L = state.layers[state.active];
+  const c = document.createElement('canvas');
+  c.width = state.imgW; c.height = state.imgH;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(L.canvas, 0, 0, c.width, c.height);
+  c.toBlob((b) => download(b, `${state.imgName}-mask-${slug(L.name)}.png`), 'image/png');
+};
+
+const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'layer';
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+// ----------------------------------------------------------------- bound controls
+
+const FORMAT = {
+  'brush.size': (v) => `${Math.round(v)} px`,
+  'brush.hardness': (v) => `${Math.round(v * 100)}%`,
+  'brush.strength': (v) => `${Math.round(v * 100)}%`,
+  'layer.soft': (v) => `${v.toFixed(v < 10 ? 1 : 0)} px`,
+  'layer.amount': (v) => `${v.toFixed(v < 10 ? 2 : 1)} px`,
+  'layer.scale': (v) => `${Math.round(v)} px`,
+  'layer.speed': (v) => v.toFixed(2),
+  'layer.swirl': (v) => (v < 0.04 ? 'pulse' : v > 0.96 ? 'swirl' : v.toFixed(2)),
+  'layer.detail': (v) => v.toFixed(2),
+  'g.intensity': (v) => `${Math.round(v * 100)}%`,
+  'g.loop': (v) => `${v.toFixed(1)} s`,
+  'g.shade': (v) => v.toFixed(2),
+  'g.overlay': (v) => `${Math.round(v * 100)}%`,
+  'tone.lo': (v) => v.toFixed(2),
+  'tone.hi': (v) => v.toFixed(2),
+  'tone.soft': (v) => v.toFixed(3),
+  'tone.smooth': (v) => `${v} px`,
+  'tone.grow': (v) => `${v > 0 ? '+' : ''}${v} px`,
+};
+
+function target(path) {
+  const [scope, key] = path.split('.');
+  const obj = scope === 'layer' ? state.layers[state.active].p : state[scope];
+  return { obj, key };
+}
+// Sliders can map their 0..1000 position onto a log or squared scale, for
+// fine control at the small end.
+function toSlider(el, v) {
+  const map = el.dataset.map;
+  if (!map) return v;
+  const lo = +el.dataset.min, hi = +el.dataset.max;
+  const t = map === 'log' ? Math.log(v / lo) / Math.log(hi / lo) : Math.sqrt((v - lo) / (hi - lo));
+  return Math.round(clamp(t, 0, 1) * 1000);
+}
+function fromSlider(el) {
+  const map = el.dataset.map;
+  if (!map) return el.type === 'checkbox' ? el.checked : +el.value;
+  const lo = +el.dataset.min, hi = +el.dataset.max, t = el.value / 1000;
+  return map === 'log' ? lo * Math.pow(hi / lo, t) : lo + (hi - lo) * t * t;
+}
+
+document.querySelectorAll('[data-bind]').forEach((el) => {
+  if (el.dataset.map) { el.min = 0; el.max = 1000; el.step = 1; }
+  el.addEventListener('input', () => {
+    const path = el.dataset.bind;
+    const { obj, key } = target(path);
+    obj[key] = fromSlider(el);
+    const out = document.querySelector(`[data-out="${path}"]`);
+    if (out) out.textContent = FORMAT[path](obj[key]);
+    if (path === 'layer.soft') state.maskDirty = true;
+    if (path.startsWith('tone.')) toneLive();
+    if (path.startsWith('layer.') && path !== 'layer.soft') $('#preset').value = '';
+    if (path === 'g.loop') state.t %= state.g.loop;
+    if (path.startsWith('brush.')) updateBrushCursor();
+    state.dirty = true;
+  });
+});
+
+function refreshUI() {
+  document.querySelectorAll('[data-bind]').forEach((el) => {
+    const path = el.dataset.bind;
+    const { obj, key } = target(path);
+    if (el.type === 'checkbox') el.checked = !!obj[key];
+    else el.value = toSlider(el, obj[key]);
+    const out = document.querySelector(`[data-out="${path}"]`);
+    if (out) out.textContent = FORMAT[path](obj[key]);
+  });
+  const L = state.layers[state.active];
+  $('#layer-name').value = L.name;
+  $('#motion-title').textContent = `Motion · ${L.name}`;
+  $('#preset').value = matchPreset(L.p);
+  renderLayers();
+  state.dirty = true;
+  state.maskDirty = true;
+}
+
+// Presets
+const presetSel = $('#preset');
+presetSel.innerHTML = '<option value="">Custom</option>' +
+  Object.entries(PRESETS).map(([k, p]) => `<option value="${k}">${p.label}</option>`).join('');
+presetSel.onchange = () => {
+  const p = PRESETS[presetSel.value];
+  if (!p) return;
+  Object.assign(state.layers[state.active].p, stripLabel(p));
+  refreshUI();
+};
+function matchPreset(p) {
+  for (const [k, pr] of Object.entries(PRESETS)) {
+    if (['amount', 'scale', 'speed', 'swirl', 'detail', 'soft'].every((f) => Math.abs(pr[f] - p[f]) < 1e-6)) return k;
+  }
+  return '';
+}
+$('#btn-reseed').onclick = () => {
+  state.layers[state.active].p.seed = Math.round(Math.random() * 10000) / 10 + 0.37;
+  state.dirty = true;
+};
+
+// ----------------------------------------------------------------- export
+
+const FORMATS = {
+  mp4: { codec: 'avc', ext: 'mp4', mime: 'video/mp4', label: 'MP4 (H.264)' },
+  webm: { codec: 'vp9', ext: 'webm', mime: 'video/webm', label: 'WebM (VP9)' },
+};
+document.querySelectorAll('#fmt-row button').forEach((b) => (b.onclick = () => {
+  state.fmt = b.dataset.fmt;
+  document.querySelectorAll('#fmt-row button').forEach((x) => x.classList.toggle('active', x === b));
+}));
+
+function expStatus(msg, err = false) {
+  const s = $('#exp-status');
+  s.textContent = msg || '';
+  s.classList.toggle('err', err);
+}
+
+// Render one frame at image resolution into the WebGL canvas, then copy it to
+// a 2D canvas in the same task (the WebGL buffer is only valid until then).
+function renderExportFrame(t, W, H, out) {
+  if (state.maskDirty) processMask();
+  renderField(t);
+  renderComposite(W, H, { x: 0, y: 0, zoom: W / state.imgW }, 'motion');
+  out.getContext('2d').drawImage(canvas, 0, 0, W, H, 0, 0, W, H);
+}
+
+function beginOffscreen(W, H) {
+  state.exporting = true;
+  canvas.width = W;
+  canvas.height = H;
+  if (gl.drawingBufferWidth !== W || gl.drawingBufferHeight !== H) {
+    endOffscreen();
+    throw new Error(`This browser cannot render ${W} × ${H}. Choose a smaller size.`);
+  }
+}
+function endOffscreen() {
+  state.exporting = false;
+  resizeCanvas();
+}
+
+let exportAbort = null;
+$('#btn-export').onclick = async () => {
+  if (exportAbort) { exportAbort.abort(); return; }
+  if (!state.img) { expStatus('Open an image first.', true); return; }
+  if (!('VideoEncoder' in window)) {
+    expStatus('This browser cannot encode video. Use a recent Chrome, Edge, Safari (17+) or Firefox (130+).', true);
+    return;
+  }
+  const btn = $('#btn-export');
+  const bar = $('#exp-progress');
+  const scale = +$('#exp-scale').value;
+  const fps = +$('#exp-fps').value;
+  const loops = +$('#exp-loops').value;
+  const W = Math.max(2, Math.round((state.imgW * scale) / 2) * 2);
+  const H = Math.max(2, Math.round((state.imgH * scale) / 2) * 2);
+  // Whole frames per loop, and time spread evenly over them, so the last
+  // frame leads straight back into the first.
+  const perLoop = Math.max(1, Math.round(state.g.loop * fps));
+  const frames = perLoop * loops;
+  const ac = new AbortController();
+  exportAbort = ac;
+  btn.textContent = 'Cancel export';
+  bar.style.display = 'block';
+  bar.firstElementChild.style.width = '0%';
+  expStatus('Preparing the encoder…');
+  let offscreen = false;
+  try {
+    const mb = await import(MEDIABUNNY_URL).catch(() => {
+      throw new Error('Could not load the video encoder library. Check your connection.');
+    });
+    const quality = { medium: mb.QUALITY_MEDIUM, high: mb.QUALITY_HIGH, veryHigh: mb.QUALITY_VERY_HIGH }[$('#exp-quality').value];
+    const order = state.fmt === 'mp4' ? ['mp4', 'webm'] : ['webm'];
+    let fmtKey = null;
+    for (const f of order) {
+      if (await mb.canEncodeVideo(FORMATS[f].codec, { width: W, height: H, quality })) { fmtKey = f; break; }
+    }
+    if (!fmtKey) throw new Error(`This browser cannot encode ${W} × ${H} as ${FORMATS[state.fmt].label}. Try a smaller size.`);
+    const fmt = FORMATS[fmtKey];
+
+    const out2d = document.createElement('canvas');
+    out2d.width = W; out2d.height = H;
+    const output = new mb.Output({
+      format: fmtKey === 'mp4' ? new mb.Mp4OutputFormat({ fastStart: 'in-memory' }) : new mb.WebMOutputFormat(),
+      target: new mb.BufferTarget(),
+    });
+    const source = new mb.CanvasSource(out2d, { codec: fmt.codec, bitrate: quality, keyFrameInterval: 2 });
+    output.addVideoTrack(source, { frameRate: fps });
+    await output.start();
+
+    beginOffscreen(W, H);
+    offscreen = true;
+    try {
+      for (let i = 0; i < frames; i++) {
+        if (ac.signal.aborted) throw new DOMException('Export cancelled.', 'AbortError');
+        const t = ((i % perLoop) / perLoop) * state.g.loop;
+        renderExportFrame(t, W, H, out2d);
+        await source.add(i / fps, 1 / fps);
+        bar.firstElementChild.style.width = `${((i + 1) / frames) * 100}%`;
+        if (i % 3 === 2) {
+          expStatus(`Rendering frame ${i + 1} of ${frames}…`);
+          await new Promise((r) => setTimeout(r, 0));
+        }
+      }
+      expStatus('Finishing…');
+      await output.finalize();
+    } catch (e) {
+      await output.cancel().catch(() => {});
+      throw e;
+    }
+    const buf = output.target.buffer;
+    if (!buf) throw new Error('Video encoding produced no data.');
+    download(new Blob([buf], { type: fmt.mime }), `${state.imgName}-motion-${W}x${H}.${fmt.ext}`);
+    const fell = fmtKey !== state.fmt ? ` (this browser has no H.264 encoder, so it saved WebM)` : '';
+    expStatus(`Saved ${W} × ${H}, ${frames} frames, ${(frames / fps).toFixed(1)} s${fell}.`);
+  } catch (e) {
+    if (e.name === 'AbortError') expStatus('Export cancelled.');
+    else { console.error(e); expStatus(e.message || String(e), true); }
+  } finally {
+    if (offscreen) endOffscreen();
+    exportAbort = null;
+    btn.textContent = 'Export video';
+    bar.style.display = 'none';
+    state.dirty = true;
+  }
+};
+
+$('#btn-frame').onclick = () => {
+  if (!state.img || state.exporting) return;
+  const W = state.imgW, H = state.imgH;
+  const out = document.createElement('canvas');
+  out.width = W; out.height = H;
+  try {
+    beginOffscreen(W, H);
+    renderExportFrame(state.t, W, H, out);
+  } catch (e) {
+    expStatus(e.message, true);
+    return;
+  } finally {
+    if (state.exporting) endOffscreen();
+  }
+  out.toBlob((b) => download(b, `${state.imgName}-frame-${state.t.toFixed(2)}s.png`), 'image/png');
+};
+
+// ----------------------------------------------------------------- project
+
+$('#btn-save').onclick = () => {
+  if (!state.img) { status('Open an image first.', true); return; }
+  const proj = {
+    app: 'cell-motion',
+    version: 1,
+    name: state.imgName,
+    image: state.imgDataURL,
+    global: { ...state.g },
+    layers: state.layers.map((L) => ({
+      name: L.name, enabled: L.enabled, params: { ...L.p }, mask: L.canvas.toDataURL('image/png'),
+    })),
+  };
+  download(new Blob([JSON.stringify(proj)], { type: 'application/json' }), `${state.imgName}.cellmotion.json`);
+};
+$('#btn-load').onclick = () => $('#file-proj').click();
+$('#file-proj').onchange = (e) => { openFile(e.target.files[0]); e.target.value = ''; };
+
+async function openProject(proj) {
+  if (!proj || proj.app !== 'cell-motion' || !proj.image) throw new Error('That is not a Cell Motion project file.');
+  const blob = await (await fetch(proj.image)).blob();
+  await openImage(blob, proj.name || 'image', { project: proj });
+}
+async function applyProject(proj) {
+  Object.assign(state.g, proj.global || {});
+  for (let i = 0; i < state.layers.length; i++) {
+    const L = state.layers[i], src = proj.layers?.[i];
+    if (!src) continue;
+    L.name = src.name || L.name;
+    L.enabled = src.enabled !== false;
+    Object.assign(L.p, src.params || {});
+    if (src.mask) {
+      const im = await loadImageEl(src.mask);
+      L.ctx.globalCompositeOperation = 'copy';
+      L.ctx.drawImage(im, 0, 0, state.maskW, state.maskH);
+      L.ctx.globalCompositeOperation = 'source-over';
+    }
+    L.dirty = true;
+  }
+  state.maskDirty = true;
+}
+
+// ----------------------------------------------------------------- start
+
+resizeCanvas();
+refreshUI();
+updateStageCursor();
+window.cellMotion = { state, renderField, processMask, gl, T, renderExport: renderExportFrame }; // for debugging from the console
+</script>
+</body>
+</html>
