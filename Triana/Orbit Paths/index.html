@@ -142,8 +142,8 @@
         behind you. <b>Flat</b> steps back to a straight-on view of four
         concentric circles, so every ring and every dot's full orbit stays
         visible the whole time. <b>Merge</b> is three orbits that drift
-        together into one shared orbit carrying all three spheres, then
-        drift back apart — looping seamlessly.
+        together into a tight cluster at dead center, then drift back
+        apart to their own orbits — looping seamlessly.
       </div>
     </div>
 
@@ -170,11 +170,16 @@
       <h2>Merge</h2>
       <label class="field" style="margin-top:0;">Cycle length (orbits) <span class="range-val" id="val-merge-cycles">4</span></label>
       <input type="range" id="rng-merge-cycles" min="1" max="10" value="4">
+
+      <label class="field">Center cluster size <span class="range-val" id="val-merge-center">3</span>%</label>
+      <input type="range" id="rng-merge-center" min="0" max="20" value="3">
       <div class="hint" style="margin-top:10px; padding-top:0; border-top:none;">
         How many orbit rotations one full drift-together-and-apart cycle
         takes. Tied to <b>Orbit speed</b>, so it always lands back on its
         starting spread exactly once per cycle — that's what keeps it
-        loopable.
+        loopable. <b>Center cluster size</b> sets how tightly the three
+        dots huddle at dead center when fully merged — 0 collapses them
+        to a single point.
       </div>
     </div>
 
@@ -435,6 +440,7 @@
   let flatSpacing = 0.15;   // fraction of min(cw,ch)/2 — gap between consecutive rings
   let flatWidthTaper = 0;   // -1..1 — negative thins outer rings, positive thickens them, 0 = uniform
   let mergeCycles = 4;      // orbit rotations per full drift-together-and-apart cycle, for the Merge view
+  let mergeCenterSize = 0.03; // fraction of baseRadius the three dots cluster to at full merge (0 = a single point)
   let lineColors = ['#aab0bd', '#aab0bd', '#aab0bd', '#aab0bd']; // one per RINGS index
   let dotColors = ['#ff2ea6', '#ff2ea6', '#ff2ea6', '#ff2ea6']; // one per RINGS index — a dot takes its color from the ring it orbits
   let bgColor = '#050506';
@@ -595,19 +601,20 @@
   // size/Ring spacing sliders as Flat, so "spread" here means the same
   // three outermost radii Flat would show), each carrying exactly one
   // dot, 120 degrees apart. Every ring's CURRENT radius drifts toward a
-  // shared meeting radius (ring 1's own spread radius — the natural
-  // middle value) and back, on mergeFactor(t): a raised-cosine that's
-  // exactly 0 at t=0, peaks at 1 halfway through the cycle (fully
-  // merged — all three dots now 120 degrees apart on one shared orbit),
-  // and returns to exactly 0 at t=mergeCycles*period(). Because that's a
-  // whole multiple of the rotation period, the dots' angular phase lines
-  // up again too, so the entire scene is back to its exact starting
-  // state — a real loop, not an approximation.
+  // shared meeting radius — mergeCenterSize, a tiny radius at dead
+  // center rather than any one ring's own size — and back, on
+  // mergeFactor(t): a raised-cosine that's exactly 0 at t=0, peaks at 1
+  // halfway through the cycle (fully merged — all three dots now
+  // clustered 120 degrees apart around the canvas center), and returns
+  // to exactly 0 at t=mergeCycles*period(). Because that's a whole
+  // multiple of the rotation period, the dots' angular phase lines up
+  // again too, so the entire scene is back to its exact starting state
+  // — a real loop, not an approximation.
   function renderMerge(g, cw, ch, tSec){
     const cx = cw / 2, cy = ch / 2;
     const baseRadius = Math.min(cw, ch) / 2;
     const spread = [0, 1, 2].map(i => Math.max(0.02, flatOrbitSize - i * flatSpacing));
-    const mergedFrac = spread[1];
+    const mergedFrac = mergeCenterSize;
     const cycleSeconds = mergeCycles * period();
     const mergeFactor = (1 - Math.cos(2 * Math.PI * tSec / cycleSeconds)) / 2; // 0 -> 1 -> 0
     const radiiFrac = spread.map(s => lerp(s, mergedFrac, mergeFactor));
@@ -737,6 +744,12 @@
     document.getElementById('val-merge-cycles').textContent = mergeCycles;
   });
 
+  const elRngMergeCenter = document.getElementById('rng-merge-center');
+  elRngMergeCenter.addEventListener('input', () => {
+    mergeCenterSize = parseInt(elRngMergeCenter.value) / 100;
+    document.getElementById('val-merge-center').textContent = elRngMergeCenter.value;
+  });
+
   const elRngFlatSize = document.getElementById('rng-flat-size');
   const elRngFlatSpacing = document.getElementById('rng-flat-spacing');
   const elRngFlatTaper = document.getElementById('rng-flat-taper');
@@ -783,7 +796,7 @@
       dotCount: DOTS.length,
       glowEnabled,
       flatOrbitSize, flatSpacing, flatWidthTaper,
-      mergeCycles,
+      mergeCycles, mergeCenterSize,
     };
     const cfgJSON = JSON.stringify(cfg);
     return `<!DOCTYPE html>
@@ -907,7 +920,7 @@
   function renderMerge(g, cw, ch, tSec){
     var cx = cw/2, cy = ch/2, baseRadius = Math.min(cw,ch)/2;
     var spread = [0,1,2].map(function(i){ return Math.max(0.02, CFG.flatOrbitSize - i*CFG.flatSpacing); });
-    var mergedFrac = spread[1];
+    var mergedFrac = CFG.mergeCenterSize;
     var cycleSeconds = CFG.mergeCycles * period();
     var mergeFactor = (1 - Math.cos(2*Math.PI*tSec/cycleSeconds))/2;
     var radiiFrac = spread.map(function(s){ return lerp(s, mergedFrac, mergeFactor); });
