@@ -25,7 +25,7 @@ import { Backdrop } from "./Backdrop";
 import { HERO } from "./config";
 import { Particles } from "./Particles";
 import { Debris, Dust } from "./Artifacts";
-import { Droplets, FarStructures, LightShafts } from "./Depth";
+import { FarStructures, LightShafts } from "./Depth";
 import { Protein, useProteinGeometries, useSubjectOffset, useSurfaceTextures } from "./Protein";
 import { SignalLines } from "./SignalLines";
 import { createThemeState, lerp, THEME, type ThemeState } from "./theme";
@@ -264,7 +264,6 @@ export default function Scene({ pointer, eventSource, switchAnchor, signalOn, ac
         <Protein pointer={pointer} theme={theme} backLightDir={backLightDir} animate={animate} onReady={onReady} />
         <SurfaceDebris theme={theme} backLightDir={backLightDir} animate={animate} />
         <Far theme={theme} backLightDir={backLightDir} animate={animate} />
-        <Droplets animate={animate} />
       </Suspense>
       <Lines on={signalOn} animate={animate} />
       <SwitchTracker target={switchAnchor} pointer={pointer} />

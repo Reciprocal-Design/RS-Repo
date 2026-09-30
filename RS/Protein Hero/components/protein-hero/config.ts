@@ -113,25 +113,10 @@ export const HERO = {
       { position: [5.4, -2, -19] as [number, number, number], scale: 1.6, rotation: [1.2, 2, 0.3] as [number, number, number] },
     ],
   },
-  // Clear refracting droplets around the subject.
-  droplets: {
-    roughness: 0.06,
-    ior: 1.33,
-    thickness: 0.35,
-    items: [
-      { position: [-0.95, 0.6, 0.9] as [number, number, number], scale: 0.12 },
-      { position: [1.75, -0.25, 0.6] as [number, number, number], scale: 0.1 },
-      { position: [-2.1, 0.3, -1.6] as [number, number, number], scale: 0.17 },
-      { position: [0.95, -1.05, 1.2] as [number, number, number], scale: 0.07 },
-      { position: [2.5, 0.95, -2] as [number, number, number], scale: 0.24 },
-      { position: [-0.25, 1.3, 0.6] as [number, number, number], scale: 0.055 },
-    ],
-  },
-
   // Environment artifacts.
-  particles: { count: 22, color: "#8fa4b8", intensity: 0.75 }, // soft bokeh motes
+  particles: { count: 36, color: "#8fa4b8", intensity: 0.75 }, // soft bokeh motes
   debris: { count: 11, color: "#4d5a66" }, // small drifting fragments
-  dust: { count: 600, color: "#a9b8c6", opacity: 0.8 }, // fine suspended specks
+  dust: { count: 1500, color: "#a9b8c6", opacity: 0.9 }, // fine suspended specks and speckles
 
   // The OFF look: the switch flips the scene to a light blue protein in a light environment,
   // and the signalling lines disappear. Everything above is the ON (dark, diseased) look.

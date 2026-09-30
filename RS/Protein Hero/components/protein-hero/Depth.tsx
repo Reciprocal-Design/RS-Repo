@@ -8,13 +8,9 @@ import {
   BufferGeometry,
   Color,
   Group,
-  IcosahedronGeometry,
-  Mesh,
-  MeshPhysicalMaterial,
   ShaderMaterial,
   Vector3,
 } from "three";
-import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { HERO } from "./config";
 import { blendProteinTheme, createProteinMaterial, type ProteinTextures } from "./proteinMaterial";
 import { THEME, type ThemeState } from "./theme";
@@ -169,74 +165,6 @@ export function FarStructures({
             <mesh key={k} geometry={g} material={material} />
           ))}
         </group>
-      ))}
-    </>
-  );
-}
-
-/** A slightly irregular sphere, so droplets don't read as perfect CG balls. */
-function dropletGeometry(random: () => number) {
-  let g: BufferGeometry = new IcosahedronGeometry(1, 5);
-  g.deleteAttribute("normal");
-  g.deleteAttribute("uv");
-  g = mergeVertices(g);
-  const pos = g.attributes.position, p = new Vector3();
-  const k = new Vector3(random() - 0.5, random() - 0.5, random() - 0.5).normalize().multiplyScalar(2.5);
-  const phase = random() * 6;
-  for (let i = 0; i < pos.count; i++) {
-    p.fromBufferAttribute(pos, i);
-    p.multiplyScalar(1 + 0.045 * Math.sin(p.dot(k) + phase));
-    pos.setXYZ(i, p.x, p.y, p.z);
-  }
-  g.computeVertexNormals();
-  return g;
-}
-
-/**
- * Clear, water-like droplets drifting around the subject. They refract what is behind them
- * (backdrop, lines, debris, far structures) and catch the environment in sharp highlights.
- */
-export function Droplets({ animate }: { animate: boolean }) {
-  const { items, roughness, ior, thickness } = HERO.droplets;
-  const r = useMemo(() => rng(31), []);
-  const geometry = useMemo(() => dropletGeometry(r), [r]);
-  const material = useMemo(
-    () =>
-      new MeshPhysicalMaterial({
-        color: "#ffffff",
-        transmission: 1,
-        roughness,
-        ior,
-        thickness,
-        specularIntensity: 1,
-        clearcoat: 1,
-        clearcoatRoughness: 0.05,
-        attenuationColor: new Color("#cfe6f5"),
-        attenuationDistance: 2.5,
-      }),
-    [roughness, ior, thickness],
-  );
-  const refs = useRef<(Mesh | null)[]>([]);
-
-  useFrame((state) => {
-    if (!animate) return;
-    const t = state.clock.elapsedTime;
-    items.forEach((d, i) => {
-      const m = refs.current[i];
-      if (!m) return;
-      m.position.set(
-        d.position[0] + Math.sin(t * 0.13 + i * 1.7) * 0.12,
-        d.position[1] + Math.sin(t * 0.19 + i * 2.3) * 0.1,
-        d.position[2],
-      );
-      m.rotation.set(t * 0.05 + i, t * 0.07 + i * 2, 0);
-    });
-  });
-
-  return (
-    <>
-      {items.map((d, i) => (
-        <mesh key={i} ref={(m) => void (refs.current[i] = m)} geometry={geometry} material={material} position={d.position} scale={d.scale} />
       ))}
     </>
   );
