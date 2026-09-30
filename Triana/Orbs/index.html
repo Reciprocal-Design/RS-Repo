@@ -289,6 +289,12 @@
     button, input[type="color"], .swatch { transition: background 0.15s ease, opacity 0.15s ease; }
   }
 
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
   .hint {
     margin: 2px 0 0;
     font-size: 0.78rem;
@@ -372,22 +378,25 @@
           <output id="formatNote" for="formatSelect">—</output>
         </div>
         <select id="formatSelect">
-          <option value="mp4">MP4</option>
-          <option value="webm">WebM</option>
+          <option value="mp4">MP4 video</option>
+          <option value="webm">WebM video</option>
+          <option value="html">HTML page</option>
         </select>
 
-        <div class="control-row">
-          <label for="loopsSelect">Loops to export</label>
-          <output id="durationValue" for="loopsSelect">10.0s</output>
+        <div class="stack" id="videoOptions">
+          <div class="control-row">
+            <label for="loopsSelect">Loops to export</label>
+            <output id="durationValue" for="loopsSelect">10.0s</output>
+          </div>
+          <select id="loopsSelect">
+            <option value="1">1 loop</option>
+            <option value="2" selected>2 loops</option>
+            <option value="3">3 loops</option>
+            <option value="4">4 loops</option>
+            <option value="6">6 loops</option>
+            <option value="8">8 loops</option>
+          </select>
         </div>
-        <select id="loopsSelect">
-          <option value="1">1 loop</option>
-          <option value="2" selected>2 loops</option>
-          <option value="3">3 loops</option>
-          <option value="4">4 loops</option>
-          <option value="6">6 loops</option>
-          <option value="8">8 loops</option>
-        </select>
         <button id="exportBtn" type="button" disabled>Loading exporter…</button>
         <button id="cancelBtn" type="button" hidden>Cancel recording</button>
         <p class="hint" id="exportHint">Recording locks the controls so the exported clip loops perfectly.</p>
@@ -417,6 +426,7 @@
   var durationValue = document.getElementById("durationValue");
   var formatSelect = document.getElementById("formatSelect");
   var formatNote = document.getElementById("formatNote");
+  var videoOptions = document.getElementById("videoOptions");
   var exportBtn = document.getElementById("exportBtn");
   var cancelBtn = document.getElementById("cancelBtn");
   var exportHint = document.getElementById("exportHint");
@@ -516,7 +526,9 @@
   var cssW = 0, cssH = 0, spriteDpr = 1;
 
   function fitCanvas() {
-    var rect = stageWrap.getBoundingClientRect();
+    // the canvas itself, not its bordered wrapper — measuring the wrapper
+    // sizes the backing store 2px larger than the box it draws into
+    var rect = canvas.getBoundingClientRect();
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
     spriteDpr = dpr;
     cssW = rect.width;
@@ -805,9 +817,15 @@
   // built without it still mux MP4 using VP9 or AV1, which is a real .mp4
   // but not one every app reads — hence the caveat after saving.
   var FORMATS = {
+    html: {
+      label: "HTML",
+      ext: "html",
+      video: false
+    },
     mp4: {
       label: "MP4",
       ext: "mp4",
+      video: true,
       candidates: [
         "video/mp4;codecs=avc1.640028",
         "video/mp4;codecs=avc1.42E01E",
@@ -819,6 +837,7 @@
     webm: {
       label: "WebM",
       ext: "webm",
+      video: true,
       candidates: [
         "video/webm;codecs=vp9",
         "video/webm;codecs=vp8",
@@ -828,6 +847,7 @@
   };
 
   function supportedMime(formatKey) {
+    if (!FORMATS[formatKey].video) return null;
     if (!window.MediaRecorder) return null;
     var list = FORMATS[formatKey].candidates;
     for (var i = 0; i < list.length; i++) {
@@ -854,7 +874,7 @@
     } else if (!downloadsCap) {
       exportBtn.disabled = true;
       exportBtn.textContent = "Export unavailable here";
-    } else if (!supportedMime(formatSelect.value)) {
+    } else if (format.video && !supportedMime(formatSelect.value)) {
       exportBtn.disabled = true;
       exportBtn.textContent = format.label + " unavailable here";
     } else {
@@ -864,8 +884,16 @@
   }
 
   function refreshFormat() {
-    var mime = supportedMime(formatSelect.value);
-    formatNote.textContent = mime ? (codecLabel(mime) || "browser default") : "unavailable";
+    var format = FORMATS[formatSelect.value];
+    videoOptions.hidden = !format.video;
+    if (format.video) {
+      var mime = supportedMime(formatSelect.value);
+      formatNote.textContent = mime ? (codecLabel(mime) || "browser default") : "unavailable";
+      exportHint.textContent = "Recording locks the controls so the exported clip loops perfectly.";
+    } else {
+      formatNote.textContent = "self-contained";
+      exportHint.textContent = "A standalone page of the animation at these exact settings — one file, no controls.";
+    }
     updateExportButton();
   }
 
@@ -876,7 +904,7 @@
     var webmOk = !!supportedMime("webm");
     formatSelect.querySelector('option[value="mp4"]').disabled = !mp4Ok;
     formatSelect.querySelector('option[value="webm"]').disabled = !webmOk;
-    if (!mp4Ok && webmOk) formatSelect.value = "webm";
+    if (!mp4Ok) formatSelect.value = webmOk ? "webm" : "html";
     refreshFormat();
   })();
 
@@ -886,10 +914,96 @@
   var activeStream = null;
   var cancelled = false;
 
+  var EXPORT_RUNTIME = "var canvas = document.getElementById(\"driftloop\");\nvar ctx = canvas.getContext(\"2d\");\nvar cssW = 0, cssH = 0, spriteDpr = 1;\nvar spriteCanvases = [], spriteKeys = [];\n\nfunction sphereSprite(index, r, hex) {\n  var key = hex + \"|\" + r + \"|\" + spriteDpr;\n  if (spriteKeys[index] !== key) {\n    spriteCanvases[index] = makeSphereSprite(r, hex, spriteDpr);\n    spriteKeys[index] = key;\n  }\n  return spriteCanvases[index];\n}\n\nfunction fitCanvas() {\n  var dpr = Math.min(window.devicePixelRatio || 1, 2);\n  spriteDpr = dpr;\n  var rect = canvas.getBoundingClientRect();\n  cssW = rect.width;\n  cssH = rect.height;\n  canvas.width = Math.max(1, Math.round(cssW * dpr));\n  canvas.height = Math.max(1, Math.round(cssH * dpr));\n  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);\n}\n\nfunction draw(elapsedSec) {\n  if (cssW === 0) return;\n  ctx.clearRect(0, 0, cssW, cssH);\n  ctx.fillStyle = CONFIG.colors.bg;\n  ctx.fillRect(0, 0, cssW, cssH);\n\n  var S = Math.min(cssW, cssH);\n  var cx0 = cssW / 2, cy0 = cssH / 2;\n  var omega = (2 * Math.PI / BASE_PERIOD) * CONFIG.speed;\n  var phase = elapsedSec * omega + PHASE_OFFSET;\n  var rangePx = CONFIG.range * (S / REF_STAGE);\n  var layout = layoutFor(S, rangePx);\n  var focal = FOCAL_REF * (S / REF_STAGE);\n  var kSpread = layout.kMax - layout.kMin;\n\n  var order = [];\n  for (var i = 0; i < SPHERES.length; i++) {\n    var sph = SPHERES[i];\n    var w = spherePosition(sph, phase, rangePx);\n    var k = perspective(w.z, focal);\n    order.push({\n      index: i,\n      z: w.z,\n      x: cx0 + w.x * k * layout.fit,\n      y: cy0 + w.y * k * layout.fit,\n      radius: S * sph.radiusFrac * k * layout.fit,\n      depth: kSpread > 0 ? (k - layout.kMin) / kSpread : 1\n    });\n  }\n  order.sort(function (m, n) { return m.z - n.z; });\n\n  for (var d = 0; d < order.length; d++) {\n    var item = order[d];\n    var maxR = layout.maxRadius[item.index];\n    var sprite = sphereSprite(item.index, maxR, CONFIG.colors[SPHERES[item.index].key]);\n    var span = (maxR + SPRITE_PAD) * (item.radius / maxR);\n    ctx.globalAlpha = 0.84 + 0.16 * item.depth;\n    ctx.drawImage(sprite, item.x - span, item.y - span, span * 2, span * 2);\n  }\n  ctx.globalAlpha = 1;\n}\n\nfitCanvas();\nif (window.ResizeObserver) new ResizeObserver(fitCanvas).observe(canvas);\nelse window.addEventListener(\"resize\", fitCanvas);\n\nvar startTime = performance.now();\n(function tick(now) {\n  draw((now - startTime) / 1000);\n  requestAnimationFrame(tick);\n})(startTime);";
+
+  // The exported page runs this very engine: the functions below are
+  // serialized straight out of the running app, so an export can never
+  // drift from what you were just watching. Settings ride along as CONFIG.
+  function buildStandalonePage() {
+    var config = {
+      speed: state.speed,
+      range: state.range,
+      colors: {
+        a: state.colors.a,
+        b: state.colors.b,
+        c: state.colors.c,
+        bg: state.colors.bg
+      }
+    };
+
+    var head = [
+      "<!DOCTYPE html>",
+      "<html lang=\"en\">",
+      "<head>",
+      "<meta charset=\"utf-8\">",
+      "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
+      "<title>Driftloop</title>",
+      "<style>",
+      "  html, body { margin: 0; height: 100%; overflow: hidden;",
+      "    background: " + config.colors.bg + "; }",
+      "  canvas { display: block; width: 100%; height: 100%; }",
+      "</style>",
+      "</head>",
+      "<body>",
+      "<canvas id=\"driftloop\"></canvas>",
+      "<script>",
+      "(function () {",
+      "\"use strict\";"
+    ].join("\n");
+
+    var engine = [
+      "var SPHERES = " + JSON.stringify(SPHERES) + ";",
+      "var CLUSTER_MIN = " + CLUSTER_MIN + ";",
+      "var BREATHE_WOBBLE = " + BREATHE_WOBBLE + ";",
+      "var FOCAL_REF = " + FOCAL_REF + ";",
+      "var REF_STAGE = " + REF_STAGE + ";",
+      "var BASE_PERIOD = " + BASE_PERIOD + ";",
+      "var PHASE_OFFSET = " + PHASE_OFFSET + ";",
+      "var SPRITE_PAD = " + SPRITE_PAD + ";",
+      "var CONFIG = " + JSON.stringify(config) + ";",
+      "var layoutCache = { key: \"\", fit: 1, maxRadius: [], kMin: 1, kMax: 1 };",
+      hexToRgb.toString(),
+      mix.toString(),
+      makeSphereSprite.toString(),
+      spherePosition.toString(),
+      perspective.toString(),
+      layoutFor.toString(),
+      EXPORT_RUNTIME
+    ].join("\n\n");
+
+    // nothing in the engine closes a script tag, but never ship markup
+    // that could terminate the block it sits in
+    engine = engine.replace(/<\//g, "<\\/");
+    return head + "\n\n" + engine + "\n\n})();\n<\/script>\n</body>\n</html>\n";
+  }
+
+  function saveStandalonePage() {
+    exportHint.textContent = "Saving…";
+    downloadsCap.save({ filename: "driftloop.html", data: buildStandalonePage() })
+      .then(function () {
+        exportHint.textContent = "Saved a standalone page at these settings.";
+        statusLive.textContent = "HTML page saved.";
+      }).catch(function (err) {
+        var code = err && err.code;
+        if (code === "declined") {
+          exportHint.textContent = "Save cancelled.";
+        } else if (code === "rate_limited") {
+          exportHint.textContent = "Too many recent prompts — try again shortly.";
+        } else {
+          exportHint.textContent = "Couldn't save the page in this view.";
+        }
+        statusLive.textContent = exportHint.textContent;
+      });
+  }
+
   exportBtn.addEventListener("click", function () {
     if (recording) return;
     if (!downloadsCap) {
       exportHint.textContent = "This view can't offer file downloads.";
+      return;
+    }
+    if (!FORMATS[formatSelect.value].video) {
+      saveStandalonePage();
       return;
     }
     if (!window.MediaRecorder) {
