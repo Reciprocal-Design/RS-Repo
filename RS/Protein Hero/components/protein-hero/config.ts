@@ -2,7 +2,7 @@
 // Colours are sRGB hex; intensities are in three.js physical units.
 
 export const HERO = {
-  modelUrl: `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/models/protein.glb`,
+  modelUrl: `${process.env.NEXT_PUBLIC_ASSET_BASE ?? process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/models/protein.glb`,
 
   camera: { fov: 30, distance: 4.4 },
 

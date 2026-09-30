@@ -12,7 +12,12 @@ An interactive, studio-lit 3D protein for a website hero, built with Next.js, Re
 npm install
 npm run dev      # http://localhost:3000
 npm run build    # static site in out/
+npm run build:static  # refresh the committed preview (index.html + build/)
 ```
+
+## Static preview
+
+`index.html` and `build/` in this folder are a prebuilt copy of the page, so it opens straight from the repo dashboard / GitHub Pages with no server or build step. All paths are relative, so it works under any URL. Run `npm run build:static` after changing the code or the look, and commit both.
 
 ## Use in another Next.js site
 
