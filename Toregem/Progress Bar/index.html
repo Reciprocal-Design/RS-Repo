@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Animated tooth growth progress bar: a circle travels the line and dents it as it passes each stage, with adjustable size, gradient, timing, stage names and glow, plus WebM/MP4 video export with an optional transparent background.">
+<meta name="description" content="Animated tooth growth progress bar: a circle travels the line and dents it as it passes each stage, with adjustable size, gradient, timing, stage names and glow, plus WebM/MP4 video and PNG sequence export with an optional transparent background.">
 <style>html{color-scheme:light dark}body{margin:0}[hidden]{display:none!important}</style>
 <title>Toregem Progress Bar</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -277,12 +277,13 @@
     </fieldset>
 
     <section class="export" aria-labelledby="capExport">
-      <div class="cap" id="capExport">Video export <span class="val" id="exportInfo"></span></div>
+      <div class="cap" id="capExport">Export <span class="val" id="exportInfo"></span></div>
       <div class="export-grid">
         <div class="field">
           <label class="cap" for="format">Format</label>
           <select id="format">
             <option value="webm">WebM (VP9)</option>
+            <option value="png">PNG sequence (ZIP)</option>
             <option value="mp4">MP4 (H.264)</option>
           </select>
           <div class="toggle"><input type="checkbox" id="transChk"><label for="transChk">Transparent background</label></div>
@@ -309,11 +310,12 @@
         </div>
       </div>
       <div class="row">
-        <button type="button" class="primary" id="btnExport">Export video</button>
+        <button type="button" class="primary" id="btnExport">Export</button>
         <button type="button" id="btnCancel" hidden>Cancel</button>
         <progress id="exportProgress" max="1" value="0" hidden></progress>
       </div>
       <p class="status" id="exportStatus" aria-live="polite"></p>
+      <p class="status" id="formatHint"></p>
       <p class="status">With a transparent background, the text, tick and circle colours still follow the Background setting, so pick one close to where the video will sit.</p>
     </section>
   </section>
@@ -338,15 +340,17 @@
   var HEX = /^#[0-9a-f]{6}$/i;
   var END_HOLD = 1400;   /* ms resting on the last stage before a loop restarts */
 
-  /* video export options */
+  /* export options */
   var FORMATS = {
-    webm: { codec: "vp9", ext: "webm", mime: "video/webm", label: "WebM (VP9)" },
-    mp4: { codec: "avc", ext: "mp4", mime: "video/mp4", label: "MP4 (H.264)" }
+    webm: { codec: "vp9", ext: "webm", mime: "video/webm", label: "WebM (VP9)", alpha: true },
+    png: { ext: "zip", mime: "application/zip", label: "PNG sequence", alpha: true },
+    mp4: { codec: "avc", ext: "mp4", mime: "video/mp4", label: "MP4 (H.264)", alpha: false }
   };
   var SCALES = [1, 2, 3, 4];
   var FPS = [24, 25, 30, 50, 60];
   var QUALITIES = ["medium", "high", "veryHigh"];
-  var MAX_SIDE = 4096;   /* H.264 encoders commonly top out here; kept for both formats */
+  var MAX_SIDE = 4096;       /* H.264 encoders commonly top out here; kept for both video formats */
+  var MAX_SIDE_PNG = 8192;   /* stills have no encoder limit, just canvas memory */
 
   var state = {
     names: DEFAULT_NAMES.slice(),
@@ -386,7 +390,7 @@
       if(FPS.indexOf(saved.fps) > -1) state.fps = saved.fps;
       if(saved.runs >= 1 && saved.runs <= 10) state.runs = Math.round(saved.runs);
       if(QUALITIES.indexOf(saved.quality) > -1) state.quality = saved.quality;
-      if(state.format === "mp4") state.transparent = false;
+      if(!FORMATS[state.format].alpha) state.transparent = false;
     }
   }catch(e){ /* storage unavailable: defaults stand */ }
 
@@ -795,7 +799,7 @@
   }).observe(stageBox);
   else window.addEventListener("resize", layout);
 
-  /* ---------- video export ---------- */
+  /* ---------- export ---------- */
 
   /* Frames are rendered one by one (not screen-recorded), so every frame is exact,
      then encoded with the browser's own WebCodecs encoder through mediabunny,
@@ -815,6 +819,7 @@
   }
 
   function even(v){ return Math.max(2, 2 * Math.round(v / 2)); }
+  function maxSide(){ return state.format === "png" ? MAX_SIDE_PNG : MAX_SIDE; }
 
   /* One run is the full sweep plus the rest on the last stage, so a video of
      whole runs loops seamlessly: the last frame flows straight into the first. */
@@ -828,8 +833,9 @@
       G: G, width: width, height: height,
       kx: width / G.w, ky: height / G.h,
       run: run, span: span, frames: frames,
-      transparent: state.transparent && state.format === "webm",
-      tooBig: width > MAX_SIDE || height > MAX_SIDE,
+      transparent: state.transparent && FORMATS[state.format].alpha,
+      maxSide: maxSide(),
+      tooBig: width > maxSide() || height > maxSide(),
       /* animation time (ms) of frame i */
       msAt: function(i){
         var t = (i * span / frames) % run;
@@ -841,16 +847,17 @@
   var shownInfo = "";
   function updateExportInfo(){
     var P = videoPlan();
-    var text = P.width + " × " + P.height + " px · " + P.frames + " frames · " + P.span.toFixed(1) + " s" +
-      (P.transparent ? " · transparent" : "");
+    var text = FORMATS[state.format].label + " · " + P.width + " × " + P.height + " px · " + P.frames + " frames · " +
+      P.span.toFixed(1) + " s" + (P.transparent ? " · transparent" : "");
     if(text !== shownInfo){
       shownInfo = text;
       $("exportInfo").textContent = text;
       $("runLen").textContent = P.run.toFixed(1) + " s each";
       if(!exportJob){
-        $("btnExport").disabled = !videoSupported || P.tooBig;
-        if(!videoSupported) exportStatus("This browser can't encode video. Use a recent Chrome, Edge, Safari (17+) or Firefox (130+).", true);
-        else if(P.tooBig) exportStatus("Too large: at most " + MAX_SIDE + " px per side. Pick a smaller size.", true);
+        var supported = state.format === "png" || videoSupported;
+        $("btnExport").disabled = !supported || P.tooBig;
+        if(!supported) exportStatus("This browser can't encode video. Use a recent Chrome, Edge, Safari (17+) or Firefox (130+).", true);
+        else if(P.tooBig) exportStatus("Too large: at most " + P.maxSide + " px per side. Pick a smaller size.", true);
         else if($("exportStatus").classList.contains("error")) exportStatus("");
       }
     }
@@ -872,7 +879,7 @@
     });
     $("btnCancel").hidden = !busy;
     $("exportProgress").hidden = !busy;
-    $("btnExport").textContent = busy ? "Exporting" : "Export video";
+    $("btnExport").textContent = busy ? "Exporting" : "Export";
   }
 
   function downloadBlob(blob, filename){
@@ -886,15 +893,40 @@
     setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
   }
 
-  async function exportVideo(){
+  /* runs one export, whichever format, with progress, cancel and the UI locked */
+  async function runExport(){
     var P = videoPlan();
     var job = { cancelled: false };
-    var output = null;
     exportJob = job;
     setExportUI(true);
     $("exportProgress").value = 0;
-    exportStatus("Loading the encoder…");
+    try{
+      var result = state.format === "png" ? await exportPngSequence(P, job) : await exportVideo(P, job);
+      downloadBlob(result.blob, result.filename);
+      exportStatus("Saved " + result.filename + " (" + (result.blob.size / 1048576).toFixed(1) + " MB)." + (result.note || ""));
+    }catch(err){
+      if(err && err.name === "AbortError") exportStatus("Export cancelled.");
+      else exportStatus((err && err.message) || "Export failed.", true);
+    }finally{
+      exportJob = null;
+      setExportUI(false);
+      shownInfo = "";   /* re-check the size limits on the next frame */
+    }
+  }
 
+  function frameProgress(i, P, job){
+    if(job.cancelled) throw new DOMException("Export cancelled.", "AbortError");
+    $("exportProgress").value = i / P.frames;
+    exportStatus("Rendering frame " + Math.min(i + 1, P.frames) + " of " + P.frames + "…");
+  }
+
+  function baseName(P){
+    return "toregem-progress-" + P.width + "x" + P.height + (P.transparent ? "-transparent" : "");
+  }
+
+  async function exportVideo(P, job){
+    var output = null;
+    exportStatus("Loading the encoder…");
     try{
       var mb = await loadMediabunny();
       var quality = { medium: mb.QUALITY_MEDIUM, high: mb.QUALITY_HIGH, veryHigh: mb.QUALITY_VERY_HIGH }[state.quality];
@@ -930,7 +962,7 @@
       await output.start();
 
       for(var i = 0; i < P.frames; i++){
-        if(job.cancelled) throw new DOMException("Export cancelled.", "AbortError");
+        frameProgress(i, P, job);
         c.setTransform(P.kx, 0, 0, P.ky, 0, 0);
         draw(c, P.G, P.msAt(i), P.transparent);
         var sample = new mb.VideoSample(c.getImageData(0, 0, P.width, P.height).data, {
@@ -941,8 +973,6 @@
           duration: 1 / state.fps
         });
         try{ await source.add(sample); }finally{ sample.close(); }
-        $("exportProgress").value = (i + 1) / P.frames;
-        exportStatus("Rendering frame " + (i + 1) + " of " + P.frames + "…");
         /* let the page repaint the progress now and then */
         if(i % 4 === 3) await new Promise(function(r){ setTimeout(r, 0); });
       }
@@ -950,20 +980,123 @@
       await output.finalize();
       var buffer = output.target.buffer;
       if(!buffer) throw new Error("Video encoding produced no data.");
-      var blob = new Blob([buffer], { type: fmt.mime });
-      var filename = "toregem-progress-" + P.width + "x" + P.height + (P.transparent ? "-transparent" : "") + "." + fmt.ext;
-      downloadBlob(blob, filename);
-      exportStatus("Saved " + filename + " (" + (blob.size / 1048576).toFixed(1) + " MB)." +
-        (format !== state.format ? " Saved as WebM: this browser can't encode MP4 (H.264). Chrome, Edge and Safari can." : ""));
+      return {
+        blob: new Blob([buffer], { type: fmt.mime }),
+        filename: baseName(P) + "." + fmt.ext,
+        note: format !== state.format ? " Saved as WebM: this browser can't encode MP4 (H.264). Chrome, Edge and Safari can." : ""
+      };
     }catch(err){
       if(output && output.state !== "finalized") await output.cancel().catch(function(){});
-      if(err && err.name === "AbortError") exportStatus("Export cancelled.");
-      else exportStatus((err && err.message) || "Export failed.", true);
-    }finally{
-      exportJob = null;
-      setExportUI(false);
-      shownInfo = "";   /* re-check the size limits on the next frame */
+      throw err;
     }
+  }
+
+  /* ---------- PNG sequence ---------- */
+
+  /* One numbered PNG per frame, zipped into a folder, for compositing apps such as
+     After Effects that can't read WebM. PNGs keep full alpha, and the frame rate is
+     in the folder name because a sequence carries none of its own. */
+  async function exportPngSequence(P, job){
+    var cv = document.createElement("canvas");
+    cv.width = P.width;
+    cv.height = P.height;
+    var c = cv.getContext("2d");
+    var folder = baseName(P) + "-" + state.fps + "fps";
+    var digits = Math.max(4, String(P.frames - 1).length);
+    var zip = new ZipWriter();
+
+    for(var i = 0; i < P.frames; i++){
+      frameProgress(i, P, job);
+      c.setTransform(P.kx, 0, 0, P.ky, 0, 0);
+      draw(c, P.G, P.msAt(i), P.transparent);
+      var png = await new Promise(function(res, rej){
+        cv.toBlob(function(b){ b ? res(b) : rej(new Error("Couldn't encode frame " + (i + 1) + " as PNG.")); }, "image/png");
+      });
+      var bytes = new Uint8Array(await png.arrayBuffer());
+      zip.add(folder + "/toregem_" + String(i).padStart(digits, "0") + ".png", bytes, png);
+    }
+    exportStatus("Zipping…");
+    return {
+      blob: zip.finish(),
+      filename: folder + ".zip",
+      note: " In After Effects, import the first frame with “PNG Sequence” ticked, then set " + state.fps + " fps under Interpret Footage."
+    };
+  }
+
+  var CRC_TABLE = (function(){
+    var t = new Uint32Array(256);
+    for(var n = 0; n < 256; n++){
+      var c = n;
+      for(var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+  function crc32(bytes){
+    var c = 0xFFFFFFFF;
+    for(var i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 255] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  /* Minimal ZIP writer. Entries are "stored" (not deflated) since PNGs are already
+     compressed; each file's data stays a Blob so the browser can keep it off the heap. */
+  function ZipWriter(){
+    var parts = [], central = [], offset = 0, count = 0;
+    var d = new Date();
+    var time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+    var date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+    var LIMIT = 0xFFFFFFFF;   /* plain ZIP (no ZIP64) caps sizes and offsets at 4 GB */
+    var tooBig = "The PNG sequence is over 4 GB, too large for a ZIP. Try fewer runs, a lower frame rate or a smaller size.";
+
+    this.add = function(name, bytes, blob){
+      var nb = new TextEncoder().encode(name), crc = crc32(bytes), size = bytes.length;
+      if(offset + 30 + nb.length + size > LIMIT || count >= 0xFFFF) throw new Error(tooBig);
+
+      var local = new Uint8Array(30 + nb.length), v = new DataView(local.buffer);
+      v.setUint32(0, 0x04034b50, true);   /* local file header */
+      v.setUint16(4, 20, true);           /* version needed */
+      v.setUint16(6, 0x0800, true);       /* UTF-8 names */
+      v.setUint16(8, 0, true);            /* stored */
+      v.setUint16(10, time, true);
+      v.setUint16(12, date, true);
+      v.setUint32(14, crc, true);
+      v.setUint32(18, size, true);
+      v.setUint32(22, size, true);
+      v.setUint16(26, nb.length, true);
+      local.set(nb, 30);
+      parts.push(local, blob || bytes);
+
+      var entry = new Uint8Array(46 + nb.length), e = new DataView(entry.buffer);
+      e.setUint32(0, 0x02014b50, true);   /* central directory header */
+      e.setUint16(4, 20, true);
+      e.setUint16(6, 20, true);
+      e.setUint16(8, 0x0800, true);
+      e.setUint16(10, 0, true);
+      e.setUint16(12, time, true);
+      e.setUint16(14, date, true);
+      e.setUint32(16, crc, true);
+      e.setUint32(20, size, true);
+      e.setUint32(24, size, true);
+      e.setUint16(28, nb.length, true);
+      e.setUint32(42, offset, true);      /* where the local header starts */
+      entry.set(nb, 46);
+      central.push(entry);
+
+      offset += local.length + size;
+      count++;
+    };
+
+    this.finish = function(){
+      var size = central.reduce(function(n, b){ return n + b.length; }, 0);
+      if(offset + size > LIMIT) throw new Error(tooBig);
+      var end = new Uint8Array(22), v = new DataView(end.buffer);
+      v.setUint32(0, 0x06054b50, true);   /* end of central directory */
+      v.setUint16(8, count, true);
+      v.setUint16(10, count, true);
+      v.setUint32(12, size, true);
+      v.setUint32(16, offset, true);
+      return new Blob(parts.concat(central, [end]), { type: "application/zip" });
+    };
   }
 
   function setScale(k){
@@ -989,20 +1122,28 @@
     $("fps").appendChild(o);
   });
 
-  /* transparency needs WebM: MP4 (H.264) has no alpha channel */
-  function setTransparent(on){
-    state.transparent = on;
-    if(on) state.format = "webm";
-    $("transChk").checked = on;
-    $("format").value = state.format;
-    stageBox.classList.toggle("checker", on);
+  var FORMAT_HINTS = {
+    webm: "",
+    png: "Downloads a ZIP of numbered PNG frames with full transparency, ready for After Effects.",
+    mp4: "MP4 has no transparency, so the background is always included."
+  };
+
+  /* transparency needs WebM or PNG: MP4 (H.264) has no alpha channel */
+  function setFormat(f){
+    state.format = f;
+    if(!FORMATS[f].alpha) state.transparent = false;
+    $("format").value = f;
+    $("transChk").checked = state.transparent;
+    $("quality").disabled = f === "png";   /* PNGs are lossless */
+    $("formatHint").textContent = FORMAT_HINTS[f];
+    stageBox.classList.toggle("checker", state.transparent);
     save();
   }
-  $("transChk").addEventListener("change", function(e){ setTransparent(e.target.checked); });
-  $("format").addEventListener("change", function(e){
-    state.format = e.target.value;
-    if(state.format === "mp4") setTransparent(false); else save();
+  $("transChk").addEventListener("change", function(e){
+    state.transparent = e.target.checked;
+    setFormat(state.transparent && !FORMATS[state.format].alpha ? "webm" : state.format);
   });
+  $("format").addEventListener("change", function(e){ setFormat(e.target.value); });
   $("fps").addEventListener("change", function(e){ state.fps = Number(e.target.value); save(); });
   $("quality").addEventListener("change", function(e){ state.quality = e.target.value; save(); });
   $("runs").addEventListener("change", function(e){
@@ -1010,11 +1151,11 @@
     e.target.value = state.runs;
     save();
   });
-  $("btnExport").addEventListener("click", function(){ if(!exportJob) exportVideo(); });
+  $("btnExport").addEventListener("click", function(){ if(!exportJob) runExport(); });
   $("btnCancel").addEventListener("click", function(){ if(exportJob) exportJob.cancelled = true; });
 
   setScale(state.scale);
-  setTransparent(state.transparent);
+  setFormat(state.format);
   $("fps").value = state.fps;
   $("quality").value = state.quality;
   $("runs").value = state.runs;
