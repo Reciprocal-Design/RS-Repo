@@ -7,11 +7,7 @@ export const HERO = {
   modelUrl: `${ASSETS}/models/protein.glb`,
   // Studio HDRI (Poly Haven "studio_small_09", CC0), converted to 1k by `npm run hdri`.
   hdriUrl: `${ASSETS}/hdri/studio.hdr`,
-  // Surface texture (seamless grunge), turned into a normal map + grunge map by `npm run surface-maps`.
-  // Projected triplanar, since the mesh has no UVs.
-  surfaceNormalUrl: `${ASSETS}/textures/surface-normal.webp`,
-  surfaceGrungeUrl: `${ASSETS}/textures/surface-grunge.webp`,
-  // Broad, soft undulation (CC0, via @pmndrs/assets).
+  // Broad, soft undulation (CC0, via @pmndrs/assets), projected triplanar since the mesh has no UVs.
   macroNormalUrl: `${ASSETS}/textures/macro-normal.webp`,
 
   camera: { fov: 30, distance: 4.4 },
@@ -33,15 +29,11 @@ export const HERO = {
     specular: 0.35, // 0..1, lower = softer, less mirror-like highlights
     aoStrength: 1.3, // >1 deepens the baked crevice shading
     scale: 0.92,
-    // Surface texture: the custom surface map at two scales, plus a broad, soft undulation.
-    detail: { scale: 8, strength: 0.36 }, // repeats per model radius, bump strength
+    // A broad, soft undulation so the surface isn't geometrically perfect.
     macro: { scale: 1.6, strength: 0.25 },
     // Imperfection: nothing in nature is uniform.
     mottle: 0.16, // albedo variation across the surface (0..1)
     roughnessVariation: 0.6, // roughness varies by ± this fraction
-    grain: { scale: 21, strength: 0.18 }, // the same surface map again, finer and offset: a matte micro-surface
-    // The grunge map (bright specks and cells) at the detail scale, aligned with its bumps.
-    grunge: { roughness: 0.4, albedo: 0.16 }, // specks turn rougher (matte deposits) and a little lighter
     edgeSoftness: 0.22, // light scattering back out at the silhouettes (0..1)
     // Partial transmission: refraction through thin ridges and edges (set amount 0 to disable).
     transmission: { amount: 0.12, thickness: 0.9, ior: 1.36, distance: 0.6 },
@@ -69,7 +61,9 @@ export const HERO = {
     top: { color: "#e3ecf4", intensity: 0.5, position: [0.3, 4, 0.5] as [number, number, number] },
     ambient: { color: "#4f6072", intensity: 0.3 },
     envIntensity: 0.5,
-    hdriRotation: 0.6, // radians; turns the HDRI's softboxes around the subject
+    // Euler (x, y, z) in radians. Turns the HDRI so its brightest softbox sits top-front-left,
+    // agreeing with the key light (solved from the map's brightest region).
+    hdriRotation: [-1.41, -1.47, 0] as [number, number, number],
     hdriTint: 0.6, // 0 = raw neutral HDRI, 1 = fully the slate studio dome
     envDome: "#3a4959", // dome tint colour; kept well off black so no reflected direction goes dead
   },

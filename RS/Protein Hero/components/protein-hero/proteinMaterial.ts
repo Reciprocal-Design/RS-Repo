@@ -13,18 +13,15 @@ export type ProteinMaterialOptions = {
   roughness: number;
   specular: number;
   aoStrength: number;
-  detail: DetailLayer;
   macro: DetailLayer;
   mottle: number;
   roughnessVariation: number;
-  grain: DetailLayer; // a third, very fine normal layer for a matte, rough micro-surface
-  grunge: { roughness: number; albedo: number }; // how the grunge map varies roughness and colour
   edgeSoftness: number; // how much light scatters out at the silhouettes (0..1)
   // Partial transmission: thin ridges and edges let light and the background through, refracted.
   transmission: { amount: number; thickness: number; ior: number; distance: number };
 };
 
-export type ProteinTextures = { detail: Texture; macro: Texture; grunge: Texture };
+export type ProteinTextures = { macro: Texture };
 
 // three's physical direct-diffuse line, swapped for a subsurface version below.
 const DIRECT_DIFFUSE = "reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );";
@@ -44,8 +41,7 @@ const SSS_DIRECT_DIFFUSE = /* glsl */ `{
  *  - subsurface scattering approximation: per-channel wrapped diffuse on every light, tinted terminator
  *  - backlight translucency through thin ridges
  *  - baked AO from vertex colours, tinted toward the scatter colour so crevices glow rather than go black
- *  - triplanar normal maps in object space (the mesh has no UVs): the custom surface map at two
- *    scales + broad undulation; its grunge map varies roughness and colour, aligned with the bumps
+ *  - a triplanar normal map in object space (the mesh has no UVs) for a broad, soft undulation
  *  - low specular and a sheen instead of a clearcoat, so reflections stay soft
  *  - partial transmission with volume attenuation: refraction through thin ridges and soft edges
  *  - signalling glow: the surface lights up around approaching pulses (positions from signal.ts)
@@ -80,15 +76,10 @@ export function createProteinMaterial(
     uTranslucency: { value: new Color(opts.translucency) },
     uRim: { value: new Color(opts.rim) },
     uAOPower: { value: opts.aoStrength },
-    uDetailMap: { value: textures.detail },
     uMacroMap: { value: textures.macro },
-    uDetail: { value: [opts.detail.scale, opts.detail.strength] },
-    uGrungeMap: { value: textures.grunge },
-    uGrunge: { value: [opts.grunge.roughness, opts.grunge.albedo] },
     uMacro: { value: [opts.macro.scale, opts.macro.strength] },
     uMottle: { value: opts.mottle },
     uRoughVar: { value: opts.roughnessVariation },
-    uGrain: { value: [opts.grain.scale, opts.grain.strength] },
     uEdgeSoftness: { value: opts.edgeSoftness },
     // Shared with every protein-style material; written by the signal lines each frame.
     uPulses: SIGNAL.pulses,
@@ -131,14 +122,12 @@ export function createProteinMaterial(
         uniform vec3 uTranslucency;
         uniform vec3 uRim;
         uniform float uAOPower;
-        uniform sampler2D uDetailMap, uMacroMap, uGrungeMap;
-        uniform vec2 uGrunge; // (roughness, albedo) influence
-        uniform vec2 uDetail, uMacro; // (scale, strength)
+        uniform sampler2D uMacroMap;
+        uniform vec2 uMacro; // (scale, strength)
         uniform float uMottle, uRoughVar, uEdgeSoftness;
         uniform vec4 uPulses[${PULSE_COUNT}];
         uniform vec3 uPulseColor;
         uniform float uPulseGlow, uPulseRadius;
-        uniform vec2 uGrain;
         uniform mat3 normalMatrix;
         varying vec3 vObjPos;
         varying vec3 vObjNormal;
@@ -150,13 +139,6 @@ export function createProteinMaterial(
           vec2 a = texture2D(map, p.zy * scale).xy, b = texture2D(map, p.xz * scale).xy, c = texture2D(map, p.xy * scale).xy;
           vec2 s = (a * w.x + b * w.y + c * w.z) * 2.0 - 1.0;
           return clamp((s.x + s.y) * 1.4, -1.0, 1.0);
-        }
-
-        // A 0..1 scalar map projected triplanar, with the same planes as triplanarNormal.
-        float triplanarScalar(sampler2D map, vec3 p, vec3 n, float scale) {
-          vec3 w = pow(abs(n), vec3(6.0)); // tight blend: less smearing where projections overlap
-          w /= w.x + w.y + w.z;
-          return texture2D(map, p.zy * scale).r * w.x + texture2D(map, p.xz * scale).r * w.y + texture2D(map, p.xy * scale).r * w.z;
         }
 
         // Triplanar normal mapping with whiteout blending (object space in, object space out).
@@ -183,15 +165,12 @@ export function createProteinMaterial(
         vec3 objN = normalize(vObjNormal);
         float mottle = triplanarVariation(uMacroMap, vObjPos + 3.7, objN, 0.9);
         float roughVar = triplanarVariation(uMacroMap, vObjPos * 1.9 - 1.3, objN, 2.3);
-        diffuseColor.rgb *= 1.0 + mottle * uMottle;
-        // Grunge, sampled like the detail normal layer so specks sit on their bumps.
-        float grunge = triplanarScalar(uGrungeMap, vObjPos, objN, uDetail.x);
-        diffuseColor.rgb *= 1.0 + grunge * uGrunge.y;`,
+        diffuseColor.rgb *= 1.0 + mottle * uMottle;`,
       )
       .replace(
         "#include <roughnessmap_fragment>",
         /* glsl */ `#include <roughnessmap_fragment>
-        roughnessFactor = clamp(roughnessFactor * (1.0 + roughVar * uRoughVar) + grunge * uGrunge.x, 0.05, 1.0);`,
+        roughnessFactor = clamp(roughnessFactor * (1.0 + roughVar * uRoughVar), 0.05, 1.0);`,
       )
       .replace(
         "#include <normal_fragment_maps>",
@@ -199,10 +178,7 @@ export function createProteinMaterial(
         {
           vec3 n0 = normalize(vObjNormal);
           vec3 n1 = triplanarNormal(uMacroMap, vObjPos, n0, uMacro.x, uMacro.y);
-          vec3 n2 = triplanarNormal(uDetailMap, vObjPos, n1, uDetail.x, uDetail.y);
-          // Very fine grain, offset so it doesn't line up with the detail layer.
-          vec3 n3 = triplanarNormal(uDetailMap, vObjPos * 1.37 + 0.71, n2, uGrain.x, uGrain.y);
-          normal = normalize(normalMatrix * n3);
+          normal = normalize(normalMatrix * n1);
         }`,
       )
       .replace(

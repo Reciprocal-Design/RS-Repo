@@ -104,9 +104,9 @@ function StudioEnvironment({ theme, live }: { theme: ThemeState; live: boolean }
       resolution={512}
       frames={live ? Infinity : 1}
       environmentIntensity={lights.envIntensity}
-      environmentRotation={[0, lights.hdriRotation, 0]}
+      environmentRotation={lights.hdriRotation}
     >
-      {/* Translucent dome over the HDRI: keeps its detail but shifts it into the purple studio. */}
+      {/* Translucent dome over the HDRI: keeps its detail but shifts it into the scene's palette. */}
       <mesh scale={50}>
         <sphereGeometry args={[1, 32, 16]} />
         <meshBasicMaterial ref={dome} color={initial} side={BackSide} transparent opacity={lights.hdriTint} depthWrite={false} />
