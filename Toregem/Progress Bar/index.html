@@ -145,6 +145,10 @@
   .swatches{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
   .sw{width:100%;height:26px;padding:0;border:1px solid var(--hair);border-radius:6px;cursor:pointer}
   .sw[aria-pressed="true"]{outline:2px solid var(--ink);outline-offset:2px}
+  .sw.auto{
+    background:var(--field);color:var(--ink-2);
+    font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+  }
   .pickers{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .pickers label{display:flex;flex-direction:column;gap:5px;font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
   input[type="color"]{
@@ -279,6 +283,14 @@
       </div>
     </div>
 
+    <div class="field">
+      <div class="cap">Circle colour <span class="val" id="circleVal"></span></div>
+      <div class="swatches" id="circleSwatches"></div>
+      <div class="pickers">
+        <label>Custom <input type="color" id="circlePicker"></label>
+      </div>
+    </div>
+
     <fieldset class="stages">
       <div class="cap">Stage names <span class="val" id="stageCount"></span></div>
       <div class="stage-grid" id="stageGrid"></div>
@@ -328,7 +340,7 @@
       </div>
       <p class="status" id="exportStatus" aria-live="polite"></p>
       <p class="status" id="formatHint"></p>
-      <p class="status">With a transparent background, the text, tick and circle colours still follow the Background setting, so pick one close to where the video will sit.</p>
+      <p class="status">With a transparent background, the text and tick colours still follow the Background setting, so pick one close to where the video will sit. The circle follows it too unless you pick a Circle colour.</p>
     </section>
   </section>
 </div>
@@ -348,6 +360,7 @@
     ["#38e8ff","#2fd67b"]
   ];
   var BG_PRESETS = ["#1f1f1f","#0d1015","#121a2e","#26211c","#f4f4f2","#ffffff"];
+  var CIRCLE_PRESETS = ["#2b2b2b","#f4f4f2","#e9f23c","#7be3d0","#5b8cff"];
   var STORE = "toregem-progress.v1";
   var HEX = /^#[0-9a-f]{6}$/i;
   var END_HOLD = 1400;   /* ms resting on the last stage before a loop restarts */
@@ -374,6 +387,7 @@
     colorA: GRADIENTS[1][0],
     colorB: GRADIENTS[1][1],
     bg: BG_PRESETS[0],
+    circle: null,   /* null: the circle is shaded from the background colour */
     stepMode: true,
     dimAhead: true,
     vertical: true,
@@ -398,6 +412,7 @@
       if(HEX.test(saved.colorA)) state.colorA = saved.colorA;
       if(HEX.test(saved.colorB)) state.colorB = saved.colorB;
       if(HEX.test(saved.bg)) state.bg = saved.bg;
+      if(HEX.test(saved.circle)) state.circle = saved.circle;
       ["stepMode","dimAhead","vertical","loop","transparent"].forEach(function(k){
         if(typeof saved[k] === "boolean") state[k] = saved[k];
       });
@@ -695,21 +710,24 @@
       c.restore();
     }
 
-    /* the circle, resting in its dent */
+    /* the circle, resting in its dent: shaded from its own colour, or from the
+       background's when none is picked; its drop shadow always suits the background */
     var ky = ly + depth - r - r * 0.2 - 2;
+    var body = state.circle ? rgb(state.circle) : bg;
+    var darkBody = luminance(body) < 0.5;
     c.save();
     c.shadowColor = darkBg ? "rgba(0,0,0,.6)" : "rgba(0,0,0,.22)";
     c.shadowBlur = r * 0.9;
     c.shadowOffsetY = r * 0.22;
     var og = c.createLinearGradient(kx - r, ky - r, kx + r, ky + r);
-    og.addColorStop(0, css(mixRgb(bg, [255,255,255], darkBg ? 0.1 : 0.7)));
-    og.addColorStop(1, css(mixRgb(bg, [0,0,0], darkBg ? 0.28 : 0.08)));
+    og.addColorStop(0, css(mixRgb(body, [255,255,255], darkBody ? 0.1 : 0.7)));
+    og.addColorStop(1, css(mixRgb(body, [0,0,0], darkBody ? 0.28 : 0.08)));
     c.fillStyle = og;
     c.beginPath(); c.arc(kx, ky, r, 0, Math.PI * 2); c.fill();
     c.restore();
 
-    c.fillStyle = css(mixRgb(bg, [0,0,0], darkBg ? 0.12 : 0.04));
-    c.strokeStyle = css(mixRgb(bg, [255,255,255], darkBg ? 0.07 : 0.5));
+    c.fillStyle = css(mixRgb(body, [0,0,0], darkBody ? 0.12 : 0.04));
+    c.strokeStyle = css(mixRgb(body, [255,255,255], darkBody ? 0.07 : 0.5));
     c.lineWidth = 1;
     c.beginPath(); c.arc(kx, ky, r * 0.74, 0, Math.PI * 2); c.fill(); c.stroke();
 
@@ -764,6 +782,33 @@
     markSwatches($("bgSwatches"), function(el){ return el.dataset.hex === state.bg; });
     save();
   }
+
+  /* null returns the circle to following the background */
+  function setCircle(hex){
+    state.circle = hex ? hex.toLowerCase() : null;
+    if(state.circle) $("circlePicker").value = state.circle;
+    $("circleVal").textContent = state.circle ? state.circle.toUpperCase() : "Auto";
+    markSwatches($("circleSwatches"), function(el){ return (el.dataset.hex || null) === state.circle; });
+    save();
+  }
+
+  (function(){
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "sw auto";
+    b.textContent = "Auto";
+    b.setAttribute("aria-label", "Circle colour follows the background");
+    b.addEventListener("click", function(){ setCircle(null); });
+    $("circleSwatches").appendChild(b);
+  })();
+  CIRCLE_PRESETS.forEach(function(hex){
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "sw";
+    b.style.background = hex; b.dataset.hex = hex;
+    b.setAttribute("aria-label", "Circle colour " + hex);
+    b.addEventListener("click", function(){ setCircle(hex); });
+    $("circleSwatches").appendChild(b);
+  });
+  $("circlePicker").addEventListener("input", function(e){ setCircle(e.target.value); });
 
   GRADIENTS.forEach(function(pair){
     var b = document.createElement("button");
@@ -1272,6 +1317,8 @@
   buildStages();
   setGradient(state.colorA, state.colorB);
   setBg(state.bg);
+  $("circlePicker").value = state.circle || "#2b2b2b";
+  setCircle(state.circle);
   setPlaying(true);
   layout();
   if(document.fonts && document.fonts.ready) document.fonts.ready.then(layout);
