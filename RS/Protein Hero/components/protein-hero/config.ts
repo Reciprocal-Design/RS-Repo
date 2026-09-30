@@ -34,11 +34,11 @@ export const HERO = {
     // lumps, smaller knobs and a fine grain, each [scale in repeats per model radius, strength].
     bumps: {
       octaves: [
-        [7, 0.095],
-        [17, 0.055],
-        [46, 0.022],
+        [15, 0.042],
+        [32, 0.026],
+        [62, 0.012],
       ] as [number, number][],
-      shade: 0.18, // valleys slightly darker, peaks slightly lighter
+      shade: 0.1, // valleys slightly darker, peaks slightly lighter
     },
     macro: { scale: 1.6, strength: 0.25 },
     // Imperfection: nothing in nature is uniform.
