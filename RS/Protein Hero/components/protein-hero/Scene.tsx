@@ -25,8 +25,8 @@ import { Backdrop } from "./Backdrop";
 import { HERO } from "./config";
 import { Particles } from "./Particles";
 import { Debris, Dust } from "./Artifacts";
-import { FarStructures, LightShafts } from "./Depth";
-import { Protein, useProteinGeometries, useSubjectOffset, useSurfaceTextures } from "./Protein";
+import { LightShafts } from "./Depth";
+import { Protein, useSubjectOffset, useSurfaceTextures } from "./Protein";
 import { SignalLines } from "./SignalLines";
 import { createThemeState, lerp, THEME, type ThemeState } from "./theme";
 import type { PointerState } from "./usePointer";
@@ -189,12 +189,6 @@ function SwitchTracker({ target, pointer }: { target: React.RefObject<HTMLElemen
   return null;
 }
 
-function Far({ theme, backLightDir, animate }: { theme: ThemeState; backLightDir: { value: Vector3 }; animate: boolean }) {
-  const geometries = useProteinGeometries();
-  const textures = useSurfaceTextures();
-  return <FarStructures geometries={geometries} textures={textures} theme={theme} backLightDir={backLightDir} animate={animate} />;
-}
-
 function SurfaceDebris({ theme, backLightDir, animate }: { theme: ThemeState; backLightDir: { value: Vector3 }; animate: boolean }) {
   const textures = useSurfaceTextures();
   return <Debris textures={textures} theme={theme} backLightDir={backLightDir} animate={animate} />;
@@ -263,7 +257,6 @@ export default function Scene({ pointer, eventSource, switchAnchor, signalOn, ac
         <StudioEnvironment theme={theme} live={envLive} />
         <Protein pointer={pointer} theme={theme} backLightDir={backLightDir} animate={animate} onReady={onReady} />
         <SurfaceDebris theme={theme} backLightDir={backLightDir} animate={animate} />
-        <Far theme={theme} backLightDir={backLightDir} animate={animate} />
       </Suspense>
       <Lines on={signalOn} animate={animate} />
       <SwitchTracker target={switchAnchor} pointer={pointer} />
