@@ -267,6 +267,20 @@
     </div>
 
     <div class="field">
+      <div class="cap">Animate in &amp; out</div>
+      <div class="toggle"><input type="checkbox" id="inChk"><label for="inChk">Animate in</label></div>
+      <div class="toggle"><input type="checkbox" id="outChk"><label for="outChk">Animate out</label></div>
+      <select id="animStyle" aria-label="In and out style">
+        <option value="draw">Draw on: line grows from the circle</option>
+        <option value="fade">Fade</option>
+      </select>
+      <label class="cap" for="inTime">In time <span class="val"><span id="inTimeVal">1.5</span>s</span></label>
+      <input type="range" id="inTime" min="0.3" max="5" step="0.1">
+      <label class="cap" for="outTime">Out time <span class="val"><span id="outTimeVal">1.2</span>s</span></label>
+      <input type="range" id="outTime" min="0.3" max="5" step="0.1">
+    </div>
+
+    <div class="field">
       <div class="cap">Gradient <span class="val" id="gradVal"></span></div>
       <div class="swatches" id="gradSwatches"></div>
       <div class="pickers">
@@ -363,7 +377,7 @@
   var CIRCLE_PRESETS = ["#2b2b2b","#f4f4f2","#e9f23c","#7be3d0","#5b8cff"];
   var STORE = "toregem-progress.v1";
   var HEX = /^#[0-9a-f]{6}$/i;
-  var END_HOLD = 1400;   /* ms resting on the last stage before a loop restarts */
+  var END_HOLD = 1400;   /* ms resting on the last stage before the outro, or before a loop restarts */
 
   /* export options */
   var FORMATS = {
@@ -384,6 +398,11 @@
     glow: 60,
     length: 1000,
     textSize: 18,
+    animIn: true,
+    animOut: true,
+    animStyle: "draw",
+    inTime: 1.5,
+    outTime: 1.2,
     colorA: GRADIENTS[1][0],
     colorB: GRADIENTS[1][1],
     bg: BG_PRESETS[0],
@@ -409,11 +428,14 @@
       if(saved.glow >= 0 && saved.glow <= 100) state.glow = saved.glow;
       if(saved.length >= 300 && saved.length <= 4000) state.length = saved.length;
       if(saved.textSize >= 8 && saved.textSize <= 60) state.textSize = saved.textSize;
+      if(saved.inTime >= 0.3 && saved.inTime <= 5) state.inTime = saved.inTime;
+      if(saved.outTime >= 0.3 && saved.outTime <= 5) state.outTime = saved.outTime;
+      if(saved.animStyle === "draw" || saved.animStyle === "fade") state.animStyle = saved.animStyle;
       if(HEX.test(saved.colorA)) state.colorA = saved.colorA;
       if(HEX.test(saved.colorB)) state.colorB = saved.colorB;
       if(HEX.test(saved.bg)) state.bg = saved.bg;
       if(HEX.test(saved.circle)) state.circle = saved.circle;
-      ["stepMode","dimAhead","vertical","loop","transparent"].forEach(function(k){
+      ["stepMode","dimAhead","vertical","loop","transparent","animIn","animOut"].forEach(function(k){
         if(typeof saved[k] === "boolean") state[k] = saved[k];
       });
       if(FORMATS[saved.format]) state.format = saved.format;
@@ -517,7 +539,27 @@
 
   /* ---------- timeline ---------- */
 
-  var elapsed = 0, holdUntil = 0, playing = true;
+  var elapsed = 0, playing = true;   /* elapsed: ms into the run */
+
+  /* One run: intro, the sweep, a rest on the last stage, outro (ms; intro and outro may be 0). */
+  function phases(){
+    var I = state.animIn ? state.inTime * 1000 : 0;
+    var D = state.duration * 1000;
+    var O = state.animOut ? state.outTime * 1000 : 0;
+    return { I: I, D: D, H: END_HOLD, O: O, total: I + D + END_HOLD + O };
+  }
+
+  /* What a moment of the run shows: p, the circle's place along the line, and show,
+     how far the scene is built (0 nothing, 1 all there), with out set during the outro. */
+  function frameAt(t){
+    var P = phases();
+    if(t < P.I) return { p: 0, show: t / P.I, out: false };
+    t -= P.I;
+    if(t < P.D) return { p: progressAt(t), show: 1, out: false };
+    t -= P.D + P.H;
+    if(t < 0 || !P.O) return { p: 1, show: 1, out: false };
+    return { p: 1, show: Math.max(0, 1 - t / P.O), out: true };
+  }
 
   /* 0..1 position of the circle along the line */
   function progressAt(ms){
@@ -551,9 +593,12 @@
     return lc;
   }
 
-  /* paints one frame at time ms into context c, laid out by geometry G */
+  function easeOutBack(t){ var k = 1.70158; t -= 1; return 1 + (k + 1) * t * t * t + k * t * t; }
+
+  /* paints the frame at run time ms into context c, laid out by geometry G */
   function draw(c, G, ms, transparent){
-    var p = progressAt(ms);
+    var F = frameAt(ms);
+    var p = F.p, show = F.show;
     var g = state.glow / 100;
     var bg = rgb(state.bg), A = rgb(state.colorA), B = rgb(state.colorB);
     var darkBg = luminance(bg) < 0.5;
@@ -574,6 +619,34 @@
       c.fillStyle = css(bg);
       c.fillRect(0, 0, G.w, G.h);
     }
+
+    /* Animating in and out. "Draw on": the circle pops in, then the line grows out of it
+       and the ticks and labels arrive as it passes; going out plays that in reverse, the
+       line drawing back into the circle at the end. "Fade": everything fades and settles.
+       vis(x) is how present a tick or label at x is. */
+    var circleS = 1, vis = function(){ return 1; }, lineFrom = -1e9, lineTo = 1e9;
+    c.save();
+    if(show < 1){
+      if(state.animStyle === "fade"){
+        var fe = easeInOut(show);
+        c.globalAlpha = fe;
+        c.translate(0, (1 - fe) * 14);
+        circleS = 0.85 + 0.15 * fe;
+      }else{
+        var FADE = 40;
+        /* in: a quick pop with a little overshoot; out: a smooth shrink right down to nothing */
+        var cs = clamp(show / 0.3, 0, 1);
+        circleS = F.out ? easeInOut(cs) : Math.max(0, easeOutBack(cs));
+        var reachS = easeInOut(clamp((show - 0.15) / 0.85, 0, 1)) * (L + FADE);
+        if(F.out){ lineFrom = x1 - reachS; lineTo = x1 + FADE; }
+        else{ lineFrom = x0 - FADE; lineTo = x0 + reachS; }
+        vis = function(x){
+          return smooth(clamp((lineTo - x) / FADE, 0, 1)) * smooth(clamp((x - lineFrom) / FADE, 0, 1));
+        };
+      }
+    }
+    var drawn = lineFrom > -1e9;   /* the line is part-drawn: clip it to its drawn stretch */
+    var lineLeft = drawn ? Math.max(lineFrom, x0) : x0, lineRight = drawn ? Math.min(lineTo, x1) : x1;
 
     /* the dented line as a path, sampled finely around the circle */
     function tracePath(){
@@ -622,6 +695,7 @@
 
       c.save();
       c.setTransform(1, 0, 0, 1, 0, 0);
+      c.globalAlpha *= clamp(circleS, 0, 1);   /* the glow comes and goes with the circle */
       c.drawImage(lc.canvas, 0, 0);
       c.restore();
     }
@@ -637,12 +711,14 @@
       var ahead = tx > kx + 1;
       var a = major ? 0.75 : 0.32;
       if(ahead && state.dimAhead) a *= 0.55;
+      var tv = vis(tx);
+      if(tv <= 0) continue;
       var ty = G.tickTop + dent(tx) * 0.75;
-      c.strokeStyle = css(text, a);
+      c.strokeStyle = css(text, a * tv);
       c.lineWidth = major ? 1.6 : 1.1;
       c.beginPath();
       c.moveTo(tx, ty);
-      c.lineTo(tx, ty + (major ? 24 : 16));
+      c.lineTo(tx, ty + (major ? 24 : 16) * (0.4 + 0.6 * tv));
       c.stroke();
     }
 
@@ -654,6 +730,17 @@
       var col = mixRgb(A, B, t);
       if(state.dimAhead) col = mixRgb(col, dim, smooth((t - p) / fade));
       lg.addColorStop(t, css(col));
+    }
+    c.save();
+    if(drawn){
+      /* the clip reaches past the line's ends only once those ends are drawn, so the
+         round caps show then, and nothing shows before the line has any length */
+      c.beginPath();
+      if(lineRight - lineLeft > 0.5){
+        var clipL = lineLeft <= x0 ? x0 - 4 : lineLeft, clipR = lineRight >= x1 ? x1 + 4 : lineRight;
+        c.rect(clipL, 0, clipR - clipL, G.h);
+      }
+      c.clip();
     }
     tracePath();
     c.strokeStyle = lg;
@@ -677,6 +764,7 @@
       c.stroke();
       c.restore();
     }
+    c.restore();
 
     /* stage labels: the one nearest the circle swells and drops into the dent */
     var band = L / n, activeIdx = 0, best = 1e9;
@@ -688,9 +776,12 @@
       var size = G.labelSize * (1 + 0.5 * e);
       var alpha = sx <= kx + 1 || !state.dimAhead ? 0.5 : 0.26;
       alpha += (1 - alpha) * e;
-      var y = G.labelTop + dent(sx) * 0.9 + e * 6;
+      var lv = vis(sx);
+      alpha *= lv;
+      var y = G.labelTop + dent(sx) * 0.9 + e * 6 + (1 - lv) * 10;
       var name = state.names[k] || "";
 
+      if(lv <= 0) continue;
       c.save();
       c.fillStyle = css(text, alpha);
       c.font = labelFont(size);
@@ -713,6 +804,10 @@
     /* the circle, resting in its dent: shaded from its own colour, or from the
        background's when none is picked; its drop shadow always suits the background */
     var ky = ly + depth - r - r * 0.2 - 2;
+    if(circleS <= 0.001){ c.restore(); return activeIdx; }
+    c.translate(kx, ky);
+    c.scale(circleS, circleS);
+    c.translate(-kx, -ky);
     var body = state.circle ? rgb(state.circle) : bg;
     var darkBody = luminance(body) < 0.5;
     c.save();
@@ -738,6 +833,7 @@
     c.beginPath(); c.arc(kx, ky, Math.max(2.5, r * 0.16), 0, Math.PI * 2); c.fill();
     c.restore();
 
+    c.restore();   /* the in/out transform */
     return activeIdx;
   }
 
@@ -759,7 +855,7 @@
     $("btnPlay").textContent = on ? "Pause" : "Play";
     $("stateVal").textContent = on ? "Running" : "Held";
   }
-  function restart(){ elapsed = 0; holdUntil = 0; }
+  function restart(){ elapsed = 0; }
 
   function markSwatches(box, match){
     Array.prototype.forEach.call(box.querySelectorAll(".sw"), function(b){
@@ -890,9 +986,18 @@
   /* keep the circle where it is on screen when the timing changes */
   var oldDuration = state.duration;
   bindRange("duration", "duration", function(){
-    elapsed = elapsed * state.duration / oldDuration;
+    var I = phases().I, old = oldDuration * 1000;
+    if(elapsed > I + old) elapsed += (state.duration - oldDuration) * 1000;
+    else if(elapsed > I) elapsed = I + (elapsed - I) * state.duration / oldDuration;
     oldDuration = state.duration;
   });
+  function clampElapsed(){ elapsed = Math.min(elapsed, phases().total); }
+  bindRange("inTime", "inTime", clampElapsed);
+  bindRange("outTime", "outTime", clampElapsed);
+  bindCheck("inChk", "animIn", clampElapsed);
+  bindCheck("outChk", "animOut", clampElapsed);
+  $("animStyle").value = state.animStyle;
+  $("animStyle").addEventListener("change", function(e){ state.animStyle = e.target.value; save(); });
   bindRange("size", "size", layout);
   bindRange("glow", "glow", layout);   /* the frame grows to hold a bigger glow */
   bindRange("length", "length", layout);
@@ -906,7 +1011,7 @@
   $("colorB").addEventListener("input", function(e){ setGradient(state.colorA, e.target.value); });
   $("bgPicker").addEventListener("input", function(e){ setBg(e.target.value); });
   $("btnPlay").addEventListener("click", function(){
-    if(!playing && elapsed >= state.duration * 1000) restart();
+    if(!playing && elapsed >= phases().total) restart();
     setPlaying(!playing);
   });
   $("btnReset").addEventListener("click", function(){ restart(); setPlaying(true); });
@@ -950,12 +1055,12 @@
   function even(v){ return Math.max(2, 2 * Math.round(v / 2)); }
   function maxSide(){ return state.format === "mp4" ? MAX_SIDE_MP4 : MAX_SIDE; }
 
-  /* One run is the full sweep plus the rest on the last stage, so a video of
-     whole runs loops seamlessly: the last frame flows straight into the first. */
+  /* One run is the intro, the full sweep, the rest on the last stage and the outro,
+     so a video of whole runs loops seamlessly: the last frame flows into the first. */
   function videoPlan(){
     var G = geo;
     var width = even(G.w * state.scale), height = even(G.h * state.scale);
-    var run = state.duration + END_HOLD / 1000;
+    var run = phases().total / 1000;
     var span = run * state.runs;
     var frames = Math.max(1, Math.round(span * state.fps));
     return {
@@ -967,8 +1072,7 @@
       tooBig: width > maxSide() || height > maxSide(),
       /* animation time (ms) of frame i */
       msAt: function(i){
-        var t = (i * span / frames) % run;
-        return Math.min(t, state.duration) * 1000;
+        return ((i * span / frames) % run) * 1000;
       }
     };
   }
@@ -1295,17 +1399,13 @@
   function frame(now){
     var dt = last ? Math.min(now - last, 100) : 0;
     last = now;
-    var total = state.duration * 1000;
+    var total = phases().total;
 
     if(playing){
-      if(holdUntil){
-        if(now >= holdUntil){
-          holdUntil = 0;
-          if(state.loop) restart(); else setPlaying(false);
-        }
-      }else{
-        elapsed += dt;
-        if(elapsed >= total){ elapsed = total; holdUntil = now + END_HOLD; }
+      elapsed += dt;
+      if(elapsed >= total){
+        if(state.loop) elapsed = 0;
+        else{ elapsed = total; setPlaying(false); }
       }
     }
 
