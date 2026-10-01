@@ -30,16 +30,6 @@ export const HERO = {
     aoStrength: 1.3, // >1 deepens the baked crevice shading
     scale: 0.92,
     // A broad, soft undulation so the surface isn't geometrically perfect.
-    // Procedural 3D relief, generated in the shader (no texture, so no seams or streaks):
-    // lumps, smaller knobs and a fine grain, each [scale in repeats per model radius, strength].
-    bumps: {
-      octaves: [
-        [15, 0.042],
-        [32, 0.026],
-        [62, 0.012],
-      ] as [number, number][],
-      shade: 0.1, // valleys slightly darker, peaks slightly lighter
-    },
     macro: { scale: 1.6, strength: 0.25 },
     // Imperfection: nothing in nature is uniform.
     mottle: 0.16, // albedo variation across the surface (0..1)
@@ -86,13 +76,13 @@ export const HERO = {
   // Signalling comets: no visible lines, just comets streaking along three paths that merge
   // through the protein, entering on one side and exiting on the other.
   lines: {
-    radius: 0.005, // comet core thickness, in model radii
-    haloWidth: 0.024, // half-width of the soft glow around each comet
+    radius: 0.0032, // comet core thickness, in model radii
+    haloWidth: 0.013, // half-width of the soft glow around each comet
     pulse: "#cfe8ff", // comet colour
     pulseIntensity: 8, // HDR multiplier; bloom turns this into glow
     speed: 0.09, // laps per second along a path
     cometsPerStrand: 7, // comets travelling each of the three paths
-    tail: 0.009, // tail length, as a fraction of the path
+    tail: 0.028, // tail length, as a fraction of the path
     lightIntensity: 2.5, // point lights where the strands enter and leave the protein, lighting its surface
     // As a pulse nears the protein, the surface around it glows, as if the light were entering it;
     // inside, the glow shows through as it travels across, then fades as the pulse exits.
@@ -113,25 +103,10 @@ export const HERO = {
       { position: [5.4, -2, -19] as [number, number, number], scale: 1.6, rotation: [1.2, 2, 0.3] as [number, number, number] },
     ],
   },
-  // Clear refracting droplets around the subject.
-  droplets: {
-    roughness: 0.06,
-    ior: 1.33,
-    thickness: 0.35,
-    items: [
-      { position: [-0.95, 0.6, 0.9] as [number, number, number], scale: 0.12 },
-      { position: [1.75, -0.25, 0.6] as [number, number, number], scale: 0.1 },
-      { position: [-2.1, 0.3, -1.6] as [number, number, number], scale: 0.17 },
-      { position: [0.95, -1.05, 1.2] as [number, number, number], scale: 0.07 },
-      { position: [2.5, 0.95, -2] as [number, number, number], scale: 0.24 },
-      { position: [-0.25, 1.3, 0.6] as [number, number, number], scale: 0.055 },
-    ],
-  },
-
   // Environment artifacts.
-  particles: { count: 22, color: "#8fa4b8", intensity: 0.75 }, // soft bokeh motes
+  particles: { count: 36, color: "#8fa4b8", intensity: 0.75 }, // soft bokeh motes
   debris: { count: 11, color: "#4d5a66" }, // small drifting fragments
-  dust: { count: 600, color: "#a9b8c6", opacity: 0.8 }, // fine suspended specks
+  dust: { count: 1500, color: "#a9b8c6", opacity: 0.9 }, // fine suspended specks and speckles
 
   // The OFF look: the switch flips the scene to a light blue protein in a light environment,
   // and the signalling lines disappear. Everything above is the ON (dark, diseased) look.

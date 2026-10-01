@@ -102,7 +102,7 @@ const signalChunk = /* glsl */ `
   // The tail falls off as a gaussian, so it ends crisply instead of lingering like an exponential.
   float comet(float t, float p) {
     float d = p - t;
-    return d < 0.0 ? smoothstep(0.004, 0.0, -d) : exp(-(d * d) / (uTail * uTail));
+    return d < 0.0 ? smoothstep(0.003, 0.0, -d) : exp(-(d * d) / (uTail * uTail));
   }
 
   // Comets looping along the path, each with its own speed and phase (see signal.ts). They run
