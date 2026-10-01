@@ -1,18 +1,16 @@
 "use client";
 
 import { useFrame } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { useMemo } from "react";
 import {
   AdditiveBlending,
   BufferAttribute,
   BufferGeometry,
   Color,
-  Group,
   ShaderMaterial,
   Vector3,
 } from "three";
 import { HERO } from "./config";
-import { blendProteinTheme, createProteinMaterial, type ProteinTextures } from "./proteinMaterial";
 import { THEME, type ThemeState } from "./theme";
 
 // Deterministic pseudo-random so the layout is identical on every load.
@@ -113,59 +111,4 @@ export function LightShafts({ theme, animate }: { theme: ThemeState; animate: bo
   });
 
   return <mesh geometry={geometry} material={material} frustumCulled={false} renderOrder={-0.5} />;
-}
-
-/**
- * Large protein structures far behind the subject, softened by distance haze and depth of field,
- * so the background reads as a space with layers rather than a flat backdrop.
- */
-export function FarStructures({
-  geometries,
-  textures,
-  theme,
-  backLightDir,
-  animate,
-}: {
-  geometries: BufferGeometry[];
-  textures: ProteinTextures;
-  theme: ThemeState;
-  backLightDir: { value: Vector3 };
-  animate: boolean;
-}) {
-  const material = useMemo(() => {
-    const m = createProteinMaterial(
-      { ...HERO.protein, color: HERO.far.color, aoStrength: 1, transmission: { ...HERO.protein.transmission, amount: 0 } },
-      textures,
-      backLightDir,
-    );
-    // Semi-transparent and not in the depth buffer: they take on whatever backdrop is behind them
-    // (bright glow or dark corner) and depth of field treats them as far away, blurring them fully.
-    m.transparent = true;
-    m.opacity = HERO.far.opacity;
-    m.depthWrite = false;
-    return m;
-  }, [textures, backLightDir]);
-  const refs = useRef<(Group | null)[]>([]);
-
-  useFrame((_, dt) => {
-    blendProteinTheme(material, theme.mix, THEME.far);
-    if (!animate) return;
-    refs.current.forEach((g, i) => {
-      if (!g) return;
-      g.rotation.y += dt * (0.02 + i * 0.012);
-      g.rotation.x += dt * 0.008;
-    });
-  });
-
-  return (
-    <>
-      {HERO.far.items.map((item, i) => (
-        <group key={i} ref={(g) => void (refs.current[i] = g)} position={item.position} scale={item.scale} rotation={item.rotation}>
-          {geometries.map((g, k) => (
-            <mesh key={k} geometry={g} material={material} />
-          ))}
-        </group>
-      ))}
-    </>
-  );
 }

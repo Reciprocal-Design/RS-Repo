@@ -95,14 +95,6 @@ export const HERO = {
 
   // Background depth.
   shafts: { count: 7, color: "#c9d9e6", intensity: 0.035 }, // volumetric light shafts from the upper left
-  far: {
-    color: "#4a5a69",
-    opacity: 0.35, // blended over the backdrop, so they only just emerge from the haze
-    items: [
-      { position: [-4.6, 2.2, -17] as [number, number, number], scale: 1.3, rotation: [0.4, 1, 0] as [number, number, number] },
-      { position: [5.4, -2, -19] as [number, number, number], scale: 1.6, rotation: [1.2, 2, 0.3] as [number, number, number] },
-    ],
-  },
   // Environment artifacts.
   particles: { count: 36, color: "#8fa4b8", intensity: 0.75 }, // soft bokeh motes
   debris: { count: 11, color: "#4d5a66" }, // small drifting fragments
@@ -131,7 +123,6 @@ export const HERO = {
     particles: "#ffffff",
     dust: "#ffffff",
     shafts: "#ffffff",
-    far: "#b4d1e5",
     bloomIntensity: 0.3, // the bright backdrop needs less bloom
     vignetteDarkness: 0.15,
     transitionSpeed: 1.6, // higher = faster change between looks
