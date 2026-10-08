@@ -1,3 +1,4 @@
+import { bodyImageInfo } from '../core/bodyImage';
 import type { DisplayList, Prim } from './displayList';
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -163,6 +164,11 @@ function drawPrim(ctx: Ctx, p: Prim): void {
       ctx.arc(p.c.x, p.c.y, p.r, 0, Math.PI * 2);
       ctx.fillStyle = grad;
       ctx.fill();
+      break;
+    }
+    case 'image': {
+      const img = bodyImageInfo(p.src)?.bitmap;
+      if (img) ctx.drawImage(img, p.x, p.y, p.w, p.h);
       break;
     }
     case 'dots': {

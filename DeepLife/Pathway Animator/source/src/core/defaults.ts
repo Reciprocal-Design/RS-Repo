@@ -37,6 +37,13 @@ export function defaultModule(kind: ModuleKind = 'custom'): ModuleSettings {
     bodyGlow: 0.5,
     bodyMesh: false,
     bodyParticles: true,
+    bodyImage: '',
+    imageScale: 1,
+    imageX: 0,
+    imageY: 0,
+    netScale: 1,
+    netX: 0,
+    netY: 0,
   };
 }
 

@@ -1,4 +1,5 @@
 import { arcLengthLut } from './bezier';
+import { bodyImageInfo, type BodyImageInfo } from './bodyImage';
 import { delaunay } from './delaunay';
 import { REFERENCE_SHORT_SIDE } from './layout';
 import { pointInPolygon } from './polygon';
@@ -95,12 +96,54 @@ const CHAINS: { from: string; pts: [number, number][] }[] = [
   { from: 'bladder', pts: [[0.045, 0.535], [0.049, 0.6], [0.052, 0.67], [0.056, 0.73], [0.062, 0.8], [0.065, 0.87], [0.065, 0.93], [0.078, 0.975]] },
 ];
 
-/** Body units → canvas pixels: the body fills 90% of the canvas height, centred. */
+/** Body units from the top of the head to the shoulder line, for fitting the network to a body image. */
+const SHOULDER_Y = 0.18;
+
+export interface ImageRect {
+  info: BodyImageInfo;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Canvas pixels per image pixel. */
+  k: number;
+}
+
+/** Where the body image is drawn: centred, `imageScale` × the canvas height tall, offset by `imageX/Y`. */
+export function bodyImageRect(scene: Scene): ImageRect | null {
+  const info = bodyImageInfo(scene.module.bodyImage);
+  if (!info) return null;
+  const { width: W, height: H } = scene.canvas;
+  const m = scene.module;
+  const h = H * m.imageScale, w = (h * info.width) / info.height;
+  return { info, x: W / 2 - w / 2 + m.imageX * W, y: H / 2 - h / 2 + m.imageY * H, w, h, k: h / info.height };
+}
+
+/** Is a canvas point on the figure of the body image? */
+function onFigure(r: ImageRect, p: Vec2): boolean {
+  const { info } = r;
+  const ix = Math.floor(((p.x - r.x) / r.w) * info.mw), iy = Math.floor(((p.y - r.y) / r.h) * info.mh);
+  return ix >= 0 && iy >= 0 && ix < info.mw && iy < info.mh && info.mask[iy * info.mw + ix] === 1;
+}
+
+/**
+ * Body units → canvas pixels. Drawn: the body fills 90% of the canvas height,
+ * centred. On a body image: the network is fitted to the figure's head and
+ * shoulders, then sized and moved by `netScale` and `netX/Y`.
+ */
 export function bodyTransform(scene: Scene) {
   const { width: W, height: H } = scene.canvas;
+  const r = bodyImageRect(scene);
+  if (r) {
+    const { fit } = r.info;
+    const m = scene.module;
+    const h = ((fit.shoulders - fit.top) / SHOULDER_Y) * r.k * m.netScale;
+    const ax = r.x + fit.cx * r.k + m.netX * W, ay = r.y + fit.shoulders * r.k + m.netY * H;
+    return { h, image: r, map: (x: number, y: number): Vec2 => ({ x: ax + x * h, y: ay + (y - SHOULDER_Y) * h }) };
+  }
   const h = 0.9 * H;
   const top = (H - h) / 2;
-  return { h, map: (x: number, y: number): Vec2 => ({ x: W / 2 + x * h, y: top + y * h }) };
+  return { h, image: null, map: (x: number, y: number): Vec2 => ({ x: W / 2 + x * h, y: top + y * h }) };
 }
 
 /** An outline through the given points (radiusAt about their centroid, for completeness). */
@@ -189,7 +232,7 @@ const insideBody = (p: Vec2, margin: number) =>
  * the start, and colour follows how far the signal has come.
  */
 export function buildBodyGeometry(scene: Scene): SceneGeom {
-  const { h, map } = bodyTransform(scene);
+  const { h, map, image } = bodyTransform(scene);
   const scale = (Math.min(scene.canvas.width, scene.canvas.height) / REFERENCE_SHORT_SIDE) * 0.65;
   const body = outlineOf(SILHOUETTE.map((p) => map(p.x, p.y)));
   const seed = scene.seed;
@@ -202,14 +245,14 @@ export function buildBodyGeometry(scene: Scene): SceneGeom {
     nodes.push(n);
     byKey.set(key, n);
   };
-  const links: { a: string; b: string; hops: number; bend?: number }[] = [];
-  const organs: Outline[] = [];
+  let links: { a: string; b: string; hops: number; bend?: number }[] = [];
+  let organs: { key: string; o: Outline }[] = [];
 
   for (const o of ORGANS) {
     o.lobes.forEach((l, i) => {
       const key = lobeKey(o, i);
       add(key, l.c[0], l.c[1]);
-      organs.push(lobeOutline(map(l.c[0], l.c[1]), l.r[0] * h, l.r[1] * h, hash(seed, 'organ', key)));
+      organs.push({ key, o: lobeOutline(map(l.c[0], l.c[1]), l.r[0] * h, l.r[1] * h, hash(seed, 'organ', key)) });
       // Nodes inside the organ on two rings: inner ones fed from the hub,
       // each outer one from the inner node before it.
       const rng = rngFor(seed, 'organ-nodes', key);
@@ -236,9 +279,19 @@ export function buildBodyGeometry(scene: Scene): SceneGeom {
     });
   }
 
+  // On a body image, keep only the network that lies on the figure (it may
+  // be cropped, or posed differently from the drawn body).
+  if (image) {
+    for (const [k, n] of [...byKey]) if (!onFigure(image, n)) byKey.delete(k);
+    links = links.filter((l) => byKey.has(l.a) && byKey.has(l.b));
+    organs = organs.filter((o) => byKey.has(o.key));
+    nodes.splice(0, nodes.length, ...byKey.values());
+  }
+
   // ---- Direction and colour: hop distance from the start ----
   const source = ORGANS.find((o) => o.id === scene.module.organ) ?? ORGANS[2];
-  const startKeys = source.lobes.map((_, i) => lobeKey(source, i));
+  let startKeys = source.lobes.map((_, i) => lobeKey(source, i)).filter((k) => byKey.has(k));
+  if (!startKeys.length) startKeys = [...byKey.keys()].slice(0, 1);
   const adj = new Map<string, string[]>();
   for (const { a, b } of links) {
     adj.set(a, [...(adj.get(a) ?? []), b]);
@@ -268,18 +321,22 @@ export function buildBodyGeometry(scene: Scene): SceneGeom {
   for (const a of ANATOMY) {
     for (const side of a.mid ? [1] : [1, -1]) anatomy.push({ b: a.pts.map(([x, y]) => map(side * x, y)) as Bezier, strength: a.s });
   }
-  const detail = bodyDetail(`${seed}|${scene.canvas.width}|${scene.canvas.height}|${source.id}`, () => detailFor(seed, h, map, nodes));
+  const m = scene.module;
+  const key = [seed, scene.canvas.width, scene.canvas.height, source.id, m.bodyImage.length, m.bodyImage.slice(-24),
+    m.imageScale, m.imageX, m.imageY, m.netScale, m.netX, m.netY, !!image].join('|');
+  const detail = bodyDetail(key, () => detailFor(seed, h, map, nodes, image));
   return {
     scale,
     cell: body,
     nucleus: body,
     cells: [{ id: 'body', cell: body, nucleus: body, enabled: true, noNucleus: true }],
-    organs,
+    organs: organs.map((o) => o.o),
+    ...(image ? { image: { src: m.bodyImage, x: image.x, y: image.y, w: image.w, h: image.h } } : {}),
     outlineScale: scale * 0.55,
     particles: scene.module.bodyParticles ? detail.particles : undefined,
-    mesh: scene.module.bodyMesh ? detail.mesh : undefined,
-    anatomy,
-    bodyFill: true,
+    mesh: scene.module.bodyMesh && !image ? detail.mesh : undefined,
+    anatomy: image ? undefined : anatomy,
+    bodyFill: !image,
     // The glow reaches 1.5–8.5% of the body's height in from the outline.
     glowDepth: (0.015 + 0.07 * Math.max(0, Math.min(1, scene.module.bodyGlow))) * h,
     pathways: startKeys.map((k) => ({ id: 'body', startDelay: 0, start: byKey.get(k)!.id })),
@@ -306,15 +363,23 @@ function bodyDetail(key: string, make: () => { particles: NonNullable<SceneGeom[
   return hit;
 }
 
-function detailFor(seed: number, h: number, map: (x: number, y: number) => Vec2, nodes: NodeGeom[]) {
+function detailFor(seed: number, h: number, map: (x: number, y: number) => Vec2, nodes: NodeGeom[], image: ImageRect | null) {
   // ---- Particles: denser in the torso, each lit from its nearest node ----
+  // (on a body image: anywhere on the figure, evenly)
   const rng = rngFor(seed, 'body-particles');
   const particles: NonNullable<SceneGeom['particles']> = [];
   for (let tries = 0; particles.length < PARTICLES && tries < PARTICLES * 12; tries++) {
-    const p = { x: range(rng, -0.17, 0.17), y: rng() };
-    const torso = p.y > 0.15 && p.y < 0.56 && Math.abs(p.x) < 0.1;
-    if (rng() > (torso ? 1 : 0.55) || !insideBody(p, 0.004)) continue;
-    const q = map(p.x, p.y);
+    let q: Vec2;
+    if (image) {
+      q = { x: image.x + rng() * image.w, y: image.y + rng() * image.h };
+      if (!onFigure(image, q)) continue;
+    } else {
+      const p = { x: range(rng, -0.17, 0.17), y: rng() };
+      const torso = p.y > 0.15 && p.y < 0.56 && Math.abs(p.x) < 0.1;
+      if (rng() > (torso ? 1 : 0.55) || !insideBody(p, 0.004)) continue;
+      q = map(p.x, p.y);
+    }
+    if (!nodes.length) break;
     let near = nodes[0], d = Infinity;
     for (const n of nodes) {
       const dd = Math.hypot(n.x - q.x, n.y - q.y);

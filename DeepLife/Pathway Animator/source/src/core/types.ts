@@ -136,6 +136,16 @@ export interface ModuleSettings {
   bodyMesh: boolean;
   /** Body: the particle field. */
   bodyParticles: boolean;
+  /** Body: an image of a figure drawn instead of the outline (data URL; '' for none). */
+  bodyImage: string;
+  /** Body image placement: height as a share of the canvas, and offset (shares of the canvas). */
+  imageScale: number;
+  imageX: number;
+  imageY: number;
+  /** Network placement on the image: size, and offset (shares of the canvas), after the automatic fit. */
+  netScale: number;
+  netX: number;
+  netY: number;
 }
 
 /** One cell of an imported map. Coordinates are flat x,y pairs in the map's own units. */
@@ -266,6 +276,8 @@ export interface SceneGeom {
   anatomy?: { b: Bezier; strength: number }[];
   bodyFill?: boolean;
   glowDepth?: number;
+  /** A body image drawn in place of the outline: its data URL and canvas rectangle. */
+  image?: { src: string; x: number; y: number; w: number; h: number };
   /**
    * Every pathway laid out, with its effective start delay (cell offsets
    * included). A pathway with `relayOnly` never starts on its own: it fires

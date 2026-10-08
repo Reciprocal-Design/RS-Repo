@@ -1,3 +1,4 @@
+import { bodyImageInfo } from '../core/bodyImage';
 import { hexString, parseColor } from '../core/color';
 import type { DisplayList, Group, Prim } from './displayList';
 
@@ -138,6 +139,11 @@ function primToSvg(p: Prim, defs: string[], clips: Set<string>): string | null {
       );
       const d = p.points.map((q, i) => `${i ? 'L' : 'M'}${n(q.x)},${n(q.y)}`).join(' ');
       return `<path id="${id}" d="${d}" fill="none" stroke="url(#${gid})" stroke-width="${n(p.width)}" stroke-linejoin="round"${opacity}${blend}/>`;
+    }
+    case 'image': {
+      // The cut-out figure where it is ready, else the image as loaded.
+      const href = bodyImageInfo(p.src)?.cutoutUrl ?? p.src;
+      return `<image id="${id}" x="${n(p.x)}" y="${n(p.y)}" width="${n(p.w)}" height="${n(p.h)}" href="${href}" preserveAspectRatio="none"${opacity}/>`;
     }
     case 'dots': {
       const out: string[] = [];

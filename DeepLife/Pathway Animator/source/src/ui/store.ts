@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { makePathway } from '../core/defaults';
 import { mapCellAt, mapCells } from '../core/cellMap';
 import { withStructureOf } from '../core/layers';
+import { onBodyImage } from '../core/bodyImage';
 import { MODULES, moduleScene, shareScene } from '../core/modules';
 import { hash, randomSeed } from '../core/rng';
 import type { CellMap, LayerSpec, Pathway, Scene, Vec2 } from '../core/types';
@@ -18,6 +19,8 @@ interface AppState {
   shareToAllTabs: () => void;
   /** A loaded scene file, into the current tab: it keeps the tab's module. */
   loadScene: (scene: Scene) => void;
+  /** Use a body image (data URL; '' for none) in every tab that shows the body (Body, journey). */
+  setBodyImage: (src: string) => void;
   scene: Scene;
   time: number;
   playing: boolean;
@@ -58,6 +61,13 @@ export const useApp = create<AppState>((set) => ({
       const own = st.scene.module;
       const module = loaded.module.kind === 'custom' ? { ...own } : { ...loaded.module, kind: own.kind };
       return put(st, { ...loaded, module });
+    }),
+  setBodyImage: (src) =>
+    set((st) => {
+      const tabs = st.tabs.map((s) =>
+        s.module.kind === 'body' || s.module.kind === 'journey' ? { ...s, module: { ...s.module, bodyImage: src } } : s,
+      );
+      return { tabs, scene: tabs[st.active] };
     }),
   time: 0,
   playing: false,
@@ -125,3 +135,12 @@ export const useApp = create<AppState>((set) => ({
       return put(st, { ...st.scene, cellMap: { ...st.scene.cellMap, cells } });
     }),
 }));
+
+// When a body image finishes loading, rebuild the scenes that use it (their
+// geometry was made without it).
+onBodyImage(() =>
+  useApp.setState((st) => {
+    const tabs = st.tabs.map((s) => (s.module.bodyImage ? { ...s } : s));
+    return { tabs, scene: tabs[st.active] };
+  }),
+);

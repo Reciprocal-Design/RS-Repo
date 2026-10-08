@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { bodyImageInfo } from '../core/bodyImage';
 import { ORGANS } from '../core/body';
 import { degCount, MODULES, moduleInfo, tissueMap } from '../core/modules';
 import type { ModuleSettings, OrganId } from '../core/types';
 import { JOURNEY_SECTIONS, sectionLength } from '../render/journey';
 import { ColorField, Section, Select, Slider, Toggle } from './controls';
+import { loadBodyImage, readImageFile } from './bodyImageLoader';
 import { useApp } from './store';
 
 /** The module tabs, above the preview. */
@@ -38,11 +40,19 @@ export function ModuleSection() {
   const setTime = useApp((s) => s.setTime);
   const setPlaying = useApp((s) => s.setPlaying);
   const shareToAllTabs = useApp((s) => s.shareToAllTabs);
+  const setBodyImage = useApp((s) => s.setBodyImage);
   const [shared, setShared] = useState(false);
+  const imageRef = useRef<HTMLInputElement>(null);
+  const [imageMsg, setImageMsg] = useState<{ text: string; error?: boolean } | null>(null);
   const m = scene.module;
   const info = moduleInfo(m.kind);
   const set = (v: Partial<ModuleSettings>) => setScene((s) => ({ ...s, module: { ...s.module, ...v } }));
   const degs = degCount(scene);
+  // A scene loaded with a body image: analyse it (once) so it can be drawn.
+  useEffect(() => {
+    if (m.bodyImage) loadBodyImage(m.bodyImage).catch((e) => setImageMsg({ text: (e as Error).message, error: true }));
+  }, [m.bodyImage]);
+  const imageReady = !!bodyImageInfo(m.bodyImage);
 
   const targets = (
     <>
@@ -143,9 +153,52 @@ export function ModuleSection() {
 
       {(m.kind === 'body' || m.kind === 'journey') && (
         <>
-          <Slider label="Body glow" value={m.bodyGlow} min={0} max={1} onChange={(bodyGlow) => set({ bodyGlow })} />
+          <button className="btn wide" onClick={() => imageRef.current?.click()}>
+            {m.bodyImage ? 'Replace body image…' : 'Use a body image…'}
+          </button>
+          <input
+            ref={imageRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            hidden
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (!file) return;
+              setImageMsg(null);
+              try {
+                const src = await readImageFile(file);
+                await loadBodyImage(src);
+                setBodyImage(src);
+                setImageMsg({ text: `Using ${file.name} in the Body and journey tabs.` });
+              } catch (err) {
+                setImageMsg({ text: (err as Error).message, error: true });
+              }
+            }}
+          />
+          {imageMsg && <p className={`hint ${imageMsg.error ? 'error' : 'ok'}`}>{imageMsg.text}</p>}
+          {m.bodyImage ? (
+            <>
+              {!imageReady && <p className="hint">Preparing the image…</p>}
+              <p className="hint">
+                A figure on a plain background: it is cut out, and the network and particles are placed on it. Fit them
+                with the sliders below.
+              </p>
+              <Slider label="Image size" value={m.imageScale} min={0.3} max={3} onChange={(imageScale) => set({ imageScale })} />
+              <Slider label="Image X" value={m.imageX} min={-0.5} max={0.5} onChange={(imageX) => set({ imageX })} />
+              <Slider label="Image Y" value={m.imageY} min={-0.5} max={0.5} onChange={(imageY) => set({ imageY })} />
+              <Slider label="Network size" value={m.netScale} min={0.4} max={2} onChange={(netScale) => set({ netScale })} />
+              <Slider label="Network X" value={m.netX} min={-0.3} max={0.3} onChange={(netX) => set({ netX })} />
+              <Slider label="Network Y" value={m.netY} min={-0.3} max={0.3} onChange={(netY) => set({ netY })} />
+              <button className="btn small" onClick={() => setBodyImage('')}>Back to the drawn body</button>
+            </>
+          ) : (
+            <>
+              <Slider label="Body glow" value={m.bodyGlow} min={0} max={1} onChange={(bodyGlow) => set({ bodyGlow })} />
+              <Toggle label="Wireframe" checked={m.bodyMesh} onChange={(bodyMesh) => set({ bodyMesh })} />
+            </>
+          )}
           <Toggle label="Particles" checked={m.bodyParticles} onChange={(bodyParticles) => set({ bodyParticles })} />
-          <Toggle label="Wireframe" checked={m.bodyMesh} onChange={(bodyMesh) => set({ bodyMesh })} />
         </>
       )}
 

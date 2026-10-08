@@ -109,6 +109,13 @@ function normalizeModule(raw: unknown): ModuleSettings {
     organ: ORGAN_IDS.includes(m.organ) ? m.organ : base.organ,
     sectionLength: num(m.sectionLength, base.sectionLength, 0.5, 30),
     bodyGlow: num(m.bodyGlow, base.bodyGlow, 0, 1),
+    bodyImage: typeof m.bodyImage === 'string' && m.bodyImage.startsWith('data:image/') ? m.bodyImage : '',
+    imageScale: num(m.imageScale, 1, 0.2, 4),
+    imageX: num(m.imageX, 0, -1, 1),
+    imageY: num(m.imageY, 0, -1, 1),
+    netScale: num(m.netScale, 1, 0.3, 3),
+    netX: num(m.netX, 0, -1, 1),
+    netY: num(m.netY, 0, -1, 1),
   };
 }
 

@@ -44,6 +44,8 @@ export type Prim = Base &
     | { kind: 'warning'; c: Vec2; size: number; fill: string; mark: string }
     /** Many small dots, batched by colour: each bucket's pts are x, y, r triples. */
     | { kind: 'dots'; buckets: { color: string; pts: Float32Array }[] }
+    /** A registered body image (core/bodyImage.ts), drawn into a rectangle. */
+    | { kind: 'image'; src: string; x: number; y: number; w: number; h: number }
     /** Straight line segments in one stroke: pts are x1, y1, x2, y2 quadruples. */
     | { kind: 'segments'; pts: Float32Array; stroke: string; width: number }
   );
@@ -251,6 +253,11 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean; 
   const os = g.outlineScale ?? s;
   for (const c of g.cells) {
     const prefix = c.id ? `${c.id}-` : '';
+    if (g.image) {
+      // A body image in place of the drawn body.
+      prims.push({ kind: 'image', id: 'body-image', group: 'membrane', ...g.image });
+      continue;
+    }
     if (g.bodyFill && scene.cell.visible) {
       // The body: a deep fill, and a glow reaching well in from the outline,
       // like a lit figure with a dark core (an X-ray look).
