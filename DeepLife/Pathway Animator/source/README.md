@@ -47,6 +47,10 @@ a preset scene plus a pure transform of the geometry (`src/core/modules.ts`):
    chains out along each arm and leg to the hands and feet. About 2,600 particles fill the body, each lighting up
    in a wave as the signal reaches the network node nearest it; an optional wireframe mesh (a Delaunay
    triangulation, `src/core/delaunay.ts`) is off by default.
+   "Use a body image…" swaps the drawn body for an image of a figure on a plain background (a 3D render, say;
+   `src/core/bodyImage.ts`): the figure is found from its pixels and cut out with soft edges, the network is fitted
+   to its head and shoulders (then sized and moved with the sliders), and only the nodes and particles that land on
+   the figure are kept. The image is saved in the scene JSON and used by the Body and journey tabs.
 8. **Cell → tissue → body** (`src/render/journey.ts`): the website's scroll sequence, in five sections of equal
    length: cell, cell → tissue (the camera pulls back from exactly the single cell as the neighbours fade in),
    tissue, tissue → body (the tissue shrinks into the chosen organ and fades as the body fades in round it),

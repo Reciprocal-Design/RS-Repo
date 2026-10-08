@@ -205,7 +205,7 @@ export function ModuleSection() {
       {m.kind === 'body' && (
         <>
           {organ('Signal starts in')}
-          <p className="hint">Outline and organs take the cell membrane and nucleus styles; firing lines take the Style and Animation settings.</p>
+          <p className="hint">The drawn outline and organs take the cell membrane and nucleus styles; firing lines take the Style and Animation settings.</p>
         </>
       )}
 
