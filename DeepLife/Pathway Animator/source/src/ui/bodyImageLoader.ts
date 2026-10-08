@@ -33,9 +33,14 @@ export function loadBodyImage(src: string): Promise<void> {
 }
 
 async function analyse(src: string) {
+  // Wait on the load event: decode() can stall while the page is in the background.
   const img = new Image();
-  img.src = src;
-  await img.decode();
+  await new Promise<void>((res, rej) => {
+    img.onload = () => res();
+    img.onerror = () => rej(new Error('This image could not be opened.'));
+    img.src = src;
+    if (img.complete && img.naturalWidth) res();
+  });
   const W = img.naturalWidth, H = img.naturalHeight;
   if (!W || !H) throw new Error('This image is empty.');
 
