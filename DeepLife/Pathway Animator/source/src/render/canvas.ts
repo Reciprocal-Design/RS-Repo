@@ -160,6 +160,29 @@ function drawPrim(ctx: Ctx, p: Prim): void {
       ctx.fill();
       break;
     }
+    case 'dots': {
+      for (const b of p.buckets) {
+        ctx.fillStyle = b.color;
+        ctx.beginPath();
+        for (let i = 0; i < b.pts.length; i += 3) {
+          ctx.moveTo(b.pts[i] + b.pts[i + 2], b.pts[i + 1]);
+          ctx.arc(b.pts[i], b.pts[i + 1], b.pts[i + 2], 0, Math.PI * 2);
+        }
+        ctx.fill();
+      }
+      break;
+    }
+    case 'segments': {
+      ctx.beginPath();
+      for (let i = 0; i < p.pts.length; i += 4) {
+        ctx.moveTo(p.pts[i], p.pts[i + 1]);
+        ctx.lineTo(p.pts[i + 2], p.pts[i + 3]);
+      }
+      ctx.strokeStyle = p.stroke;
+      ctx.lineWidth = p.width;
+      ctx.stroke();
+      break;
+    }
     case 'warning': {
       // Rounded triangle: a filled path stroked in the same colour with round joins.
       const h = p.size, w = h * 1.12;

@@ -249,6 +249,14 @@ export interface SceneGeom {
   /** Size of outline strokes and glows, when not `scale` (the body's narrow limbs take a thinner glow). */
   outlineScale?: number;
   /**
+   * Body view detail: a field of particles (each lit by the signal reaching
+   * its nearest network node, `delay` seconds later), a wireframe mesh
+   * (segments x1,y1,x2,y2…) and open anatomy lines.
+   */
+  particles?: { x: number; y: number; r: number; tone: number; node: string; delay: number }[];
+  mesh?: Float32Array;
+  anatomy?: Bezier[];
+  /**
    * Every pathway laid out, with its effective start delay (cell offsets
    * included). A pathway with `relayOnly` never starts on its own: it fires
    * only when a relay from a neighbouring cell reaches it.

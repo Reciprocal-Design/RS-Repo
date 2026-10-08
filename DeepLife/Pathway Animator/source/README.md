@@ -40,8 +40,11 @@ a preset scene plus a pure transform of the geometry (`src/core/modules.ts`):
    Target combination spaces its receptors unevenly (spacing variation up to 2) and, with crosstalk on,
    interconnects them: each receptor also reaches a few of the other targets' DEGs.
 6. **Module 6**: not defined yet; the standard animator.
-7. **Body**: organ-level connectivity (`src/core/body.ts`). A human outline drawn like the membrane, organs drawn
-   like nuclei, and the same firing lines between organs, spreading out from a chosen organ.
+7. **Body**: organ-level connectivity (`src/core/body.ts`). An anatomical front-view outline drawn like the
+   membrane (with chest lines), organs drawn like nuclei, and the same firing lines spreading out from a chosen
+   organ: organ to organ, up the neck, and in chains out along each arm and leg to the hands and feet. A faint
+   wireframe mesh (a Delaunay triangulation, `src/core/delaunay.ts`) and about 2,600 particles fill the body;
+   each particle lights up in a wave as the signal reaches the network node nearest it.
 8. **Cell → tissue → body** (`src/render/journey.ts`): the website's scroll sequence, in five sections of equal
    length: cell, cell → tissue (the camera pulls back from exactly the single cell as the neighbours fade in),
    tissue, tissue → body (the tissue shrinks into the chosen organ and fades as the body fades in round it),

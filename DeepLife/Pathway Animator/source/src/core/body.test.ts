@@ -27,6 +27,17 @@ describe('body', () => {
     expect(sched.fire.get('body-heart')).toBe(0);
   });
 
+  it('has a dense particle field and a wireframe inside the body, lit as the signal passes', () => {
+    const s = moduleScene('body', 7);
+    const g = buildGeometry(s);
+    expect(g.particles!.length).toBeGreaterThan(2000);
+    expect(g.mesh!.length / 4).toBeGreaterThan(400);
+    // More detail along the limbs: chains to both hands and both feet.
+    for (const k of ['limb0r-9', 'limb0l-9', 'limb1r-8', 'limb1l-8']) expect(g.nodeById.has(`body-${k}`)).toBe(true);
+    const lit = (t: number) => buildDisplayList(s, t).prims.filter((p) => p.id.startsWith('body-particles-lit')).length;
+    expect(lit(0.01)).toBeLessThan(lit(3));
+  });
+
   it('starts from any organ, two-lobed ones from both lobes', () => {
     const s = moduleScene('body', 7);
     const lungs = { ...s, module: { ...s.module, organ: 'lungs' as const } };

@@ -10,6 +10,8 @@ import type { Bezier, OutlineLook, Scene, SceneGeom, Vec2 } from '../core/types'
 export type Group =
   | 'membrane'
   | 'nucleus'
+  | 'mesh'
+  | 'particles'
   | 'receptors'
   | 'edges'
   | 'crosstalk'
@@ -40,6 +42,10 @@ export type Prim = Base &
     | { kind: 'glow'; c: Vec2; r: number; color: string }
     /** A warning badge: a rounded triangle `size` tall, centred on c, with an exclamation mark. */
     | { kind: 'warning'; c: Vec2; size: number; fill: string; mark: string }
+    /** Many small dots, batched by colour: each bucket's pts are x, y, r triples. */
+    | { kind: 'dots'; buckets: { color: string; pts: Float32Array }[] }
+    /** Straight line segments in one stroke: pts are x1, y1, x2, y2 quadruples. */
+    | { kind: 'segments'; pts: Float32Array; stroke: string; width: number }
   );
 
 export interface DisplayList {
@@ -156,6 +162,24 @@ function toxicLook(scene: Scene): Scene['cell'] {
   };
 }
 
+/** The resting particle field, bucketed by tone (one array per geometry, stable across frames). */
+const particleCache = new WeakMap<SceneGeom, Map<string, { color: string; pts: Float32Array }[]>>();
+function particleBuckets(g: SceneGeom, ramp: (t: number) => RGBA, tones: number, k: number) {
+  const key = JSON.stringify([ramp(0), ramp(0.5), ramp(1), tones, k]);
+  let byKey = particleCache.get(g);
+  if (!byKey) particleCache.set(g, (byKey = new Map()));
+  let out = byKey.get(key);
+  if (!out) {
+    const lists = Array.from({ length: tones }, () => [] as number[]);
+    for (const p of g.particles ?? []) lists[Math.min(tones - 1, Math.floor(p.tone * tones))].push(p.x, p.y, p.r * g.scale * k);
+    out = lists
+      .map((pts, i) => ({ color: rgbaString(ramp((i + 0.5) / tones)), pts: new Float32Array(pts) }))
+      .filter((b) => b.pts.length);
+    byKey.set(key, out);
+  }
+  return out;
+}
+
 /** Every cell's membrane in one look, as one array per geometry and look (stable across frames). */
 const membraneCache = new WeakMap<SceneGeom, Map<string, Prim[]>>();
 function membranes(g: SceneGeom, look: Scene['cell'], prefix: string): Prim[] {
@@ -232,6 +256,19 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean; 
   if (scene.nucleus.visible) {
     g.organs?.forEach((o, i) => prims.push(...outlinePrims('nucleus', o.points, scene.nucleus, os, `organ${i + 1}-`)));
   }
+  // Body view: wireframe, anatomy lines and the resting particle field.
+  const TONES = 10;
+  const toneOf = (t: number) => Math.min(TONES - 1, Math.floor(t * TONES));
+  if (g.mesh?.length) {
+    prims.push({ kind: 'segments', id: 'body-mesh', group: 'mesh', pts: g.mesh, stroke: scene.cell.edgeColor, width: 0.7 * os, opacity: 0.2 });
+  }
+  if (scene.cell.visible) {
+    g.anatomy?.forEach((b, i) => prims.push({
+      kind: 'bezier', id: `body-anatomy-${i + 1}`, group: 'membrane', p: b, width: Math.max(0.25, scene.cell.strokeWidth) * os,
+      from: scene.cell.edgeColor, to: scene.cell.edgeColor, opacity: 0.7,
+    }));
+  }
+  if (g.particles?.length) prims.push({ kind: 'dots', id: 'body-particles', group: 'particles', buckets: particleBuckets(g, ramp, TONES, 1), opacity: 0.4 });
 
   // Receptors: capsules across the membrane, stroked in the membrane colour.
   // They stay visible when the membrane line is hidden.
@@ -389,6 +426,36 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean; 
         }
         prims.push({ kind: 'circle', id: `${id}-head`, group: 'signal', blend: 'lighter', c, r: cometW * 0.9, fill: rgbaString(mixWhite(rgb, 0.7)) });
       }
+    }
+  }
+
+  // Body view: particles light up as the signal reaches the node nearest
+  // them, in a wave travelling out from it, then dim back to rest.
+  if (signal && g.particles?.length) {
+    const LEVELS = 4;
+    const lit: { color: number; level: number; x: number; y: number; r: number }[] = [];
+    for (const p of g.particles) {
+      const f = schedule.fire.get(p.node);
+      if (f === undefined) continue;
+      const x = since(tau, f + p.delay, period);
+      if (x < 0) continue;
+      const e = (x < 0.15 ? x / 0.15 : Math.exp(-(x - 0.15) / 1.1)) * (period ? 1 : fade);
+      if (e < 0.06) continue;
+      lit.push({ color: toneOf(p.tone), level: Math.min(LEVELS - 1, Math.floor(e * LEVELS)), x: p.x, y: p.y, r: p.r });
+    }
+    for (let lv = 0; lv < LEVELS; lv++) {
+      const byTone = new Map<number, number[]>();
+      for (const q of lit) {
+        if (q.level !== lv) continue;
+        const list = byTone.get(q.color) ?? [];
+        list.push(q.x, q.y, q.r * s * 1.5);
+        byTone.set(q.color, list);
+      }
+      if (!byTone.size) continue;
+      prims.push({
+        kind: 'dots', id: `body-particles-lit-${lv + 1}`, group: 'signal', blend: 'lighter', opacity: (lv + 1) / LEVELS,
+        buckets: [...byTone].map(([t, pts]) => ({ color: rgbaString(mixWhite(ramp((t + 0.5) / TONES), 0.35)), pts: new Float32Array(pts) })),
+      });
     }
   }
 

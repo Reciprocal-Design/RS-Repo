@@ -8,6 +8,8 @@ import type { DisplayList, Group, Prim } from './displayList';
 const GROUP_ORDER: Group[] = [
   'membrane',
   'nucleus',
+  'mesh',
+  'particles',
   'receptors',
   'edges',
   'crosstalk',
@@ -135,6 +137,20 @@ function primToSvg(p: Prim, defs: string[], clips: Set<string>): string | null {
       );
       const d = p.points.map((q, i) => `${i ? 'L' : 'M'}${n(q.x)},${n(q.y)}`).join(' ');
       return `<path id="${id}" d="${d}" fill="none" stroke="url(#${gid})" stroke-width="${n(p.width)}" stroke-linejoin="round"${opacity}${blend}/>`;
+    }
+    case 'dots': {
+      const out: string[] = [];
+      for (const b of p.buckets) {
+        for (let i = 0; i < b.pts.length; i += 3) {
+          out.push(`<circle cx="${n(b.pts[i])}" cy="${n(b.pts[i + 1])}" r="${n(b.pts[i + 2])}" ${fillAttrs(b.color)}/>`);
+        }
+      }
+      return `<g id="${id}"${opacity}${blend}>${out.join('')}</g>`;
+    }
+    case 'segments': {
+      let d = '';
+      for (let i = 0; i < p.pts.length; i += 4) d += `M${n(p.pts[i])},${n(p.pts[i + 1])}L${n(p.pts[i + 2])},${n(p.pts[i + 3])}`;
+      return `<path id="${id}" d="${d}" fill="none" ${strokeAttrs(p.stroke)} stroke-width="${n(p.width)}" stroke-linecap="round"${opacity}/>`;
     }
     case 'warning': {
       const h = p.size, w = h * 1.12, r = h * 0.12;
