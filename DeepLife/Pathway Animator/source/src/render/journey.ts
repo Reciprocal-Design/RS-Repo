@@ -21,6 +21,11 @@ import { buildDisplayList } from './displayList';
 // Each layer (tissue, body) is its own scene, drawn with its own signal and
 // a camera transform, into an offscreen layer that is faded onto the frame.
 // The tissue layer fades out towards its edges, so it never ends in a hard cut.
+//
+// On a portrait canvas (desktop, beside text) the cell and tissue are the
+// landscape composition turned 90°: the tissue is laid out on the canvas
+// with its sides swapped, and its camera turns it onto the frame. The body
+// is laid out on the portrait canvas itself.
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
@@ -29,6 +34,9 @@ export const JOURNEY_SECTIONS = ['Cell', 'Cell → tissue', 'Tissue', 'Tissue �
 const BODY_ZOOM = 8;
 
 const scenes = new WeakMap<Scene, { tissue: Scene; body: Scene }>();
+/** A portrait canvas: the cell and tissue are turned 90° onto it. */
+export const isPortrait = (scene: Scene) => scene.canvas.height > scene.canvas.width;
+
 /** The journey's tissue and body scenes (memoised so their geometry and schedules are cached). */
 export function journeyScenes(scene: Scene) {
   let hit = scenes.get(scene);
@@ -36,10 +44,12 @@ export function journeyScenes(scene: Scene) {
     // On an imported map, the middle cell becomes the centre cell: the single
     // cell's own pathways, starting the signal that spreads to the others.
     const cm = scene.cellMap;
-    const mid = cm.around ? undefined : middleCellId(scene);
+    const { width, height } = scene.canvas;
+    const canvas = isPortrait(scene) ? { ...scene.canvas, width: height, height: width } : scene.canvas;
+    const mid = cm.around ? undefined : middleCellId({ ...scene, canvas });
     const cellMap = mid ? { ...cm, cells: cm.cells.map((c) => (c.id === mid ? { ...c, hero: true, enabled: true } : c)) } : cm;
     hit = {
-      tissue: { ...scene, cellMap, module: { ...scene.module, kind: 'tissue' } },
+      tissue: { ...scene, canvas, cellMap, module: { ...scene.module, kind: 'tissue' } },
       body: { ...scene, module: { ...scene.module, kind: 'body' } },
     };
     scenes.set(scene, hit);
@@ -56,6 +66,8 @@ interface Camera {
   origin: Vec2;
   zoom: number;
   alpha: number;
+  /** Turn the layer 90° clockwise about `origin` (the tissue on a portrait canvas). */
+  turn?: boolean;
 }
 
 export interface JourneyState {
@@ -79,7 +91,7 @@ const lerp = (a: Vec2, b: Vec2, t: number): Vec2 => ({ x: a.x + (b.x - a.x) * t,
 /** The centre cell of the journey's tissue, and the camera that shows it alone at the single cell's size. */
 export function heroView(scene: Scene): { center: Vec2; zoom: number } {
   const { tissue } = journeyScenes(scene);
-  const C = { x: scene.canvas.width / 2, y: scene.canvas.height / 2 };
+  const C = { x: tissue.canvas.width / 2, y: tissue.canvas.height / 2 };
   const k = Math.max(0.05, scene.cellMap.detailScale);
   const hero = buildGeometry(tissue).cells.find((c) => c.hero);
   // A generated tissue's centre cell is the single cell scaled by k about the canvas centre.
@@ -92,13 +104,16 @@ export function heroView(scene: Scene): { center: Vec2; zoom: number } {
 /** Cameras and fades at journey time tau (seconds from the start). Pure. */
 export function journeyState(scene: Scene, tau: number): JourneyState {
   const L = sectionLength(scene);
+  // C: the frame's centre; T: the tissue's own centre (the same unless the tissue is turned).
   const C = { x: scene.canvas.width / 2, y: scene.canvas.height / 2 };
+  const { tissue: ts } = journeyScenes(scene);
+  const T = { x: ts.canvas.width / 2, y: ts.canvas.height / 2 };
   const A = organCenter(scene, scene.module.organ);
   const hero = heroView(scene);
   const section = Math.max(0, Math.min(4, Math.floor(tau / L)));
   const u = clamp01((tau - section * L) / L);
 
-  const tissue = { at: C, origin: C, zoom: 1, alpha: 1, neighbours: 1 };
+  const tissue = { at: C, origin: T, zoom: 1, alpha: 1, neighbours: 1, turn: isPortrait(scene) };
   const body = { at: C, origin: A, zoom: BODY_ZOOM, alpha: 0 };
   if (section === 0) {
     // The centre cell alone, centred, at the single cell's size.
@@ -107,7 +122,7 @@ export function journeyState(scene: Scene, tau: number): JourneyState {
     tissue.neighbours = 0;
   } else if (section === 1) {
     const e = ease(u);
-    tissue.origin = lerp(hero.center, C, e);
+    tissue.origin = lerp(hero.center, T, e);
     tissue.zoom = hero.zoom ** (1 - e); // even zoom speed on a log scale
     tissue.neighbours = smooth(0.1, 0.8, u);
   } else if (section === 3) {
@@ -142,7 +157,9 @@ function layer(role: string, width: number, height: number) {
 }
 
 const cameraMatrix = (base: DOMMatrix, cam: Camera) =>
-  base.multiply(new DOMMatrix().translate(cam.at.x, cam.at.y).scale(cam.zoom).translate(-cam.origin.x, -cam.origin.y));
+  base.multiply(
+    new DOMMatrix().translate(cam.at.x, cam.at.y).scale(cam.zoom).rotate(cam.turn ? 90 : 0).translate(-cam.origin.x, -cam.origin.y),
+  );
 
 /** Share of the tissue's half-size (centre to edge) that stays fully visible before its edge fades out. */
 const EDGE_FADE_START = 0.62;

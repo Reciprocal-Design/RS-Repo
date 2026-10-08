@@ -211,6 +211,27 @@ export function ModuleSection() {
 
       {m.kind === 'journey' && (
         <>
+          <div className="field">
+            <span>Layout</span>
+            <div className="seg">
+              {([
+                { label: 'Mobile · landscape', width: 1920, height: 1080 },
+                { label: 'Desktop · portrait', width: 1080, height: 1350 },
+              ] as const).map((o) => {
+                const on = (o.height > o.width) === (scene.canvas.height > scene.canvas.width);
+                return (
+                  <button key={o.label} className={`chip ${on ? 'on' : ''}`}
+                    onClick={() => setScene((s) => ({ ...s, canvas: { ...s.canvas, width: o.width, height: o.height } }))}>
+                    {o.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <p className="hint">
+            Portrait turns the cell and tissue 90° and fits the body upright. Any canvas taller than it is wide works
+            this way: set an exact size under Scene.
+          </p>
           <Slider label="Section length" value={sectionLength(scene)} min={0.5} max={10} step={0.5} unit=" s"
             onChange={(sectionLength) => set({ sectionLength })} />
           <Slider label="Cell size in the tissue" value={scene.cellMap.detailScale} min={0.2} max={0.8}

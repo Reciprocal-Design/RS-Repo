@@ -147,3 +147,43 @@ describe('journey on an imported map', () => {
     expect(journeyState(s, 2.5 * L).tissue.zoom).toBe(1);
   });
 });
+
+describe('journey in portrait', () => {
+  const portrait = (s: Scene): Scene => ({ ...s, canvas: { ...s.canvas, width: 1080, height: 1350 } });
+
+  it('turns the cell and tissue 90°: the tissue is laid out landscape, the body portrait', () => {
+    const s = portrait(moduleScene('journey', 7));
+    const { tissue, body } = journeyScenes(s);
+    expect(tissue.canvas).toMatchObject({ width: 1350, height: 1080 });
+    expect(body.canvas).toMatchObject({ width: 1080, height: 1350 });
+    const start = journeyState(s, 0);
+    expect(start.tissue.turn).toBe(true);
+    expect(start.tissue.at).toEqual({ x: 540, y: 675 });
+    expect(start.tissue.origin).toEqual(heroView(s).center);
+    expect(start.body.turn).toBeUndefined();
+    // Mid-tissue, the tissue's own centre sits at the frame's centre.
+    const mid = journeyState(s, 2.5 * s.module.sectionLength);
+    expect(mid.tissue.origin).toEqual({ x: 675, y: 540 });
+    expect(mid.tissue.at).toEqual({ x: 540, y: 675 });
+  });
+
+  it('turns an imported map too, starting on its middle cell, with no jumps', () => {
+    const s = portrait(gridJourney());
+    expect(buildGeometry(journeyScenes(s).tissue).cells.find((c) => c.hero)!.id).toBe('c5');
+    const L = s.module.sectionLength;
+    for (let b = 1; b < 5; b++) {
+      const a = journeyState(s, b * L - 1e-6), c = journeyState(s, b * L + 1e-6);
+      for (const key of ['tissue', 'body'] as const) {
+        expect(c[key].zoom).toBeCloseTo(a[key].zoom, 3);
+        expect(c[key].origin.x).toBeCloseTo(a[key].origin.x, 2);
+        expect(c[key].at.y).toBeCloseTo(a[key].at.y, 2);
+      }
+    }
+  });
+
+  it('keeps landscape as it was', () => {
+    const s = moduleScene('journey', 7);
+    expect(journeyState(s, 0).tissue.turn).toBe(false);
+    expect(journeyScenes(s).tissue.canvas).toEqual(s.canvas);
+  });
+});

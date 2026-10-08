@@ -57,7 +57,9 @@ a preset scene plus a pure transform of the geometry (`src/core/modules.ts`):
    body. The tissue is the generated one round the single cell, or an SVG map imported under Cell map: then the
    cell nearest the map's middle is the centre cell, shown alone at the single cell's size to start with (every
    other cell, and the links to them, faded out) and starting the signal. The tissue layer fades out towards its
-   edges, so it never ends in a hard cut. Export it with Export → PNG sequence (frames `{name}_0001.png` onward, saved into a folder you pick in
+   edges, so it never ends in a hard cut. Layout: "Mobile · landscape" (1920 × 1080) or "Desktop · portrait"
+   (1080 × 1350, for a page with text beside it); on any canvas taller than it is wide, the cell and tissue are
+   the landscape composition turned 90° and the body is fitted upright. Export it with Export → PNG sequence (frames `{name}_0001.png` onward, saved into a folder you pick in
    Chrome and Edge, or as one ZIP elsewhere); the panel lists how many frames each section takes.
 
 Scene JSON saves the current tab, including its module settings; a file loads into the current tab and keeps the
