@@ -101,6 +101,48 @@ describe('modules', () => {
     expect(svg).not.toContain('<g id="membrane-own"');
   });
 
+  it('tissue puts the same cell at the centre, scaled, with neighbours round it', () => {
+    const s = moduleScene('tissue', 7);
+    const single = buildGeometry(defaultScene(7));
+    const g = buildGeometry(s);
+    const k = s.cellMap.detailScale;
+    const cx = s.canvas.width / 2, cy = s.canvas.height / 2;
+    expect(g.cells.length).toBeGreaterThan(6);
+    // Every node of the single cell is in the centre cell, at the same place scaled about the canvas centre.
+    for (const n of single.nodes) {
+      const m = g.nodeById.get(n.id)!;
+      expect(m.active).toBe(n.active);
+      expect(m.x).toBeCloseTo(cx + (n.x - cx) * k, 6);
+      expect(m.y).toBeCloseTo(cy + (n.y - cy) * k, 6);
+    }
+    // The centre cell starts on its own; neighbours wait for a relay from it.
+    expect(g.pathways.find((p) => p.id === 'p1')!.relayOnly).toBeFalsy();
+    expect(g.pathways.filter((p) => p.id !== 'p1').every((p) => p.relayOnly)).toBe(true);
+    expect(g.edges.some((e) => e.link && e.pathwayId === 'p1')).toBe(true);
+    // Links run outward from the centre cell, so its signal spreads through the tissue.
+    const sched = buildSchedule(s);
+    const fired = new Set([...sched.fire.keys()].filter((id) => !id.startsWith('p1-')).map((id) => id.split('-')[0]));
+    expect(fired.size).toBeGreaterThan(4);
+    expect(g.edges.filter((e) => e.link).every((e) => !e.to.startsWith('p1-'))).toBe(true);
+    // Neighbours never overlap the centre cell.
+    const hero = g.cells[0];
+    for (const c of g.cells.slice(1)) {
+      for (const q of c.cell.points) {
+        const th = Math.atan2(q.y - cy, q.x - cx);
+        expect(Math.hypot(q.x - cx, q.y - cy)).toBeGreaterThan(hero.cell.radiusAt(th));
+      }
+    }
+  });
+
+  it('tissue follows the centre cell when the seed changes', () => {
+    const a = moduleScene('tissue', 7);
+    const b = { ...a, seed: 8 };
+    expect(buildGeometry(b).cells[0].cell.points[0]).not.toEqual(buildGeometry(a).cells[0].cell.points[0]);
+    const json = parseSceneJson(serializeScene(a));
+    expect(json.cellMap.around).toBe(true);
+    expect(buildGeometry(json).cells.length).toBe(buildGeometry(a).cells.length);
+  });
+
   it('shares the look and pathway but keeps each tab its module', () => {
     const from = moduleScene('moa', 7);
     from.seed = 99;

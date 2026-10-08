@@ -128,6 +128,7 @@ export interface MapCell {
   nucleus: number[] | null; // null: a nucleus is made from the membrane shape
   enabled: boolean; // has pathways (click a cell in the preview to toggle)
   seed: number; // per-cell variation of the shared pathway settings
+  hero?: boolean; // the single cell itself, at the centre of a tissue (`around` maps)
 }
 
 /** A cluster of cells imported from an SVG, drawn instead of the single cell. */
@@ -143,6 +144,12 @@ export interface CellMap {
   relayHops: number; // how many cells in a row a relayed signal can re-trigger (0: arrivals only pulse)
   startShare: number; // 0–1: share of pathways that start on their own; the rest fire only when relayed
   variation: number; // 0–1: how much node and layer counts vary from cell to cell
+  /**
+   * A tissue around the single cell instead of an imported map: the cells
+   * are generated from the scene (core/tissue.ts); `cells` only keeps each
+   * cell's pathways on/off and seed by id. `detailScale` sizes the centre cell.
+   */
+  around: boolean;
 }
 
 // ---- Derived geometry (regenerated from the Scene, never stored) ----

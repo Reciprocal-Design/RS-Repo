@@ -14,6 +14,7 @@ export function defaultCellMap(): CellMap {
     relayHops: 3,
     startShare: 1,
     variation: 0.4,
+    around: false,
   };
 }
 

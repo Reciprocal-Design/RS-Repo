@@ -32,7 +32,10 @@ a preset scene plus a pure transform of the geometry (`src/core/modules.ts`):
 3. **Target combination**: several ringed receptors (one per pathway) fire together, each straight to its DEGs.
 4. **Target toxicity**: when the signal reaches a toxic DEG (drawn red), the cell's membrane cross-fades to red,
    and back as the loop closes.
-5. **Tissue-level target ID** (indication extension): a cell map, starting from the bundled sample tissue.
+5. **Tissue-level target ID** (indication extension): the same cell at the centre (an exact copy of the single
+   cell, scaled by "Centre cell size"), with neighbouring cells generated round it to the canvas edges
+   (`src/core/tissue.ts`). Only the centre cell starts on its own; links run outward from it, so its signal relays
+   on through the tissue. The tissue follows the centre cell when the seed, shape or canvas changes.
 6. **Module 6**: not defined yet; the standard animator.
 
 Scene JSON saves the current tab, including its module settings; a file loads into the current tab and keeps the

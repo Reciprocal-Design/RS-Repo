@@ -57,7 +57,7 @@ function normalizeCellMap(raw: unknown): CellMap {
   if (!isObj(raw)) return base;
   const m = merge(base, raw);
   const vb = m.viewBox;
-  if (!(vb.width > 0 && vb.height > 0)) return base;
+  if (!(vb.width > 0 && vb.height > 0) && raw.around !== true) return base;
   const cells: MapCell[] = [];
   for (const c of Array.isArray(raw.cells) ? raw.cells : []) {
     if (!isObj(c)) continue;
@@ -69,10 +69,13 @@ function normalizeCellMap(raw: unknown): CellMap {
       nucleus: coords(c.nucleus),
       enabled: bool(c.enabled, true),
       seed: Math.round(num(c.seed, cells.length + 1, 0, 2 ** 32)),
+      ...(c.hero === true ? { hero: true } : {}),
     });
   }
+  const around = bool(raw.around, false);
   return {
-    enabled: bool(m.enabled, false) && cells.length > 0,
+    enabled: bool(m.enabled, false) && (cells.length > 0 || around),
+    around,
     name: typeof m.name === 'string' ? m.name : '',
     viewBox: { x: num(vb.x, 0), y: num(vb.y, 0), width: vb.width, height: vb.height },
     cells,

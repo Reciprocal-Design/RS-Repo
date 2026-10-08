@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { suggestedDetailScale } from '../core/cellMap';
+import { mapCells, suggestedDetailScale } from '../core/cellMap';
 import { defaultCellMap } from '../core/defaults';
 import { randomSeed } from '../core/rng';
 import { importCellMapSvg } from '../core/svgImport';
@@ -14,11 +14,12 @@ export function CellMapSection() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const m = scene.cellMap;
-  const loaded = m.cells.length > 0;
-  const on = m.cells.filter((c) => c.enabled).length;
+  const cells = mapCells(scene);
+  const loaded = m.around || m.cells.length > 0;
+  const on = cells.filter((c) => c.enabled).length;
   const set = (v: Partial<typeof m>) => setCellMap((x) => ({ ...x, ...v }));
   const setAll = (pick: (i: number) => boolean) =>
-    setCellMap((x) => ({ ...x, cells: x.cells.map((c, i) => ({ ...c, enabled: pick(i) })) }));
+    setCellMap((x) => ({ ...x, cells: cells.map((c, i) => ({ ...c, enabled: pick(i) })) }));
 
   const onFile = async (file: File) => {
     setMessage(null);
@@ -70,7 +71,7 @@ export function CellMapSection() {
       {loaded && (
         <>
           <p className="hint">
-            {m.name || 'Map'}: {on} of {m.cells.length} cells with pathways. Click a cell in the preview to add or remove
+            {m.around ? 'Tissue around the cell' : m.name || 'Map'}: {on} of {cells.length} cells with pathways. Click a cell in the preview to add or remove
             its pathways; Shift-click to re-roll its layout.
           </p>
           <div className="row">
@@ -95,7 +96,8 @@ export function CellMapSection() {
             max={1}
             onChange={(variation) => set({ variation })}
           />
-          <Slider label="Detail size" value={m.detailScale} min={0.2} max={1} onChange={(detailScale) => set({ detailScale })} />
+          <Slider label={m.around ? 'Centre cell size' : 'Detail size'} value={m.detailScale} min={0.2} max={1}
+            onChange={(detailScale) => set({ detailScale })} />
           <Slider label="Start spread" value={m.stagger} min={0} max={10} step={0.1} unit=" s" onChange={(stagger) => set({ stagger })} />
           <Toggle
             label="Signals pass to neighbouring cells"
@@ -139,7 +141,7 @@ export function CellMapSection() {
             </>
           )}
           <div className="row">
-            <button
+            {!m.around && <button
               className="btn small grow"
               title="Set the canvas height so the map fills it"
               onClick={() =>
@@ -150,7 +152,7 @@ export function CellMapSection() {
               }
             >
               Fit canvas to map
-            </button>
+            </button>}
             <button className="btn small grow" onClick={() => setCellMap(() => defaultCellMap())}>
               Remove map
             </button>

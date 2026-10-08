@@ -1,10 +1,8 @@
 import { useState } from 'react';
-import { defaultCellMap } from '../core/defaults';
-import { suggestedDetailScale } from '../core/cellMap';
-import { degCount, MODULES, moduleInfo } from '../core/modules';
+import { degCount, MODULES, moduleInfo, tissueMap } from '../core/modules';
 import type { ModuleSettings } from '../core/types';
 import { ColorField, Section, Slider, Toggle } from './controls';
-import { sampleTissue, useApp } from './store';
+import { useApp } from './store';
 
 /** The module tabs, above the preview. */
 export function ModuleTabs() {
@@ -102,20 +100,18 @@ export function ModuleSection() {
 
       {m.kind === 'tissue' && (
         <>
-          <p className="hint">Cell layout, links between neighbours and relays are under Cell map.</p>
-          {!scene.cellMap.cells.length && (
-            <button
-              className="btn wide"
-              onClick={() => {
-                const map = sampleTissue();
-                if (!map) return;
-                setScene((s) => ({
-                  ...s,
-                  cellMap: { ...defaultCellMap(), enabled: true, ...map, detailScale: suggestedDetailScale(s, map) },
-                }));
-              }}
-            >
-              Load sample tissue
+          {scene.cellMap.around && scene.cellMap.enabled ? (
+            <>
+              <Slider label="Centre cell size" value={scene.cellMap.detailScale} min={0.2} max={1}
+                onChange={(detailScale) => setScene((s) => ({ ...s, cellMap: { ...s.cellMap, detailScale } }))} />
+              <p className="hint">
+                The centre cell is the same cell as the other tabs; neighbours fill the canvas around it, and Regenerate
+                all re-rolls them with it. Links, relays and spontaneous starts are under Cell map.
+              </p>
+            </>
+          ) : (
+            <button className="btn wide" onClick={() => setScene((s) => ({ ...s, cellMap: tissueMap() }))}>
+              Build tissue around the cell
             </button>
           )}
         </>

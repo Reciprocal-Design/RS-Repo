@@ -3,15 +3,21 @@ import { decorativeReceptors, layoutPathway, pathwayGaps, REFERENCE_SHORT_SIDE, 
 import { varyLayers } from './layers';
 import { pointInPolygon, polygonArea, polygonCentroid, polygonOutline } from './polygon';
 import { hash, rngFor } from './rng';
+import { tissueCells, type TissueCell } from './tissue';
 import type { CellGeom, CellMap, EdgeGeom, MapCell, NodeGeom, Outline, Pathway, ReceptorGeom, Scene, SceneGeom, Vec2 } from './types';
 
 /** A nucleus for a cell drawn without one: the membrane shape, shrunk about its centre. */
 const NUCLEUS_RATIO = 0.42;
 
-export const mapActive = (scene: Scene) => scene.cellMap.enabled && scene.cellMap.cells.length > 0;
+export const mapActive = (scene: Scene) => scene.cellMap.enabled && (scene.cellMap.around || scene.cellMap.cells.length > 0);
 
-/** Map units → canvas pixels: the map's viewBox fitted inside the canvas, centred. */
+/** The map's cells: as imported, or the tissue generated round the single cell. */
+export const mapCells = (scene: Scene): MapCell[] =>
+  scene.cellMap.around ? tissueCells(scene).map((t) => t.mc) : scene.cellMap.cells;
+
+/** Map units → canvas pixels: the map's viewBox fitted inside the canvas, centred. A tissue is in canvas pixels. */
 export function mapTransform(scene: Scene) {
+  if (scene.cellMap.around) return { k: 1, map: (x: number, y: number): Vec2 => ({ x, y }) };
   const { width: W, height: H } = scene.canvas;
   const vb = scene.cellMap.viewBox;
   const k = Math.min(W / vb.width, H / vb.height);
@@ -70,9 +76,35 @@ export const cellOffset = (scene: Scene, cell: MapCell) =>
  * give every cell a different network. Sizes are scaled by the map's detail
  * size, since map cells are much smaller than the single cell.
  */
+/** Imported cells as outlines: polygons smoothed, a nucleus made where a cell has none. */
+function importedCells(scene: Scene): TissueCell[] {
+  const { map } = mapTransform(scene);
+  const out: TissueCell[] = [];
+  for (const mc of scene.cellMap.cells) {
+    const mem = unflat(mc.membrane, map);
+    if (mem.length < 3) continue;
+    const c = polygonCentroid(mem);
+    const nucPts = mc.nucleus && mc.nucleus.length >= 6
+      ? unflat(mc.nucleus, map)
+      : mem.map((p) => ({ x: c.x + (p.x - c.x) * NUCLEUS_RATIO, y: c.y + (p.y - c.y) * NUCLEUS_RATIO }));
+    out.push({
+      mc,
+      cell: polygonOutline(mem, 96),
+      nucleus: polygonOutline(nucPts, 64),
+      R: Math.sqrt(Math.abs(polygonArea(mem)) / Math.PI),
+      polygon: mem,
+    });
+  }
+  return out;
+}
+
+/**
+ * In a tissue, the centre cell (`hero`) is the single cell itself: the
+ * scene's own seed, rotation and pathways, unvaried, starting on its own
+ * like the single cell does, so it matches the other views exactly.
+ */
 export function buildMapGeometry(scene: Scene): SceneGeom | null {
   const cm = scene.cellMap;
-  const { map } = mapTransform(scene);
   const scale = (Math.min(scene.canvas.width, scene.canvas.height) / REFERENCE_SHORT_SIDE) * Math.max(0.05, cm.detailScale);
   const count = Math.max(1, scene.pathwayCount);
 
@@ -84,40 +116,38 @@ export function buildMapGeometry(scene: Scene): SceneGeom | null {
   const warnings = new Set<string>();
   const linkCells: LinkCell[] = [];
 
-  for (const mc of cm.cells) {
-    const mem = unflat(mc.membrane, map);
-    if (mem.length < 3) continue;
-    const c = polygonCentroid(mem);
-    const nucPts = mc.nucleus && mc.nucleus.length >= 6
-      ? unflat(mc.nucleus, map)
-      : mem.map((p) => ({ x: c.x + (p.x - c.x) * NUCLEUS_RATIO, y: c.y + (p.y - c.y) * NUCLEUS_RATIO }));
-    const cell = polygonOutline(mem, 96);
-    const nucleus = polygonOutline(nucPts, 64);
-    const R = Math.sqrt(Math.abs(polygonArea(mem)) / Math.PI);
+  const prepared = cm.around ? tissueCells(scene) : importedCells(scene);
+  for (const { mc, cell, nucleus, R, polygon } of prepared) {
     const frame: CellFrame = { scale, center: cell.center, R, cell, nucleus };
     cells.push({ id: mc.id, cell, nucleus, enabled: mc.enabled });
+    const hero = !!mc.hero;
 
     // Per-cell variation: its own scene seed (spacing, decorative receptors)
     // and orientation, and its own seed for every shared pathway. Oriented
     // cells turn their pathways toward the widest cytoplasm.
-    const cs: Scene = { ...scene, seed: hash(scene.seed, 'cell', mc.seed) };
-    const spin = rngFor(scene.seed, 'cell-rotation', mc.seed)();
-    cs.rotation = cm.orient
-      ? roomiestRotation(cs, cell, nucleus, polygonOutline(mem, 4, nucleus.center), count) + (spin - 0.5) * 2 * ORIENT_JITTER
-      : spin * 360 - 180;
+    const cs: Scene = hero ? scene : { ...scene, seed: hash(scene.seed, 'cell', mc.seed) };
+    if (!hero) {
+      const spin = rngFor(scene.seed, 'cell-rotation', mc.seed)();
+      cs.rotation = cm.orient
+        ? roomiestRotation(cs, cell, nucleus, polygonOutline(polygon, 4, nucleus.center), count) + (spin - 0.5) * 2 * ORIENT_JITTER
+        : spin * 360 - 180;
+    }
     receptors.push(...decorativeReceptors(frame, cs).map((r) => ({ ...r, id: `${mc.id}-${r.id}` })));
 
     const layouts: PathwayLayout[] = [];
     if (mc.enabled) {
-      const offset = cellOffset(scene, mc);
-      const ps: Pathway[] = scene.pathways.slice(0, count).map((p) => ({
-        ...p,
-        id: `${mc.id}-${p.id}`,
-        seed: hash(p.seed, 'cell', mc.seed),
-        startDelay: p.startDelay + offset,
-        // Each cell's own node and layer counts, drifting from the shared ones.
-        layers: varyLayers(p.layers, cm.variation, rngFor(scene.seed, 'cell-layers', mc.seed, p.id)),
-      }));
+      const offset = hero ? 0 : cellOffset(scene, mc);
+      const ps: Pathway[] = scene.pathways.slice(0, count).map((p) =>
+        hero
+          ? p
+          : {
+            ...p,
+            id: `${mc.id}-${p.id}`,
+            seed: hash(p.seed, 'cell', mc.seed),
+            startDelay: p.startDelay + offset,
+            // Each cell's own node and layer counts, drifting from the shared ones.
+            layers: varyLayers(p.layers, cm.variation, rngFor(scene.seed, 'cell-layers', mc.seed, p.id)),
+          });
       ps.forEach((p, i) => {
         const l = layoutPathway(frame, cs, p, i);
         layouts.push(l);
@@ -125,7 +155,7 @@ export function buildMapGeometry(scene: Scene): SceneGeom | null {
         nodes.push(...l.nodes);
         l.warnings.forEach((w) => warnings.add(w));
         edges.push(...connectPathway(cs, p, l));
-        const own = rngFor(scene.seed, 'cell-start', mc.seed, p.id)() < cm.startShare;
+        const own = hero || rngFor(scene.seed, 'cell-start', mc.seed, p.id)() < cm.startShare;
         pathways.push({ id: p.id, startDelay: p.startDelay, relayOnly: !own });
       });
       edges.push(...connectCrosstalk(cs, layouts, ps, R));
@@ -134,7 +164,9 @@ export function buildMapGeometry(scene: Scene): SceneGeom | null {
   }
   // At least one pathway starts on its own, or nothing would ever happen.
   if (pathways.length && pathways.every((p) => p.relayOnly)) pathways[0].relayOnly = false;
-  const links = connectCellLinks(scene, linkCells);
+  // A tissue's cells sit a little apart, so neighbours may link across a wider
+  // gap, and its links run outward from the centre cell, so its signal spreads.
+  const links = connectCellLinks(scene, linkCells, cm.around ? { reach: 0.6, origin: cells[0]?.cell.center } : {});
   edges.push(...links.edges);
   nodes.push(...links.nodes);
   // Relay receptors take the place of any decorative receptor they would overlap.
@@ -163,7 +195,7 @@ export function buildMapGeometry(scene: Scene): SceneGeom | null {
 export function mapCellAt(scene: Scene, p: Vec2): MapCell | undefined {
   if (!mapActive(scene)) return undefined;
   const { map } = mapTransform(scene);
-  return scene.cellMap.cells.find((c) => pointInPolygon(p, unflat(c.membrane, map)));
+  return mapCells(scene).find((c) => pointInPolygon(p, unflat(c.membrane, map)));
 }
 
 /** Detail size that suits a map: about the square root of its cells' size relative to the single cell. */

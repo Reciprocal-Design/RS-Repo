@@ -190,9 +190,9 @@ export interface LinkCell {
   scene: Scene;
 }
 
-/** Do two cells touch? Their outlines come within a small gap of each other. */
-function touching(a: LinkCell, b: LinkCell): boolean {
-  const gap = 0.15 * Math.min(a.R, b.R);
+/** Do two cells touch? Their outlines come within a small gap (× the smaller radius) of each other. */
+function touching(a: LinkCell, b: LinkCell, reach: number): boolean {
+  const gap = reach * Math.min(a.R, b.R);
   const box = (c: LinkCell) => {
     const xs = c.points.map((p) => p.x), ys = c.points.map((p) => p.y);
     return [Math.min(...xs) - gap, Math.min(...ys) - gap, Math.max(...xs) + gap, Math.max(...ys) + gap];
@@ -219,7 +219,12 @@ export interface CellLinks {
  * the signal enters through a receptor and runs the pathway again from there.
  * Links arriving close together on the same wall share a receptor.
  */
-export function connectCellLinks(scene: Scene, cells: LinkCell[]): CellLinks {
+export function connectCellLinks(
+  scene: Scene,
+  cells: LinkCell[],
+  /** `reach`: how far apart touching cells may be (× the smaller radius); `origin`: links run away from this point. */
+  { reach = 0.15, origin }: { reach?: number; origin?: Vec2 } = {},
+): CellLinks {
   const out: CellLinks = { edges: [], nodes: [], receptors: [] };
   const { enabled, amount } = scene.cellMap.links;
   if (!enabled || amount <= 0) return out;
@@ -228,11 +233,13 @@ export function connectCellLinks(scene: Scene, cells: LinkCell[]): CellLinks {
   for (let i = 0; i < cells.length; i++) {
     for (let j = i + 1; j < cells.length; j++) {
       const A = cells[i], B = cells[j];
-      if (!A.layouts.length || !B.layouts.length || !touching(A, B)) continue;
+      if (!A.layouts.length || !B.layouts.length || !touching(A, B, reach)) continue;
       const rng = rngFor(scene.seed, 'cell-link', A.seed, B.seed);
       const count = Math.floor(amount) + (rng() < amount - Math.floor(amount) ? 1 : 0);
       for (let k = 0; k < count; k++) {
-        const [src, dst] = rng() < 0.5 ? [A, B] : [B, A];
+        const coin = rng();
+        const nearer = (c: LinkCell) => (origin ? Math.hypot(c.frame.center.x - origin.x, c.frame.center.y - origin.y) : 0);
+        const [src, dst] = origin ? (nearer(A) <= nearer(B) ? [A, B] : [B, A]) : coin < 0.5 ? [A, B] : [B, A];
         // Sources near the shared wall, each used by one link while fresh ones
         // last (with many links per neighbour a node may send more than one).
         const all = src.layouts.flatMap((l) => l.nodes.filter((n) => n.active && n.layer > 0 && n.region === 'cytoplasm'));

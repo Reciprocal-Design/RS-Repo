@@ -1,30 +1,13 @@
 import { create } from 'zustand';
 import { makePathway } from '../core/defaults';
-import { mapCellAt } from '../core/cellMap';
+import { mapCellAt, mapCells } from '../core/cellMap';
 import { withStructureOf } from '../core/layers';
-import { MODULES, moduleScene, shareScene, type StarterMap } from '../core/modules';
+import { MODULES, moduleScene, shareScene } from '../core/modules';
 import { hash, randomSeed } from '../core/rng';
-import { importCellMapSvg } from '../core/svgImport';
 import type { CellMap, LayerSpec, Pathway, Scene, Vec2 } from '../core/types';
-import tissueSvg from '../samples/tissue.svg?raw';
-
-/** The sample cell cluster the tissue module starts from. */
-export function sampleTissue(): StarterMap | undefined {
-  try {
-    const m = importCellMapSvg(tissueSvg, 1);
-    return { name: 'sample tissue', viewBox: m.viewBox, cells: m.cells };
-  } catch {
-    return undefined;
-  }
-}
 
 /** One scene per module tab, all from the same seed so they show the same pathway. */
-function initialTabs(): Scene[] {
-  const tissue = sampleTissue();
-  return MODULES.map((m) => moduleScene(m.kind, 1234, tissue));
-}
-
-const TABS = initialTabs();
+const TABS = MODULES.map((m) => moduleScene(m.kind, 1234));
 
 interface AppState {
   /** One scene per module tab; `scene` is always `tabs[active]`. */
@@ -135,7 +118,8 @@ export const useApp = create<AppState>((set) => ({
     set((st) => {
       const hit = mapCellAt(st.scene, p);
       if (!hit) return {};
-      const cells = st.scene.cellMap.cells.map((c) =>
+      // A tissue's cells are generated; storing them keeps each one's on/off and seed.
+      const cells = mapCells(st.scene).map((c) =>
         c.id !== hit.id ? c : reroll ? { ...c, enabled: true, seed: randomSeed() } : { ...c, enabled: !c.enabled },
       );
       return put(st, { ...st.scene, cellMap: { ...st.scene.cellMap, cells } });

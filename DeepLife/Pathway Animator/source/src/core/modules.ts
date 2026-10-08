@@ -1,8 +1,12 @@
-import { suggestedDetailScale } from './cellMap';
 import { makeEdge } from './connect';
 import { defaultCellMap, defaultModule, defaultScene, makePathway } from './defaults';
 import { hash, rngFor } from './rng';
 import type { CellMap, EdgeGeom, ModuleKind, NodeGeom, ReceptorGeom, Scene, SceneGeom } from './types';
+
+/** A tissue built round the single cell: the same cell at the centre, neighbours relaying its signal on. */
+export function tissueMap(): CellMap {
+  return { ...defaultCellMap(), enabled: true, around: true, name: 'tissue', detailScale: 0.5, startShare: 0 };
+}
 
 // The client's modules: six views of the same pathway, one per tab. Each is a
 // preset scene plus a pure transform of its geometry (applyModule), so the
@@ -30,21 +34,18 @@ export const MODULES: ModuleInfo[] = [
   {
     kind: 'tissue',
     label: 'Tissue-level target ID',
-    blurb: 'Indication extension: a cluster of cells, with signals passing into neighbouring cells.',
+    blurb: 'Indication extension: the same cell at the centre of a tissue, its signal passing on into neighbouring cells.',
   },
   { kind: 'custom', label: 'Module 6', blurb: 'Not defined yet. Works as the standard animator for now.' },
 ];
 
 export const moduleInfo = (kind: ModuleKind) => MODULES.find((m) => m.kind === kind) ?? MODULES[MODULES.length - 1];
 
-/** A cell map to start the tissue module from (an imported SVG). */
-export type StarterMap = Pick<CellMap, 'name' | 'viewBox' | 'cells'>;
-
 /**
  * A module's starting scene. Every module starts from the same seed, so the
  * tabs show the same pathway; each then adjusts what it needs.
  */
-export function moduleScene(kind: ModuleKind, seed = 1234, map?: StarterMap): Scene {
+export function moduleScene(kind: ModuleKind, seed = 1234): Scene {
   const s = defaultScene(seed);
   s.module = defaultModule(kind);
   s.name = moduleInfo(kind).label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -54,16 +55,7 @@ export function moduleScene(kind: ModuleKind, seed = 1234, map?: StarterMap): Sc
     s.pathways = [0, 1, 2].map((i) => ({ ...makePathway(seed, i, s.pathways[0].layers), startDelay: 0 }));
   }
   if (kind === 'toxicity') s.animation = { ...s.animation, holdAtEnd: 2.5 };
-  if (kind === 'tissue' && map?.cells.length) {
-    s.cellMap = {
-      ...defaultCellMap(),
-      enabled: true,
-      name: map.name,
-      viewBox: map.viewBox,
-      cells: map.cells,
-      detailScale: suggestedDetailScale(s, map),
-    };
-  }
+  if (kind === 'tissue') s.cellMap = tissueMap();
   return s;
 }
 
