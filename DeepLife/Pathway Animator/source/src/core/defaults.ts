@@ -30,6 +30,10 @@ export function defaultModule(kind: ModuleKind = 'custom'): ModuleSettings {
     dimOpacity: 0.22,
     toxicDegs: 1,
     toxicColor: '#FF2B45',
+    warning: true,
+    warningAngle: 45,
+    organ: 'heart',
+    sectionLength: 3,
   };
 }
 

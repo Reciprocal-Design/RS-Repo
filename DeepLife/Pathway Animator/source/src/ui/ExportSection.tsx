@@ -5,6 +5,8 @@ import { Section, Select, Toggle } from './controls';
 import { exportPng, exportSvg, pngSize, pngSizeError, readSceneFile, saveSceneJson } from './exporters';
 import { useApp } from './store';
 import { exportVideo, videoSupported, type VideoFormat, type VideoQuality } from './videoExport';
+import { canPickFolder, exportPngSequence, frameName } from './sequenceExport';
+import { JOURNEY_SECTIONS } from '../render/journey';
 
 type Msg = { text: string; error?: boolean } | null;
 
@@ -20,10 +22,11 @@ function VideoExport({ busy, setBusy, setMessage }: { busy: boolean; setBusy: (b
   const [progress, setProgress] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const looping = loops(scene);
+  // The journey runs once, start to end.
+  const looping = loops(scene) && scene.module.kind !== 'journey';
   const { width, height } = videoSize(scene, scale);
   const sizeError = videoSizeError(width, height);
-  const plan = planVideo(scene, fps, loopCount);
+  const plan = planVideo(scene, fps, looping ? loopCount : 1);
   const loopLen = buildSchedule(scene).total;
 
   const start = async () => {
@@ -34,7 +37,7 @@ function VideoExport({ busy, setBusy, setMessage }: { busy: boolean; setBusy: (b
     setMessage(null);
     setProgress(0);
     try {
-      const saved = await exportVideo(scene, { scale, fps, loops: loopCount, quality, format }, (d, n) => setProgress(d / n), ac.signal);
+      const saved = await exportVideo(scene, { scale, fps, loops: looping ? loopCount : 1, quality, format }, (d, n) => setProgress(d / n), ac.signal);
       setMessage({
         text: saved === format ? 'Video saved.' : 'Saved as WebM: this browser cannot encode MP4 (H.264). Chrome, Edge and Safari can.',
       });
@@ -111,6 +114,93 @@ function VideoExport({ busy, setBusy, setMessage }: { busy: boolean; setBusy: (b
             </div>
           )}
         </>
+      )}
+    </>
+  );
+}
+
+/** PNG sequence: every frame as its own PNG, for scroll sequences and compositing. */
+function PngSequence({ busy, setBusy, setMessage }: { busy: boolean; setBusy: (b: boolean) => void; setMessage: (m: Msg) => void }) {
+  const scene = useApp((s) => s.scene);
+  const setPlaying = useApp((s) => s.setPlaying);
+  const [scale, setScale] = useState(1);
+  const [fps, setFps] = useState(30);
+  const [loopCount, setLoopCount] = useState(1);
+  const [transparent, setTransparent] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const journey = scene.module.kind === 'journey';
+  const looping = loops(scene) && !journey;
+  const loopsUsed = looping ? loopCount : 1;
+  const plan = planVideo(scene, fps, loopsUsed);
+  const { width, height } = pngSize(scene, { scale });
+  const sizeError = pngSizeError(width, height);
+  const perSection = journey ? plan.frames / JOURNEY_SECTIONS.length : 0;
+
+  const start = async () => {
+    const ac = new AbortController();
+    abortRef.current = ac;
+    setBusy(true);
+    setPlaying(false);
+    setMessage(null);
+    setProgress(0);
+    try {
+      const r = await exportPngSequence(scene, { scale, fps, loops: loopsUsed, transparent }, (d, n) => setProgress(d / n), ac.signal);
+      setMessage({ text: `${r.frames} PNGs saved${r.zipped ? ' in a ZIP' : ''}.` });
+    } catch (e) {
+      const err = e as Error;
+      setMessage(err.name === 'AbortError' ? { text: 'PNG sequence cancelled.' } : { text: err.message, error: true });
+    } finally {
+      setBusy(false);
+      setProgress(null);
+      abortRef.current = null;
+    }
+  };
+
+  return (
+    <>
+      <div className="subhead">PNG sequence</div>
+      <div className="seg">
+        {[0.5, 1, 2].map((k) => (
+          <button key={k} className={`chip ${scale === k ? 'on' : ''}`} onClick={() => setScale(k)}>
+            ×{k}
+          </button>
+        ))}
+      </div>
+      <Select<string>
+        label="Frame rate"
+        value={String(fps)}
+        options={VIDEO_FPS.map((f) => ({ value: String(f), label: `${f} fps` }))}
+        onChange={(v) => setFps(Number(v))}
+      />
+      {looping && (
+        <label className="field">
+          <span>Loops</span>
+          <input type="number" min={1} max={20} value={loopCount} onChange={(e) => setLoopCount(Math.max(1, Math.min(20, Number(e.target.value) || 1)))} />
+        </label>
+      )}
+      <Toggle label="Transparent background" checked={transparent} onChange={setTransparent} />
+      <p className={`hint ${sizeError ? 'error' : ''}`}>
+        {sizeError ??
+          `${plan.frames} frames, ${width} × ${height} px, ${frameName(scene, 0)} onward.` +
+            (journey
+              ? ` ${Number.isInteger(perSection) ? perSection : perSection.toFixed(1)} frames per section${Number.isInteger(perSection) ? '' : ': pick a section length that is a whole number of frames'}.`
+              : '') +
+            (canPickFolder() ? ' You pick a folder to save them in.' : ' Saved together in one ZIP.')}
+      </p>
+      {progress === null ? (
+        <button className="btn wide" disabled={busy || !!sizeError} onClick={start}>
+          Export PNG sequence
+        </button>
+      ) : (
+        <div className="row">
+          <div className="progress grow" title={`${Math.round(progress * 100)}%`}>
+            <i style={{ width: `${progress * 100}%` }} />
+          </div>
+          <span className="hint">{Math.round(progress * 100)}%</span>
+          <button className="btn small" onClick={() => abortRef.current?.abort()}>Cancel</button>
+        </div>
       )}
     </>
   );
@@ -196,12 +286,19 @@ export function ExportSection() {
       </button>
 
       <div className="subhead">SVG (vector, for Illustrator)</div>
-      <Toggle label="Include signal layer (comets, lit edges)" checked={svgSignal} onChange={setSvgSignal} />
-      <Toggle label="Transparent background" checked={svgTransparent} onChange={setSvgTransparent} />
-      <button className="btn wide" disabled={busy} onClick={() => run('SVG saved.', () => exportSvg(scene, t, svgSignal, svgTransparent))}>
-        Export SVG
-      </button>
+      {scene.module.kind === 'journey' ? (
+        <p className="hint">The journey blends two scenes, so it has no single vector frame: export SVGs from the Tissue-level or Body tabs.</p>
+      ) : (
+        <>
+          <Toggle label="Include signal layer (comets, lit edges)" checked={svgSignal} onChange={setSvgSignal} />
+          <Toggle label="Transparent background" checked={svgTransparent} onChange={setSvgTransparent} />
+          <button className="btn wide" disabled={busy} onClick={() => run('SVG saved.', () => exportSvg(scene, t, svgSignal, svgTransparent))}>
+            Export SVG
+          </button>
+        </>
+      )}
 
+      <PngSequence busy={busy} setBusy={setBusy} setMessage={setMessage} />
       <VideoExport busy={busy} setBusy={setBusy} setMessage={setMessage} />
 
       <div className="subhead">Scene JSON</div>

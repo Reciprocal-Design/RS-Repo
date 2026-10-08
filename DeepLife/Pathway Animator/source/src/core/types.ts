@@ -100,7 +100,10 @@ export interface Scene {
  * The client's views of one pathway, one per tab. Each module changes how the
  * same network is shown; 'custom' shows it unchanged.
  */
-export type ModuleKind = 'targetId' | 'moa' | 'combination' | 'toxicity' | 'tissue' | 'custom';
+export type ModuleKind = 'targetId' | 'moa' | 'combination' | 'toxicity' | 'tissue' | 'custom' | 'body' | 'journey';
+
+/** Organs of the body view (core/body.ts). */
+export type OrganId = 'brain' | 'lungs' | 'heart' | 'liver' | 'stomach' | 'kidneys' | 'intestines' | 'bladder';
 
 export interface ModuleSettings {
   kind: ModuleKind;
@@ -119,6 +122,14 @@ export interface ModuleSettings {
   toxicDegs: number;
   /** Target toxicity: the colour the cell and toxic DEGs turn. */
   toxicColor: string;
+  /** Target toxicity: a warning badge on the membrane as the cell turns. */
+  warning: boolean;
+  /** Where the badge sits on the membrane: degrees, 0 = top, clockwise. */
+  warningAngle: number;
+  /** Body and journey: the organ the signal starts from (and the journey zooms out of). */
+  organ: OrganId;
+  /** Journey: seconds per section (cell, cell → tissue, tissue, tissue → body, body). */
+  sectionLength: number;
 }
 
 /** One cell of an imported map. Coordinates are flat x,y pairs in the map's own units. */
@@ -223,6 +234,8 @@ export interface CellGeom {
   cell: Outline;
   nucleus: Outline;
   enabled: boolean;
+  /** Draw no nucleus (the body outline). */
+  noNucleus?: boolean;
 }
 
 export interface SceneGeom {
@@ -231,12 +244,16 @@ export interface SceneGeom {
   nucleus: Outline;
   /** Every cell to draw (one in single-cell mode). */
   cells: CellGeom[];
+  /** Extra outlines drawn in the nucleus style (the organs of the body view). */
+  organs?: Outline[];
+  /** Size of outline strokes and glows, when not `scale` (the body's narrow limbs take a thinner glow). */
+  outlineScale?: number;
   /**
    * Every pathway laid out, with its effective start delay (cell offsets
    * included). A pathway with `relayOnly` never starts on its own: it fires
    * only when a relay from a neighbouring cell reaches it.
    */
-  pathways: { id: string; startDelay: number; relayOnly?: boolean }[];
+  pathways: { id: string; startDelay: number; relayOnly?: boolean; start?: string }[];
   receptors: ReceptorGeom[];
   nodes: NodeGeom[];
   nodeById: Map<string, NodeGeom>;

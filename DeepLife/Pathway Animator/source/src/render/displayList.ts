@@ -38,6 +38,8 @@ export type Prim = Base &
     | { kind: 'trail'; points: Vec2[]; tail: string; head: string; width: number }
     /** A soft radial glow: `color` at the centre fading to transparent at r. */
     | { kind: 'glow'; c: Vec2; r: number; color: string }
+    /** A warning badge: a rounded triangle `size` tall, centred on c, with an exclamation mark. */
+    | { kind: 'warning'; c: Vec2; size: number; fill: string; mark: string }
   );
 
 export interface DisplayList {
@@ -52,6 +54,8 @@ export interface DisplayList {
    */
   staticCount: number;
   staticKey: object;
+  /** Distinguishes static layers of the same scene drawn differently (links faded). */
+  staticTag?: string;
   /**
    * Layers drawn between the background and the static layer, each faded by
    * its opacity. Each layer's prims are the same array in every frame, so a
@@ -172,7 +176,11 @@ const withAlpha = ([r, g, b]: RGBA, a: number) => rgbaString([r, g, b, a]);
  * give the same list. Draw order: outlines → receptors → edges and lit edges →
  * comets and pulse flashes → halos → nodes.
  */
-export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean } = {}): DisplayList {
+/**
+ * `linkAlpha` fades the links between cells and their signals (the journey
+ * shows the centre cell alone before its neighbours appear).
+ */
+export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean; linkAlpha?: number } = {}): DisplayList {
   const g = buildGeometry(scene);
   const s = g.scale;
   const st = scene.style;
@@ -214,10 +222,15 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
 
   // Every cell's outlines (one cell, or each cell of a map), before anything else,
   // so the canvas backend can cache them all as one static bitmap.
+  const os = g.outlineScale ?? s;
   for (const c of g.cells) {
     const prefix = c.id ? `${c.id}-` : '';
-    if (scene.cell.visible && !toxicity) prims.push(...outlinePrims('membrane', c.cell.points, scene.cell, s, prefix));
-    if (scene.nucleus.visible) prims.push(...outlinePrims('nucleus', c.nucleus.points, scene.nucleus, s, prefix));
+    if (scene.cell.visible && !toxicity) prims.push(...outlinePrims('membrane', c.cell.points, scene.cell, os, prefix));
+    if (scene.nucleus.visible && !c.noNucleus) prims.push(...outlinePrims('nucleus', c.nucleus.points, scene.nucleus, os, prefix));
+  }
+  // Organs (body view), in the nucleus style.
+  if (scene.nucleus.visible) {
+    g.organs?.forEach((o, i) => prims.push(...outlinePrims('nucleus', o.points, scene.nucleus, os, `organ${i + 1}-`)));
   }
 
   // Receptors: capsules across the membrane, stroked in the membrane colour.
@@ -445,13 +458,39 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
     prims.push({ kind: 'ring', id: `${n.id}-inner`, group: 'nodes-inactive', c: n, r: r * 0.5, stroke: st.inactiveNodeColor, width: w });
   }
 
+  // Target toxicity: a warning badge on the membrane, popping in as the cell turns.
+  if (toxicity && scene.module.warning && tint > 0) {
+    const cell = g.cells[0].cell;
+    const th = ((scene.module.warningAngle - 90) * Math.PI) / 180;
+    const c = { x: cell.center.x + Math.cos(th) * cell.radiusAt(th), y: cell.center.y + Math.sin(th) * cell.radiusAt(th) };
+    const pop = 0.7 + 0.3 * Math.min(1, tint * 1.4);
+    const size = 46 * s * pop;
+    prims.push({ kind: 'glow', id: 'warning-glow', group: 'signal', blend: 'lighter', c, r: size * 1.6, color: withAlpha(toxicRgb, 0.55), opacity: tint });
+    prims.push({ kind: 'warning', id: 'warning', group: 'signal', c, size, fill: toxicFill, mark: '#FFFFFF', opacity: tint });
+  }
+
+  let out = prims;
+  let staticOut = staticCount;
+  const linkAlpha = Math.max(0, Math.min(1, opts.linkAlpha ?? 1));
+  if (linkAlpha < 1) {
+    // Link edges and everything drawn along them have ids starting `link-`.
+    out = [];
+    prims.forEach((p, i) => {
+      if (!p.id.startsWith('link-')) out.push(p);
+      else if (linkAlpha > 0) out.push({ ...p, opacity: (p.opacity ?? 1) * linkAlpha });
+      else if (i < staticCount) staticOut--;
+      if (i === staticCount - 1) staticOut = out.length;
+    });
+  }
+
   return {
     width: scene.canvas.width,
     height: scene.canvas.height,
     background: scene.canvas.background,
-    prims,
-    staticCount,
+    prims: out,
+    staticCount: staticOut,
     staticKey: g,
+    ...(linkAlpha < 1 ? { staticTag: `links-${linkAlpha.toFixed(3)}` } : {}),
     ...(underlays.length ? { underlays } : {}),
   };
 }

@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { ORGANS } from '../core/body';
 import { degCount, MODULES, moduleInfo, tissueMap } from '../core/modules';
-import type { ModuleSettings } from '../core/types';
-import { ColorField, Section, Slider, Toggle } from './controls';
+import type { ModuleSettings, OrganId } from '../core/types';
+import { JOURNEY_SECTIONS, sectionLength } from '../render/journey';
+import { ColorField, Section, Select, Slider, Toggle } from './controls';
 import { useApp } from './store';
 
 /** The module tabs, above the preview. */
@@ -33,6 +35,8 @@ export function ModuleSection() {
   const active = useApp((s) => s.active);
   const setScene = useApp((s) => s.setScene);
   const setPathwayCount = useApp((s) => s.setPathwayCount);
+  const setTime = useApp((s) => s.setTime);
+  const setPlaying = useApp((s) => s.setPlaying);
   const shareToAllTabs = useApp((s) => s.shareToAllTabs);
   const [shared, setShared] = useState(false);
   const m = scene.module;
@@ -48,6 +52,14 @@ export function ModuleSection() {
   );
   const direct = (
     <Toggle label="Receptor → DEG only" checked={m.directOnly} onChange={(directOnly) => set({ directOnly })} />
+  );
+  const organ = (label: string) => (
+    <Select<OrganId>
+      label={label}
+      value={m.organ}
+      options={ORGANS.map((o) => ({ value: o.id, label: o.label }))}
+      onChange={(organ) => set({ organ })}
+    />
   );
 
   return (
@@ -83,6 +95,13 @@ export function ModuleSection() {
               // Targets in a combination are hit together.
               setScene((s) => ({ ...s, pathways: s.pathways.map((p) => ({ ...p, startDelay: 0 })) }));
             }} />
+          <Slider label="Spacing randomness" value={scene.spacingVariation} min={0} max={2}
+            onChange={(spacingVariation) => setScene((s) => ({ ...s, spacingVariation }))} />
+          <Slider label="Turn" value={scene.rotation} min={-180} max={180} step={1} unit="°"
+            onChange={(rotation) => setScene((s) => ({ ...s, rotation }))} />
+          <Slider label="Interconnection" value={scene.crosstalk.enabled ? scene.crosstalk.amount : 0} min={0} max={1}
+            onChange={(amount) => setScene((s) => ({ ...s, crosstalk: { enabled: amount > 0, amount } }))} />
+          <p className="hint">Links between the targets' networks: each receptor also reaches DEGs of the others (crosstalk).</p>
           {direct}
           {targets}
         </>
@@ -94,6 +113,11 @@ export function ModuleSection() {
             onChange={(toxicDegs) => set({ toxicDegs })} />
           <ColorField label="Toxicity colour" value={m.toxicColor} onChange={(toxicColor) => set({ toxicColor })} />
           <p className="hint">The cell turns this colour when the signal reaches a toxic DEG, and back as the loop ends.</p>
+          <Toggle label="Warning symbol on the membrane" checked={m.warning} onChange={(warning) => set({ warning })} />
+          {m.warning && (
+            <Slider label="Warning position" value={m.warningAngle} min={-180} max={180} step={1} unit="°"
+              onChange={(warningAngle) => set({ warningAngle })} />
+          )}
           {targets}
         </>
       )}
@@ -114,6 +138,46 @@ export function ModuleSection() {
               Build tissue around the cell
             </button>
           )}
+        </>
+      )}
+
+      {m.kind === 'body' && (
+        <>
+          {organ('Signal starts in')}
+          <p className="hint">Outline and organs take the cell membrane and nucleus styles; firing lines take the Style and Animation settings.</p>
+        </>
+      )}
+
+      {m.kind === 'journey' && (
+        <>
+          <Slider label="Section length" value={sectionLength(scene)} min={0.5} max={10} step={0.5} unit=" s"
+            onChange={(sectionLength) => set({ sectionLength })} />
+          <Slider label="Cell size in the tissue" value={scene.cellMap.detailScale} min={0.2} max={0.8}
+            onChange={(detailScale) => setScene((s) => ({ ...s, cellMap: { ...s.cellMap, detailScale } }))} />
+          {organ('Zoom out of')}
+          <div className="sections">
+            {JOURNEY_SECTIONS.map((label, i) => {
+              const L = sectionLength(scene);
+              return (
+                <button
+                  key={label}
+                  className="btn small"
+                  title="Jump to this section"
+                  onClick={() => {
+                    setPlaying(false);
+                    setTime(i * L + (i % 2 ? 0.5 * L : 0));
+                  }}
+                >
+                  <em>{i + 1}</em> {label}
+                  <span>{(i * L).toFixed(1)}–{((i + 1) * L).toFixed(1)} s</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="hint">
+            Five sections of {sectionLength(scene)} s each ({Math.round(sectionLength(scene) * 30)} frames at 30 fps). Export
+            it under Export → PNG sequence. The cell, tissue and body follow this tab's own settings.
+          </p>
         </>
       )}
 

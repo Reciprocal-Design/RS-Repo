@@ -152,6 +152,10 @@ input[type=range] { accent-color: var(--accent); }
 .module-tab.on { color: var(--text); border-bottom-color: var(--accent); }
 .module-tab.on em { border-color: var(--accent); color: var(--accent); }
 .module-blurb { margin-top: 0; }
+.sections { display: grid; gap: 4px; margin-top: 12px; }
+.sections .btn { display: flex; align-items: center; gap: 8px; text-align: left; }
+.sections .btn em { font: 600 10.5px ui-monospace, monospace; font-style: normal; color: var(--accent); }
+.sections .btn span { margin-left: auto; font: 11px ui-monospace, monospace; color: var(--dim); }
 .preview {
   flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
   padding: 20px;

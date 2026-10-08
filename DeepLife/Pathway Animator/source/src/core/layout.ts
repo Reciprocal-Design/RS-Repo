@@ -14,13 +14,15 @@ const dist = (a: Vec2, b: Vec2) => Math.hypot(a.x - b.x, a.y - b.y);
  * Gaps (radians) from each pathway to the next one round the cell; they sum
  * to a full turn. With spacing variation they are uneven, seeded by the scene,
  * so pathways sit organically rather than on an even clock face. Each gap
- * stays within ±50% of the even gap, so neighbours never close up.
+ * stays within ±50% of the even gap at variation 1, so neighbours never close
+ * up; above 1 (up to 2, target combination) gaps vary more, down to a fifth
+ * of the even gap, so targets cluster unevenly.
  */
 export function pathwayGaps(scene: Scene): number[] {
   const n = Math.max(1, scene.pathwayCount);
   if (n === 1) return [TAU];
-  const v = Math.max(0, Math.min(1, scene.spacingVariation ?? 0));
-  const raw = Array.from({ length: n }, (_, i) => 1 + v * signed(rngFor(scene.seed, 'spread', n, i), 0.5));
+  const v = Math.max(0, Math.min(2, scene.spacingVariation ?? 0));
+  const raw = Array.from({ length: n }, (_, i) => Math.max(0.2, 1 + v * signed(rngFor(scene.seed, 'spread', n, i), 0.5)));
   const sum = raw.reduce((a, b) => a + b, 0);
   return raw.map((g) => (g / sum) * TAU);
 }

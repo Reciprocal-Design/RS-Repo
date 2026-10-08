@@ -136,6 +136,14 @@ function primToSvg(p: Prim, defs: string[], clips: Set<string>): string | null {
       const d = p.points.map((q, i) => `${i ? 'L' : 'M'}${n(q.x)},${n(q.y)}`).join(' ');
       return `<path id="${id}" d="${d}" fill="none" stroke="url(#${gid})" stroke-width="${n(p.width)}" stroke-linejoin="round"${opacity}${blend}/>`;
     }
+    case 'warning': {
+      const h = p.size, w = h * 1.12, r = h * 0.12;
+      const tri = `${n(0)},${n(-h / 2 + r)} ${n(w / 2 - r)},${n(h / 2 - r)} ${n(-w / 2 + r)},${n(h / 2 - r)}`;
+      return `<g id="${id}" transform="translate(${n(p.c.x)} ${n(p.c.y)})"${opacity}>`
+        + `<polygon points="${tri}" ${fillAttrs(p.fill)} ${strokeAttrs(p.fill)} stroke-width="${n(2 * r)}" stroke-linejoin="round"/>`
+        + `<line x1="0" y1="${n(-h * 0.17)}" x2="0" y2="${n(h * 0.13)}" ${strokeAttrs(p.mark)} stroke-width="${n(h * 0.1)}" stroke-linecap="round"/>`
+        + `<circle cx="0" cy="${n(h * 0.29)}" r="${n(h * 0.06)}" ${fillAttrs(p.mark)}/></g>`;
+    }
     case 'glow': {
       const gid = `grad-${id}`;
       defs.push(`<radialGradient id="${gid}">${stop(0, p.color)}${stop(1, 'rgba(0,0,0,0)')}</radialGradient>`);

@@ -56,6 +56,13 @@ const cache = new WeakMap<Scene, Schedule>();
 export function buildSchedule(scene: Scene): Schedule {
   const hit = cache.get(scene);
   if (hit) return hit;
+  if (scene.module.kind === 'journey') {
+    // The journey runs its own timeline (render/journey.ts): five equal sections.
+    const total = 5 * Math.max(0.5, scene.module.sectionLength);
+    const empty: Schedule = { fire: new Map(), arrivals: new Map(), runs: new Map(), pulses: new Map(), edges: [], signalEnd: total, total, period: 0 };
+    cache.set(scene, empty);
+    return empty;
+  }
 
   const g = buildGeometry(scene);
   const a = scene.animation;
@@ -145,7 +152,7 @@ export function buildSchedule(scene: Scene): Schedule {
   for (const n of g.nodes) if (n.layer === 0 && !receptorOf.has(n.pathwayId)) receptorOf.set(n.pathwayId, n.id);
   const starts: [string, number][] = [];
   for (const p of g.pathways) {
-    const r = receptorOf.get(p.id);
+    const r = p.start ?? receptorOf.get(p.id);
     if (r && !p.relayOnly) starts.push([r, Math.max(0, p.startDelay)]);
   }
   const wave0 = runWave(starts);

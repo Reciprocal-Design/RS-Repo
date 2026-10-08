@@ -24,7 +24,7 @@ export function drawDisplayList(ctx: Ctx, list: DisplayList, opts: CanvasDrawOpt
   // it once to a bitmap at device resolution and reuse it during playback.
   let i = 0;
   if (list.staticCount > 0) {
-    drawCachedLayer(ctx, list.staticKey, prims, list.staticCount, 1);
+    drawCachedLayer(ctx, list.staticKey, prims, list.staticCount, 1, list.staticTag);
     i = list.staticCount;
   }
   for (; i < prims.length; i++) drawPrim(ctx, prims[i]);
@@ -38,14 +38,20 @@ interface StaticCache {
 const staticCache = new WeakMap<object, StaticCache>();
 
 /** Draw the first `count` prims through a bitmap cached under `cacheKey`, faded by `opacity`. */
-function drawCachedLayer(ctx: Ctx, cacheKey: object, prims: Prim[], count: number, opacity: number) {
+function drawCachedLayer(ctx: Ctx, cacheKey: object, prims: Prim[], count: number, opacity: number, tag = '') {
   const m = ctx.getTransform();
   const { width, height } = ctx.canvas;
-  const key = [width, height, m.a, m.b, m.c, m.d, m.e, m.f, count].join(',');
+  const key = [width, height, m.a, m.b, m.c, m.d, m.e, m.f, count, tag].join(',');
   let hit = staticCache.get(cacheKey);
   if (!hit || hit.key !== key) {
-    const bitmap = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : Object.assign(document.createElement('canvas'), { width, height });
+    // Reuse the bitmap when only the transform changed (a camera move), rather than allocating a new one.
+    const same = hit && hit.bitmap.width === width && hit.bitmap.height === height;
+    const bitmap = same
+      ? hit!.bitmap
+      : typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : Object.assign(document.createElement('canvas'), { width, height });
     const off = bitmap.getContext('2d') as Ctx;
+    off.setTransform(1, 0, 0, 1, 0, 0);
+    off.clearRect(0, 0, width, height);
     off.setTransform(m);
     off.lineCap = 'round';
     off.lineJoin = 'round';
@@ -152,6 +158,37 @@ function drawPrim(ctx: Ctx, p: Prim): void {
       ctx.arc(p.c.x, p.c.y, p.r, 0, Math.PI * 2);
       ctx.fillStyle = grad;
       ctx.fill();
+      break;
+    }
+    case 'warning': {
+      // Rounded triangle: a filled path stroked in the same colour with round joins.
+      const h = p.size, w = h * 1.12;
+      const r = h * 0.12;
+      ctx.save();
+      ctx.translate(p.c.x, p.c.y);
+      ctx.beginPath();
+      ctx.moveTo(0, -h / 2 + r);
+      ctx.lineTo(w / 2 - r, h / 2 - r);
+      ctx.lineTo(-w / 2 + r, h / 2 - r);
+      ctx.closePath();
+      ctx.fillStyle = p.fill;
+      ctx.strokeStyle = p.fill;
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 2 * r;
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = p.mark;
+      ctx.fillStyle = p.mark;
+      ctx.lineCap = 'round';
+      ctx.lineWidth = h * 0.1;
+      ctx.beginPath();
+      ctx.moveTo(0, -h * 0.17);
+      ctx.lineTo(0, h * 0.13);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, h * 0.29, h * 0.06, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
       break;
     }
     case 'diamond': {

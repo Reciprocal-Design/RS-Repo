@@ -1,6 +1,6 @@
 import { DEFAULT_ANIMATION, defaultCellMap, defaultLayers, defaultModule, defaultScene, makePathway } from './defaults';
 import { MAX_LAYERS, MAX_NODES, MIN_LAYERS } from './layers';
-import type { CellMap, LayerSpec, MapCell, ModuleKind, ModuleSettings, Pathway, Region, Scene } from './types';
+import type { CellMap, LayerSpec, MapCell, ModuleKind, ModuleSettings, OrganId, Pathway, Region, Scene } from './types';
 
 // Scene JSON: save the full Scene, and load it back tolerantly. Missing fields
 // take their defaults and out-of-range values are clamped, so older or
@@ -90,7 +90,8 @@ function normalizeCellMap(raw: unknown): CellMap {
   };
 }
 
-const MODULE_KINDS: ModuleKind[] = ['targetId', 'moa', 'combination', 'toxicity', 'tissue', 'custom'];
+const MODULE_KINDS: ModuleKind[] = ['targetId', 'moa', 'combination', 'toxicity', 'tissue', 'custom', 'body', 'journey'];
+const ORGAN_IDS: OrganId[] = ['brain', 'lungs', 'heart', 'liver', 'stomach', 'kidneys', 'intestines', 'bladder'];
 
 /** Scenes saved before modules existed show their pathway unchanged ('custom'). */
 function normalizeModule(raw: unknown): ModuleSettings {
@@ -104,6 +105,9 @@ function normalizeModule(raw: unknown): ModuleSettings {
     routes: Math.round(num(m.routes, base.routes, 1, 3)),
     dimOpacity: num(m.dimOpacity, base.dimOpacity, 0, 1),
     toxicDegs: Math.round(num(m.toxicDegs, base.toxicDegs, 0, 10)),
+    warningAngle: num(m.warningAngle, base.warningAngle, -360, 360),
+    organ: ORGAN_IDS.includes(m.organ) ? m.organ : base.organ,
+    sectionLength: num(m.sectionLength, base.sectionLength, 0.5, 30),
   };
 }
 
@@ -138,7 +142,7 @@ export function normalizeScene(raw: unknown): Scene {
   }
   s.pathwayCount = Math.round(num(s.pathwayCount, 1, 1, 5));
   // Scenes saved before spacing variation existed were evenly spaced: keep them so.
-  s.spacingVariation = num(raw.spacingVariation, 0, 0, 1);
+  s.spacingVariation = num(raw.spacingVariation, 0, 0, 2);
   s.animation = merge({ ...DEFAULT_ANIMATION }, raw.animation);
   if (!['linear', 'easeInOut'].includes(s.animation.easing)) s.animation.easing = 'linear';
   s.animation.density = num(s.animation.density, DEFAULT_ANIMATION.density, 0, 1);

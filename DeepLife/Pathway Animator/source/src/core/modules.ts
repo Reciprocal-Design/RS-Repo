@@ -28,7 +28,7 @@ export const MODULES: ModuleInfo[] = [
   {
     kind: 'combination',
     label: 'Target combination',
-    blurb: 'Several receptors targeted at once, acting together on several DEGs. Each pathway is one target.',
+    blurb: 'Several receptors targeted at once, unevenly spaced round the cell, acting together on an interconnected set of DEGs. Each pathway is one target.',
   },
   { kind: 'toxicity', label: 'Target toxicity', blurb: 'When the signal reaches a toxic DEG, the cell turns red.' },
   {
@@ -37,6 +37,16 @@ export const MODULES: ModuleInfo[] = [
     blurb: 'Indication extension: the same cell at the centre of a tissue, its signal passing on into neighbouring cells.',
   },
   { kind: 'custom', label: 'Module 6', blurb: 'Not defined yet. Works as the standard animator for now.' },
+  {
+    kind: 'body',
+    label: 'Body',
+    blurb: 'Organ-level connectivity: the body drawn like a cell, its organs like nuclei, with the same firing lines between them.',
+  },
+  {
+    kind: 'journey',
+    label: 'Cell → tissue → body',
+    blurb: 'The scroll sequence: the cell zooms out into the tissue, which fades into the body. Five sections of equal length; export it as a PNG sequence.',
+  },
 ];
 
 export const moduleInfo = (kind: ModuleKind) => MODULES.find((m) => m.kind === kind) ?? MODULES[MODULES.length - 1];
@@ -50,12 +60,20 @@ export function moduleScene(kind: ModuleKind, seed = 1234): Scene {
   s.module = defaultModule(kind);
   s.name = moduleInfo(kind).label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   if (kind === 'combination') {
-    // Three targets, hit together.
+    // Three targets, hit together, spaced unevenly and interconnected.
     s.pathwayCount = 3;
     s.pathways = [0, 1, 2].map((i) => ({ ...makePathway(seed, i, s.pathways[0].layers), startDelay: 0 }));
+    s.spacingVariation = 1.7;
+    s.rotation = 24;
+    s.crosstalk = { enabled: true, amount: 0.5 };
   }
   if (kind === 'toxicity') s.animation = { ...s.animation, holdAtEnd: 2.5 };
   if (kind === 'tissue') s.cellMap = tissueMap();
+  if (kind === 'journey') {
+    // The tissue the cell zooms out into; motion that never stops, for a scroll sequence.
+    s.cellMap = { ...tissueMap(), detailScale: 0.4 };
+    s.animation = { ...s.animation, continuous: true };
+  }
   return s;
 }
 
@@ -132,6 +150,19 @@ export function applyModule(scene: Scene, g: SceneGeom): SceneGeom {
       const hops = Math.max(1, 0.6 * (last.get(r.pathwayId) ?? 1));
       for (const d of degs.get(r.pathwayId) ?? []) {
         out.push({ ...makeEdge(scene, r, d, false, rngFor(hash(scene.seed, 'direct'), r.id, d.id)), hops });
+      }
+      // Interconnection (crosstalk on): a receptor also reaches a few of the
+      // other pathways' DEGs, the nearest most often.
+      if (scene.crosstalk.enabled && scene.crosstalk.amount > 0) {
+        const rng = rngFor(hash(scene.seed, 'direct-cross'), r.id);
+        const others = [...degs].filter(([pid]) => pid !== r.pathwayId).flatMap(([, list]) => list);
+        const count = Math.min(others.length, Math.floor(scene.crosstalk.amount * 3 + rng()));
+        const near = others
+          .map((d) => ({ d, key: rng() ** (Math.hypot(d.x - r.x, d.y - r.y) / 100) }))
+          .sort((a, b) => b.key - a.key);
+        for (const { d } of near.slice(0, count)) {
+          out.push({ ...makeEdge(scene, r, d, true, rngFor(hash(scene.seed, 'direct-cross'), r.id, d.id)), hops });
+        }
       }
     }
     edges = out;

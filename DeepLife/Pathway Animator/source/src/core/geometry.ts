@@ -1,3 +1,4 @@
+import { buildBodyGeometry } from './body';
 import { buildMapGeometry, mapActive } from './cellMap';
 import { connectCrosstalk, connectPathway } from './connect';
 import { cellFrame, decorativeReceptors, layoutPathway } from './layout';
@@ -15,7 +16,9 @@ const cache = new WeakMap<Scene, SceneGeom>();
 export function buildGeometry(scene: Scene): SceneGeom {
   const hit = cache.get(scene);
   if (hit) return hit;
-  const geom = applyModule(scene, (mapActive(scene) && buildMapGeometry(scene)) || buildCellGeometry(scene));
+  const geom = scene.module.kind === 'body'
+    ? buildBodyGeometry(scene)
+    : applyModule(scene, (mapActive(scene) && buildMapGeometry(scene)) || buildCellGeometry(scene));
   cache.set(scene, geom);
   return geom;
 }

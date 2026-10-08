@@ -36,7 +36,17 @@ a preset scene plus a pure transform of the geometry (`src/core/modules.ts`):
    cell, scaled by "Centre cell size"), with neighbouring cells generated round it to the canvas edges
    (`src/core/tissue.ts`). Only the centre cell starts on its own; links run outward from it, so its signal relays
    on through the tissue. The tissue follows the centre cell when the seed, shape or canvas changes.
+   Target toxicity also shows a warning badge on the membrane as the cell turns (position adjustable).
+   Target combination spaces its receptors unevenly (spacing variation up to 2) and, with crosstalk on,
+   interconnects them: each receptor also reaches a few of the other targets' DEGs.
 6. **Module 6**: not defined yet; the standard animator.
+7. **Body**: organ-level connectivity (`src/core/body.ts`). A human outline drawn like the membrane, organs drawn
+   like nuclei, and the same firing lines between organs, spreading out from a chosen organ.
+8. **Cell → tissue → body** (`src/render/journey.ts`): the website's scroll sequence, in five sections of equal
+   length: cell, cell → tissue (the camera pulls back from exactly the single cell as the neighbours fade in),
+   tissue, tissue → body (the tissue shrinks into the chosen organ and fades as the body fades in round it),
+   body. Export it with Export → PNG sequence (frames `{name}_0001.png` onward, saved into a folder you pick in
+   Chrome and Edge, or as one ZIP elsewhere); the panel lists how many frames each section takes.
 
 Scene JSON saves the current tab, including its module settings; a file loads into the current tab and keeps the
 tab's module.

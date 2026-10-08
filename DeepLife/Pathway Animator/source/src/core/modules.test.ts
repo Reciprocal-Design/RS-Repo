@@ -13,7 +13,7 @@ describe('modules', () => {
   it('starts every tab from the same pathway', () => {
     const scenes = MODULES.map((m) => moduleScene(m.kind, 7));
     for (const s of scenes) expect(s.pathways[0].seed).toBe(scenes[0].pathways[0].seed);
-    expect(scenes.map((s) => s.module.kind)).toEqual(['targetId', 'moa', 'combination', 'toxicity', 'tissue', 'custom']);
+    expect(scenes.map((s) => s.module.kind)).toEqual(['targetId', 'moa', 'combination', 'toxicity', 'tissue', 'custom', 'body', 'journey']);
   });
 
   it('custom leaves the pathway unchanged', () => {
@@ -141,6 +141,33 @@ describe('modules', () => {
     const json = parseSceneJson(serializeScene(a));
     expect(json.cellMap.around).toBe(true);
     expect(buildGeometry(json).cells.length).toBe(buildGeometry(a).cells.length);
+  });
+
+  it('target combination interconnects the targets', () => {
+    const s = moduleScene('combination', 7);
+    const g = buildGeometry(s);
+    const cross = g.edges.filter((e) => e.crosstalk);
+    expect(cross.length).toBeGreaterThan(0);
+    for (const e of cross) expect(g.nodeById.get(e.to)!.pathwayId).not.toBe(g.nodeById.get(e.from)!.pathwayId);
+    const off = { ...s, crosstalk: { enabled: false, amount: 0.5 } };
+    expect(buildGeometry(off).edges.some((e) => e.crosstalk)).toBe(false);
+  });
+
+  it('toxicity shows a warning on the membrane once the cell turns', () => {
+    const s = moduleScene('toxicity', 7);
+    const g = buildGeometry(s);
+    const sched = buildSchedule(s);
+    const fired = Math.min(...g.nodes.filter((n) => n.toxic).map((n) => sched.fire.get(n.id)!));
+    expect(buildDisplayList(s, 0).prims.some((p) => p.kind === 'warning')).toBe(false);
+    const w = buildDisplayList(s, fired + 1.5).prims.find((p) => p.kind === 'warning')!;
+    expect(w).toBeTruthy();
+    // On the membrane, at 45° (upper right).
+    const c = g.cells[0].cell;
+    const th = Math.atan2(w.kind === 'warning' ? w.c.y - c.center.y : 0, w.kind === 'warning' ? w.c.x - c.center.x : 0);
+    expect(th).toBeCloseTo(-Math.PI / 4, 5);
+    expect(displayListToSvg(buildDisplayList(s, fired + 1.5))).toContain('id="warning"');
+    const off = { ...s, module: { ...s.module, warning: false } };
+    expect(buildDisplayList(off, fired + 1.5).prims.some((p) => p.kind === 'warning')).toBe(false);
   });
 
   it('shares the look and pathway but keeps each tab its module', () => {
