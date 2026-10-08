@@ -119,8 +119,8 @@ export function buildMapGeometry(scene: Scene): SceneGeom | null {
   const prepared = cm.around ? tissueCells(scene) : importedCells(scene);
   for (const { mc, cell, nucleus, R, polygon } of prepared) {
     const frame: CellFrame = { scale, center: cell.center, R, cell, nucleus };
-    cells.push({ id: mc.id, cell, nucleus, enabled: mc.enabled });
     const hero = !!mc.hero;
+    cells.push({ id: mc.id, cell, nucleus, enabled: mc.enabled, ...(hero ? { hero } : {}) });
 
     // Per-cell variation: its own scene seed (spacing, decorative receptors)
     // and orientation, and its own seed for every shared pathway. Oriented
@@ -165,8 +165,12 @@ export function buildMapGeometry(scene: Scene): SceneGeom | null {
   // At least one pathway starts on its own, or nothing would ever happen.
   if (pathways.length && pathways.every((p) => p.relayOnly)) pathways[0].relayOnly = false;
   // A tissue's cells sit a little apart, so neighbours may link across a wider
-  // gap, and its links run outward from the centre cell, so its signal spreads.
-  const links = connectCellLinks(scene, linkCells, cm.around ? { reach: 0.6, origin: cells[0]?.cell.center } : {});
+  // gap. Where there is a centre cell, links run outward from it, so its signal spreads.
+  const heroCell = cells.find((c) => c.hero);
+  const links = connectCellLinks(scene, linkCells, {
+    ...(cm.around ? { reach: 0.6 } : {}),
+    ...(heroCell ? { origin: heroCell.cell.center } : {}),
+  });
   edges.push(...links.edges);
   nodes.push(...links.nodes);
   // Relay receptors take the place of any decorative receptor they would overlap.
@@ -189,6 +193,32 @@ export function buildMapGeometry(scene: Scene): SceneGeom | null {
     edges,
     warnings: [...warnings],
   };
+}
+
+/** The cell of an imported map nearest the middle of the map (its centroid nearest the map's centre). */
+export function middleCellId(scene: Scene): string | undefined {
+  const cm = scene.cellMap;
+  if (!cm.cells.length) return undefined;
+  const { map } = mapTransform(scene);
+  const vb = cm.viewBox;
+  const mid = map(vb.x + vb.width / 2, vb.y + vb.height / 2);
+  let best: string | undefined, bd = Infinity;
+  for (const c of cm.cells) {
+    const p = polygonCentroid(unflat(c.membrane, map));
+    const d = Math.hypot(p.x - mid.x, p.y - mid.y);
+    if (d < bd) (bd = d), (best = c.id);
+  }
+  return best;
+}
+
+/** The map's own extent on the canvas: the fitted viewBox, or the whole canvas for a tissue. */
+export function mapExtent(scene: Scene) {
+  const { width: W, height: H } = scene.canvas;
+  if (scene.cellMap.around) return { x: 0, y: 0, w: W, h: H };
+  const { map } = mapTransform(scene);
+  const vb = scene.cellMap.viewBox;
+  const a = map(vb.x, vb.y), b = map(vb.x + vb.width, vb.y + vb.height);
+  return { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y };
 }
 
 /** The map cell at a canvas point, if any. */

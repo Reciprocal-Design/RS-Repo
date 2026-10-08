@@ -252,6 +252,8 @@ export interface CellGeom {
   enabled: boolean;
   /** Draw no nucleus (the body outline). */
   noNucleus?: boolean;
+  /** The single cell itself, in a tissue (the cell the journey starts on). */
+  hero?: boolean;
 }
 
 export interface SceneGeom {

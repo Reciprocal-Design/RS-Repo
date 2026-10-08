@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { buildDisplayList } from '../render/displayList';
-import { journeyState } from '../render/journey';
+import { heroView, journeyScenes, journeyState } from '../render/journey';
 import { displayListToSvg } from '../render/svg';
 import { ORGANS, organCenter } from './body';
 import { buildGeometry } from './geometry';
 import { moduleScene } from './modules';
+import type { MapCell, Scene } from './types';
 import { buildSchedule } from './timeline';
 
 describe('body', () => {
@@ -100,5 +101,49 @@ describe('journey', () => {
       }
       expect(c.tissue.neighbours).toBeCloseTo(a.tissue.neighbours, 3);
     }
+  });
+});
+
+/** The journey on an imported map: a 3 × 3 grid of square cells. */
+function gridJourney(): Scene {
+  const s = moduleScene('journey', 7);
+  const cells: MapCell[] = [];
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      const x = c * 100 + 5, y = r * 100 + 5;
+      cells.push({ id: `c${cells.length + 1}`, membrane: [x, y, x + 90, y, x + 90, y + 90, x, y + 90], nucleus: null, enabled: true, seed: cells.length + 1 });
+    }
+  }
+  return { ...s, cellMap: { ...s.cellMap, around: false, name: 'grid.svg', viewBox: { x: 0, y: 0, width: 300, height: 300 }, cells } };
+}
+
+describe('journey on an imported map', () => {
+  it('starts on the middle cell, alone, at the single cell size', () => {
+    const s = gridJourney();
+    const g = buildGeometry(journeyScenes(s).tissue);
+    const hero = g.cells.find((c) => c.hero)!;
+    expect(hero.id).toBe('c5');
+    const v = heroView(s);
+    expect(v.center.x).toBeCloseTo(hero.cell.center.x, 6);
+    expect(v.zoom).toBeGreaterThan(1);
+    const start = journeyState(s, 0);
+    expect(start.tissue.origin).toEqual(v.center);
+    expect(start.tissue.at).toEqual({ x: s.canvas.width / 2, y: s.canvas.height / 2 });
+    expect(start.tissue.neighbours).toBe(0);
+    // The centre cell starts the signal; links run out from it.
+    expect(g.pathways.find((p) => p.id === 'p1')!.relayOnly).toBeFalsy();
+    expect(g.edges.filter((e) => e.link).every((e) => !e.to.startsWith('p1-'))).toBe(true);
+  });
+
+  it('pulls back from the middle cell to the whole map with no jumps', () => {
+    const s = gridJourney();
+    const L = s.module.sectionLength;
+    for (let b = 1; b < 3; b++) {
+      const a = journeyState(s, b * L - 1e-6), c = journeyState(s, b * L + 1e-6);
+      expect(c.tissue.zoom).toBeCloseTo(a.tissue.zoom, 3);
+      expect(c.tissue.origin.x).toBeCloseTo(a.tissue.origin.x, 2);
+      expect(c.tissue.origin.y).toBeCloseTo(a.tissue.origin.y, 2);
+    }
+    expect(journeyState(s, 2.5 * L).tissue.zoom).toBe(1);
   });
 });

@@ -205,10 +205,14 @@ const withAlpha = ([r, g, b]: RGBA, a: number) => rgbaString([r, g, b, a]);
  * comets and pulse flashes → halos → nodes.
  */
 /**
- * `linkAlpha` fades the links between cells and their signals (the journey
- * shows the centre cell alone before its neighbours appear).
+ * `linkAlpha` fades the links between cells and their signals, and
+ * `others` fades every cell but one (the journey shows the centre cell alone
+ * before its neighbours appear).
  */
-export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean; linkAlpha?: number } = {}): DisplayList {
+export function buildDisplayList(
+  scene: Scene, t = 0,
+  opts: { signal?: boolean; linkAlpha?: number; others?: { keep: string; alpha: number } } = {},
+): DisplayList {
   const g = buildGeometry(scene);
   const s = g.scale;
   const st = scene.style;
@@ -564,15 +568,24 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean; 
   let out = prims;
   let staticOut = staticCount;
   const linkAlpha = Math.max(0, Math.min(1, opts.linkAlpha ?? 1));
-  if (linkAlpha < 1) {
-    // Link edges and everything drawn along them have ids starting `link-`.
+  const others = opts.others && opts.others.alpha < 1 ? { ...opts.others, alpha: Math.max(0, opts.others.alpha) } : null;
+  if (linkAlpha < 1 || others) {
+    // Link edges and everything drawn along them have ids starting `link-`;
+    // everything of a map cell (outlines, receptors, nodes, edges, signals)
+    // carries its cell id (`c3-`), except the centre cell's pathways.
+    const fadeOf = (id: string) => {
+      if (id.startsWith('link-')) return linkAlpha;
+      const m = others && /(?:^|-)(c\d+)-/.exec(id);
+      return m && m[1] !== others!.keep ? others!.alpha : 1;
+    };
     out = [];
     prims.forEach((p, i) => {
-      if (!p.id.startsWith('link-')) out.push(p);
-      else if (linkAlpha > 0) out.push({ ...p, opacity: (p.opacity ?? 1) * linkAlpha });
-      else if (i < staticCount) staticOut--;
+      const a = fadeOf(p.id);
+      if (a >= 1) out.push(p);
+      else if (a > 0) out.push({ ...p, opacity: (p.opacity ?? 1) * a });
       if (i === staticCount - 1) staticOut = out.length;
     });
+    if (staticCount === 0) staticOut = 0;
   }
 
   return {
@@ -582,7 +595,7 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean; 
     prims: out,
     staticCount: staticOut,
     staticKey: g,
-    ...(linkAlpha < 1 ? { staticTag: `links-${linkAlpha.toFixed(3)}` } : {}),
+    ...(linkAlpha < 1 || others ? { staticTag: `links-${linkAlpha.toFixed(3)}-${others ? `${others.keep}-${others.alpha.toFixed(3)}` : ''}` } : {}),
     ...(underlays.length ? { underlays } : {}),
   };
 }

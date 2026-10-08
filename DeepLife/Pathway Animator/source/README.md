@@ -52,9 +52,12 @@ a preset scene plus a pure transform of the geometry (`src/core/modules.ts`):
    to its head and shoulders (then sized and moved with the sliders), and only the nodes and particles that land on
    the figure are kept. The image is saved in the scene JSON and used by the Body and journey tabs.
 8. **Cell → tissue → body** (`src/render/journey.ts`): the website's scroll sequence, in five sections of equal
-   length: cell, cell → tissue (the camera pulls back from exactly the single cell as the neighbours fade in),
+   length: cell, cell → tissue (the camera pulls back from the centre cell as the neighbours fade in),
    tissue, tissue → body (the tissue shrinks into the chosen organ and fades as the body fades in round it),
-   body. Export it with Export → PNG sequence (frames `{name}_0001.png` onward, saved into a folder you pick in
+   body. The tissue is the generated one round the single cell, or an SVG map imported under Cell map: then the
+   cell nearest the map's middle is the centre cell, shown alone at the single cell's size to start with (every
+   other cell, and the links to them, faded out) and starting the signal. The tissue layer fades out towards its
+   edges, so it never ends in a hard cut. Export it with Export → PNG sequence (frames `{name}_0001.png` onward, saved into a folder you pick in
    Chrome and Edge, or as one ZIP elsewhere); the panel lists how many frames each section takes.
 
 Scene JSON saves the current tab, including its module settings; a file loads into the current tab and keeps the
