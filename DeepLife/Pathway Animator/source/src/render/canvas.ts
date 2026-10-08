@@ -76,6 +76,11 @@ function drawPrim(ctx: Ctx, p: Prim): void {
       ctx.moveTo(p.start.x, p.start.y);
       for (const [c1, c2, e] of p.segments) ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, e.x, e.y);
       ctx.closePath();
+      if (p.fill) {
+        ctx.fillStyle = p.fill;
+        ctx.fill();
+        if (p.width <= 0) break;
+      }
       ctx.strokeStyle = p.stroke;
       ctx.lineWidth = p.width;
       if (p.clip) {

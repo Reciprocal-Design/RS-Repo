@@ -34,6 +34,9 @@ export function defaultModule(kind: ModuleKind = 'custom'): ModuleSettings {
     warningAngle: 45,
     organ: 'heart',
     sectionLength: 3,
+    bodyGlow: 0.5,
+    bodyMesh: false,
+    bodyParticles: true,
   };
 }
 

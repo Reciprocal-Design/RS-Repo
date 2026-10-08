@@ -28,7 +28,9 @@ describe('body', () => {
   });
 
   it('has a dense particle field and a wireframe inside the body, lit as the signal passes', () => {
-    const s = moduleScene('body', 7);
+    const base = moduleScene('body', 7);
+    expect(buildGeometry(base).mesh).toBeUndefined(); // the wireframe is off by default
+    const s = { ...base, module: { ...base.module, bodyMesh: true } };
     const g = buildGeometry(s);
     expect(g.particles!.length).toBeGreaterThan(2000);
     expect(g.mesh!.length / 4).toBeGreaterThan(400);
@@ -36,6 +38,18 @@ describe('body', () => {
     for (const k of ['limb0r-9', 'limb0l-9', 'limb1r-8', 'limb1l-8']) expect(g.nodeById.has(`body-${k}`)).toBe(true);
     const lit = (t: number) => buildDisplayList(s, t).prims.filter((p) => p.id.startsWith('body-particles-lit')).length;
     expect(lit(0.01)).toBeLessThan(lit(3));
+    const none = { ...s, module: { ...s.module, bodyParticles: false } };
+    expect(buildGeometry(none).particles).toBeUndefined();
+  });
+
+  it('fills the body and lights its form', () => {
+    const s = moduleScene('body', 7);
+    const prims = buildDisplayList(s, 1).prims;
+    expect(prims.some((p) => p.id === 'body-body-fill' && p.kind === 'closedSpline' && !!p.fill)).toBe(true);
+    expect(prims.filter((p) => p.id.startsWith('body-anatomy-')).length).toBeGreaterThan(30);
+    const svg = displayListToSvg(buildDisplayList(s, 1));
+    expect(svg).toContain('id="body-body-fill"');
+    expect(svg).not.toContain('NaN');
   });
 
   it('starts from any organ, two-lobed ones from both lobes', () => {

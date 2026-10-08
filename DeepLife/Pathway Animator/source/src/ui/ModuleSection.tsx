@@ -141,6 +141,14 @@ export function ModuleSection() {
         </>
       )}
 
+      {(m.kind === 'body' || m.kind === 'journey') && (
+        <>
+          <Slider label="Body glow" value={m.bodyGlow} min={0} max={1} onChange={(bodyGlow) => set({ bodyGlow })} />
+          <Toggle label="Particles" checked={m.bodyParticles} onChange={(bodyParticles) => set({ bodyParticles })} />
+          <Toggle label="Wireframe" checked={m.bodyMesh} onChange={(bodyMesh) => set({ bodyMesh })} />
+        </>
+      )}
+
       {m.kind === 'body' && (
         <>
           {organ('Signal starts in')}

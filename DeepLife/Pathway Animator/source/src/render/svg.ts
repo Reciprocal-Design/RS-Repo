@@ -102,7 +102,8 @@ function primToSvg(p: Prim, defs: string[], clips: Set<string>): string | null {
         }
         clip = ` clip-path="url(#${cid})"`;
       }
-      return `<path id="${id}" d="${d} Z" fill="none" ${strokeAttrs(p.stroke)} stroke-width="${n(p.width)}"${opacity}${clip}/>`;
+      if (p.fill && p.width <= 0) return `<path id="${id}" d="${d} Z" ${fillAttrs(p.fill)}${opacity}/>`;
+      return `<path id="${id}" d="${d} Z" ${p.fill ? fillAttrs(p.fill) : 'fill="none"'} ${strokeAttrs(p.stroke)} stroke-width="${n(p.width)}"${opacity}${clip}/>`;
     }
     case 'bezier': {
       const [a, b, c, e] = p.p;

@@ -130,6 +130,12 @@ export interface ModuleSettings {
   organ: OrganId;
   /** Journey: seconds per section (cell, cell → tissue, tissue, tissue → body, body). */
   sectionLength: number;
+  /** Body: how far the glow reaches in from the outline, 0–1. */
+  bodyGlow: number;
+  /** Body: the wireframe mesh. */
+  bodyMesh: boolean;
+  /** Body: the particle field. */
+  bodyParticles: boolean;
 }
 
 /** One cell of an imported map. Coordinates are flat x,y pairs in the map's own units. */
@@ -251,11 +257,15 @@ export interface SceneGeom {
   /**
    * Body view detail: a field of particles (each lit by the signal reaching
    * its nearest network node, `delay` seconds later), a wireframe mesh
-   * (segments x1,y1,x2,y2…) and open anatomy lines.
+   * (segments x1,y1,x2,y2…) and open anatomy lines, drawn as soft highlights
+   * that model the form. The body is filled, and its glow reaches `glowDepth`
+   * pixels in from the outline.
    */
   particles?: { x: number; y: number; r: number; tone: number; node: string; delay: number }[];
   mesh?: Float32Array;
-  anatomy?: Bezier[];
+  anatomy?: { b: Bezier; strength: number }[];
+  bodyFill?: boolean;
+  glowDepth?: number;
   /**
    * Every pathway laid out, with its effective start delay (cell offsets
    * included). A pathway with `relayOnly` never starts on its own: it fires

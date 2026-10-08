@@ -108,6 +108,7 @@ function normalizeModule(raw: unknown): ModuleSettings {
     warningAngle: num(m.warningAngle, base.warningAngle, -360, 360),
     organ: ORGAN_IDS.includes(m.organ) ? m.organ : base.organ,
     sectionLength: num(m.sectionLength, base.sectionLength, 0.5, 30),
+    bodyGlow: num(m.bodyGlow, base.bodyGlow, 0, 1),
   };
 }
 

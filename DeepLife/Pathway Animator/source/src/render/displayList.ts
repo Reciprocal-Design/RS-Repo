@@ -30,7 +30,7 @@ interface Base {
 export type Prim = Base &
   (
     /** A closed curve; with `clip`, the stroke is clipped to the inside of the curve (key names the clip shape). */
-    | { kind: 'closedSpline'; start: Vec2; segments: [Vec2, Vec2, Vec2][]; stroke: string; width: number; clip?: string }
+    | { kind: 'closedSpline'; start: Vec2; segments: [Vec2, Vec2, Vec2][]; stroke: string; width: number; clip?: string; fill?: string }
     | { kind: 'bezier'; p: Bezier; width: number; from: string; to: string }
     | { kind: 'circle'; c: Vec2; r: number; fill: string }
     | { kind: 'ring'; c: Vec2; r: number; stroke: string; width: number }
@@ -96,22 +96,24 @@ function outlinePrims(
   look: OutlineLook & { color: string; strokeWidth: number },
   s: number,
   prefix = '',
+  strength = 1,
 ): Prim[] {
-  const key = JSON.stringify([group, look.outlineStyle, look.glowWidth, look.glowColor, look.edgeColor, look.color, look.strokeWidth, s, prefix]);
+  const key = JSON.stringify([group, look.outlineStyle, look.glowWidth, look.glowColor, look.edgeColor, look.color, look.strokeWidth, s, prefix, strength]);
   let byKey = outlineCache.get(points);
   if (!byKey) outlineCache.set(points, (byKey = new Map()));
   let prims = byKey.get(key);
-  if (!prims) byKey.set(key, (prims = buildOutlinePrims(group, points, look, s, prefix)));
+  if (!prims) byKey.set(key, (prims = buildOutlinePrims(group, points, look, s, prefix, strength)));
   return prims;
 }
 
-/** `prefix` keeps ids (and SVG clip paths) unique per cell of a map. */
+/** `prefix` keeps ids (and SVG clip paths) unique per cell of a map; `strength` brightens the glow (the body). */
 function buildOutlinePrims(
   group: 'membrane' | 'nucleus',
   points: Vec2[],
   look: OutlineLook & { color: string; strokeWidth: number },
   s: number,
   prefix: string,
+  strength = 1,
 ): Prim[] {
   const start = points[0];
   const segments = closedSplineSegments(points);
@@ -134,7 +136,7 @@ function buildOutlinePrims(
     const d = depth * (1 - t) ** 1.6 + edgeW * (1 + 2 * t);
     out.push({
       kind: 'closedSpline', id: `${id}-glow-${i + 1}`, group, start, segments, clip: id,
-      stroke: rgbaString(ramp(t ** 1.1)), width: 2 * d, opacity: 0.085,
+      stroke: rgbaString(ramp(t ** 1.1)), width: 2 * d, opacity: Math.min(0.5, 0.085 * strength),
     });
   }
   // A bright band right at the rim: lavender into the edge colour.
@@ -249,6 +251,19 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean; 
   const os = g.outlineScale ?? s;
   for (const c of g.cells) {
     const prefix = c.id ? `${c.id}-` : '';
+    if (g.bodyFill && scene.cell.visible) {
+      // The body: a deep fill, and a glow reaching well in from the outline,
+      // like a lit figure with a dark core (an X-ray look).
+      const glow = parseColor(scene.cell.glowColor);
+      prims.push({
+        kind: 'closedSpline', id: `${prefix}body-fill`, group: 'membrane', start: c.cell.points[0],
+        segments: closedSplineSegments(c.cell.points), stroke: 'rgba(0,0,0,0)', width: 0,
+        fill: rgbaString([glow[0] * 0.3, glow[1] * 0.03, glow[2] * 0.26, 0.94]),
+      });
+      const look = { ...scene.cell, outlineStyle: 'glow' as const, glowWidth: (g.glowDepth ?? 0) / os };
+      prims.push(...outlinePrims('membrane', c.cell.points, look, os, prefix, 2.3));
+      continue;
+    }
     if (scene.cell.visible && !toxicity) prims.push(...outlinePrims('membrane', c.cell.points, scene.cell, os, prefix));
     if (scene.nucleus.visible && !c.noNucleus) prims.push(...outlinePrims('nucleus', c.nucleus.points, scene.nucleus, os, prefix));
   }
@@ -262,11 +277,14 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean; 
   if (g.mesh?.length) {
     prims.push({ kind: 'segments', id: 'body-mesh', group: 'mesh', pts: g.mesh, stroke: scene.cell.edgeColor, width: 0.7 * os, opacity: 0.2 });
   }
-  if (scene.cell.visible) {
-    g.anatomy?.forEach((b, i) => prims.push({
-      kind: 'bezier', id: `body-anatomy-${i + 1}`, group: 'membrane', p: b, width: Math.max(0.25, scene.cell.strokeWidth) * os,
-      from: scene.cell.edgeColor, to: scene.cell.edgeColor, opacity: 0.7,
-    }));
+  if (scene.cell.visible && g.anatomy?.length) {
+    // Soft highlights along the anatomy: a wide faint pass, a narrower one, and a fine bright line.
+    const light = rgbaString(makeRamp([scene.cell.glowColor, scene.cell.edgeColor])(0.7));
+    const passes: [number, number][] = [[16, 0.07], [7, 0.14], [1.6, 0.4]];
+    g.anatomy.forEach(({ b, strength }, i) => passes.forEach(([w, a], j) => prims.push({
+      kind: 'bezier', id: `body-anatomy-${i + 1}-${j + 1}`, group: 'membrane', p: b, width: w * os, blend: 'lighter',
+      from: light, to: light, opacity: a * strength,
+    })));
   }
   if (g.particles?.length) prims.push({ kind: 'dots', id: 'body-particles', group: 'particles', buckets: particleBuckets(g, ramp, TONES, 1), opacity: 0.4 });
 

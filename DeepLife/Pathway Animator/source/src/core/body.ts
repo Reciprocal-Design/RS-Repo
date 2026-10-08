@@ -43,10 +43,22 @@ export const SILHOUETTE: Vec2[] = [
   ...[...HALF].reverse().map(([x, y]) => ({ x: -x, y })),
 ];
 
-/** Open anatomy lines (body units, cubic Bézier control points): the chest. */
-const ANATOMY: [number, number][][] = [
-  [[0.112, 0.258], [0.1, 0.287], [0.05, 0.298], [0.014, 0.284]],
-  [[-0.112, 0.258], [-0.1, 0.287], [-0.05, 0.298], [-0.014, 0.284]],
+/**
+ * Anatomy lines (body units, cubic Bézier control points; right side, mirrored
+ * unless on the midline), drawn as soft highlights that model the form like
+ * light catching a 3D figure: collarbones, sternum, chest, ribs, the V of the
+ * hips, shoulders, elbows, knees and shins. `s` is how bright each one is.
+ */
+const ANATOMY: { pts: [number, number][]; s: number; mid?: boolean }[] = [
+  { pts: [[0.012, 0.16], [0.04, 0.152], [0.075, 0.158], [0.108, 0.176]], s: 1 }, // collarbone
+  { pts: [[0, 0.175], [0, 0.21], [0, 0.25], [0, 0.29]], s: 0.6, mid: true }, // sternum
+  { pts: [[0.112, 0.258], [0.1, 0.287], [0.05, 0.298], [0.014, 0.284]], s: 1 }, // chest
+  { pts: [[0.068, 0.3], [0.06, 0.33], [0.052, 0.36], [0.046, 0.385]], s: 0.55 }, // ribs
+  { pts: [[0.076, 0.44], [0.062, 0.47], [0.036, 0.5], [0.014, 0.518]], s: 0.8 }, // hips
+  { pts: [[0.104, 0.19], [0.113, 0.215], [0.118, 0.245], [0.121, 0.275]], s: 0.7 }, // shoulder
+  { pts: [[0.13, 0.31], [0.136, 0.325], [0.142, 0.335], [0.15, 0.34]], s: 0.5 }, // elbow
+  { pts: [[0.038, 0.7], [0.05, 0.716], [0.064, 0.718], [0.078, 0.706]], s: 0.7 }, // knee
+  { pts: [[0.062, 0.75], [0.06, 0.79], [0.058, 0.84], [0.057, 0.89]], s: 0.45 }, // shin
 ];
 
 interface OrganSpec {
@@ -252,6 +264,10 @@ export function buildBodyGeometry(scene: Scene): SceneGeom {
     edges.push(bodyEdge(scene, A, B, hops || Math.max(0.5, Math.min(2.5, len / unit)), da === db, bend));
   }
 
+  const anatomy: NonNullable<SceneGeom['anatomy']> = [];
+  for (const a of ANATOMY) {
+    for (const side of a.mid ? [1] : [1, -1]) anatomy.push({ b: a.pts.map(([x, y]) => map(side * x, y)) as Bezier, strength: a.s });
+  }
   const detail = bodyDetail(`${seed}|${scene.canvas.width}|${scene.canvas.height}|${source.id}`, () => detailFor(seed, h, map, nodes));
   return {
     scale,
@@ -260,9 +276,12 @@ export function buildBodyGeometry(scene: Scene): SceneGeom {
     cells: [{ id: 'body', cell: body, nucleus: body, enabled: true, noNucleus: true }],
     organs,
     outlineScale: scale * 0.55,
-    particles: detail.particles,
-    mesh: detail.mesh,
-    anatomy: ANATOMY.map((pts) => pts.map(([x, y]) => map(x, y)) as Bezier),
+    particles: scene.module.bodyParticles ? detail.particles : undefined,
+    mesh: scene.module.bodyMesh ? detail.mesh : undefined,
+    anatomy,
+    bodyFill: true,
+    // The glow reaches 1.5–8.5% of the body's height in from the outline.
+    glowDepth: (0.015 + 0.07 * Math.max(0, Math.min(1, scene.module.bodyGlow))) * h,
     pathways: startKeys.map((k) => ({ id: 'body', startDelay: 0, start: byKey.get(k)!.id })),
     receptors: [],
     nodes,
