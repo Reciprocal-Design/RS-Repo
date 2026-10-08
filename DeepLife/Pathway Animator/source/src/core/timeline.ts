@@ -62,12 +62,13 @@ export function buildSchedule(scene: Scene): Schedule {
   const hop = Math.max(0.05, a.layerDuration);
   const durationOf = (e: EdgeGeom) => {
     const to = g.nodeById.get(e.to)!;
-    return to.region === 'nucleus' ? hop * Math.max(0.1, a.nucleusSpeedFactor) : hop;
+    return (to.region === 'nucleus' ? hop * Math.max(0.1, a.nucleusSpeedFactor) : hop) * (e.hops ?? 1);
   };
 
   const outgoing = new Map<string, EdgeGeom[]>();
   const linksFrom = new Map<string, EdgeGeom[]>();
   for (const e of g.edges) {
+    if (e.dim) continue; // off the traced route: drawn, never signalled
     const m = e.link ? linksFrom : outgoing;
     const list = m.get(e.from) ?? [];
     list.push(e);

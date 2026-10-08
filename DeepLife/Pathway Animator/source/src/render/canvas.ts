@@ -18,12 +18,13 @@ export function drawDisplayList(ctx: Ctx, list: DisplayList, opts: CanvasDrawOpt
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   const prims = list.prims;
+  for (const u of list.underlays ?? []) if (u.opacity > 0) drawCachedLayer(ctx, u.prims, u.prims, u.prims.length, u.opacity);
   // The static layer (outlines with their glowing rims, receptors, base edges;
   // for a cell map, every cell's) is the same in every frame of a scene: draw
   // it once to a bitmap at device resolution and reuse it during playback.
   let i = 0;
   if (list.staticCount > 0) {
-    drawStaticLayer(ctx, list);
+    drawCachedLayer(ctx, list.staticKey, prims, list.staticCount, 1);
     i = list.staticCount;
   }
   for (; i < prims.length; i++) drawPrim(ctx, prims[i]);
@@ -36,24 +37,25 @@ interface StaticCache {
 }
 const staticCache = new WeakMap<object, StaticCache>();
 
-function drawStaticLayer(ctx: Ctx, list: DisplayList) {
+/** Draw the first `count` prims through a bitmap cached under `cacheKey`, faded by `opacity`. */
+function drawCachedLayer(ctx: Ctx, cacheKey: object, prims: Prim[], count: number, opacity: number) {
   const m = ctx.getTransform();
   const { width, height } = ctx.canvas;
-  const key = [width, height, m.a, m.b, m.c, m.d, m.e, m.f, list.staticCount].join(',');
-  let hit = staticCache.get(list.staticKey);
+  const key = [width, height, m.a, m.b, m.c, m.d, m.e, m.f, count].join(',');
+  let hit = staticCache.get(cacheKey);
   if (!hit || hit.key !== key) {
     const bitmap = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : Object.assign(document.createElement('canvas'), { width, height });
     const off = bitmap.getContext('2d') as Ctx;
     off.setTransform(m);
     off.lineCap = 'round';
     off.lineJoin = 'round';
-    for (let k = 0; k < list.staticCount; k++) drawPrim(off, list.prims[k]);
+    for (let k = 0; k < count; k++) drawPrim(off, prims[k]);
     hit = { key, bitmap };
-    staticCache.set(list.staticKey, hit);
+    staticCache.set(cacheKey, hit);
   }
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = opacity;
   ctx.globalCompositeOperation = 'source-over';
   ctx.drawImage(hit.bitmap, 0, 0);
   ctx.restore();

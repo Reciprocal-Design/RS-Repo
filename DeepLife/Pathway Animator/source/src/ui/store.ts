@@ -1,11 +1,40 @@
 import { create } from 'zustand';
-import { defaultScene, makePathway } from '../core/defaults';
+import { makePathway } from '../core/defaults';
 import { mapCellAt } from '../core/cellMap';
 import { withStructureOf } from '../core/layers';
+import { MODULES, moduleScene, shareScene, type StarterMap } from '../core/modules';
 import { hash, randomSeed } from '../core/rng';
+import { importCellMapSvg } from '../core/svgImport';
 import type { CellMap, LayerSpec, Pathway, Scene, Vec2 } from '../core/types';
+import tissueSvg from '../samples/tissue.svg?raw';
+
+/** The sample cell cluster the tissue module starts from. */
+export function sampleTissue(): StarterMap | undefined {
+  try {
+    const m = importCellMapSvg(tissueSvg, 1);
+    return { name: 'sample tissue', viewBox: m.viewBox, cells: m.cells };
+  } catch {
+    return undefined;
+  }
+}
+
+/** One scene per module tab, all from the same seed so they show the same pathway. */
+function initialTabs(): Scene[] {
+  const tissue = sampleTissue();
+  return MODULES.map((m) => moduleScene(m.kind, 1234, tissue));
+}
+
+const TABS = initialTabs();
 
 interface AppState {
+  /** One scene per module tab; `scene` is always `tabs[active]`. */
+  tabs: Scene[];
+  active: number;
+  setTab: (index: number) => void;
+  /** Copy this tab's look and pathway to every other tab (each keeps its module settings). */
+  shareToAllTabs: () => void;
+  /** A loaded scene file, into the current tab: it keeps the tab's module. */
+  loadScene: (scene: Scene) => void;
   scene: Scene;
   time: number;
   playing: boolean;
@@ -29,32 +58,44 @@ interface AppState {
   clickMapCell: (p: Vec2, reroll: boolean) => void;
 }
 
+/** State with the current tab's scene replaced. */
+const put = (st: AppState, scene: Scene) => ({ scene, tabs: st.tabs.map((s, i) => (i === st.active ? scene : s)) });
+
 export const useApp = create<AppState>((set) => ({
-  scene: defaultScene(),
+  tabs: TABS,
+  active: 0,
+  scene: TABS[0],
+  setTab: (index) => set((st) => (index === st.active ? {} : { active: index, scene: st.tabs[index] })),
+  shareToAllTabs: () =>
+    set((st) => ({ tabs: st.tabs.map((s, i) => (i === st.active ? s : shareScene(st.scene, s))) })),
+  loadScene: (loaded) =>
+    set((st) => {
+      // A file saved before modules existed takes the tab's module settings;
+      // any other keeps its own settings but the tab's kind.
+      const own = st.scene.module;
+      const module = loaded.module.kind === 'custom' ? { ...own } : { ...loaded.module, kind: own.kind };
+      return put(st, { ...loaded, module });
+    }),
   time: 0,
   playing: false,
-  setScene: (update) => set((st) => ({ scene: update(st.scene) })),
+  setScene: (update) => set((st) => put(st, update(st.scene))),
   setPathway: (index, update) =>
-    set((st) => ({
-      scene: { ...st.scene, pathways: st.scene.pathways.map((p, i) => (i === index ? update(p) : p)) },
-    })),
+    set((st) => put(st, { ...st.scene, pathways: st.scene.pathways.map((p, i) => (i === index ? update(p) : p)) })),
   editLayers: (index, update, opts) =>
     set((st) => {
       const { scene } = st;
       const shared = scene.sameLayersForAll && !opts?.countsOnly;
       const model = update(scene.pathways[index].layers);
-      return {
-        scene: {
-          ...scene,
-          pathways: scene.pathways.map((p, i) => {
-            if (i === index) return { ...p, layers: model };
-            if (!shared) return p;
-            // Pathways share a structure, so the same index-based edit lines up;
-            // fall back to copying the model if it somehow does not.
-            return { ...p, layers: withStructureOf(update(p.layers), model) };
-          }),
-        },
-      };
+      return put(st, {
+        ...scene,
+        pathways: scene.pathways.map((p, i) => {
+          if (i === index) return { ...p, layers: model };
+          if (!shared) return p;
+          // Pathways share a structure, so the same index-based edit lines up;
+          // fall back to copying the model if it somehow does not.
+          return { ...p, layers: withStructureOf(update(p.layers), model) };
+        }),
+      });
     }),
   setPathwayCount: (n) =>
     set((st) => {
@@ -70,30 +111,26 @@ export const useApp = create<AppState>((set) => ({
       if (s.sameLayersForAll) {
         for (let i = 1; i < count; i++) pathways[i] = { ...pathways[i], layers: withStructureOf(pathways[i].layers, pathways[0].layers) };
       }
-      return { scene: { ...s, pathwayCount: count, pathways } };
+      return put(st, { ...s, pathwayCount: count, pathways });
     }),
   // New scene seed (outlines, decorative receptors) and new seeds for every unlocked pathway.
   regenerateAll: () =>
     set((st) => {
       const seed = randomSeed();
-      return {
-        scene: {
-          ...st.scene,
-          seed,
-          pathways: st.scene.pathways.map((p, i) => (p.locked ? p : { ...p, seed: hash(seed, 'pathway', i) })),
-        },
-      };
+      return put(st, {
+        ...st.scene,
+        seed,
+        pathways: st.scene.pathways.map((p, i) => (p.locked ? p : { ...p, seed: hash(seed, 'pathway', i) })),
+      });
     }),
   regeneratePathway: (index) =>
-    set((st) => ({
-      scene: {
-        ...st.scene,
-        pathways: st.scene.pathways.map((p, i) => (i === index ? { ...p, seed: randomSeed() } : p)),
-      },
+    set((st) => put(st, {
+      ...st.scene,
+      pathways: st.scene.pathways.map((p, i) => (i === index ? { ...p, seed: randomSeed() } : p)),
     })),
   setTime: (time) => set({ time }),
   setPlaying: (playing) => set({ playing }),
-  setCellMap: (update) => set((st) => ({ scene: { ...st.scene, cellMap: update(st.scene.cellMap) } })),
+  setCellMap: (update) => set((st) => put(st, { ...st.scene, cellMap: update(st.scene.cellMap) })),
   clickMapCell: (p, reroll) =>
     set((st) => {
       const hit = mapCellAt(st.scene, p);
@@ -101,6 +138,6 @@ export const useApp = create<AppState>((set) => ({
       const cells = st.scene.cellMap.cells.map((c) =>
         c.id !== hit.id ? c : reroll ? { ...c, enabled: true, seed: randomSeed() } : { ...c, enabled: !c.enabled },
       );
-      return { scene: { ...st.scene, cellMap: { ...st.scene.cellMap, cells } } };
+      return put(st, { ...st.scene, cellMap: { ...st.scene.cellMap, cells } });
     }),
 }));

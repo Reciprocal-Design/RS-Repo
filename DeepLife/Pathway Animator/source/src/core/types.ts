@@ -93,6 +93,32 @@ export interface Scene {
   crosstalk: { enabled: boolean; amount: number };
   animation: AnimationSettings;
   cellMap: CellMap;
+  module: ModuleSettings;
+}
+
+/**
+ * The client's views of one pathway, one per tab. Each module changes how the
+ * same network is shown; 'custom' shows it unchanged.
+ */
+export type ModuleKind = 'targetId' | 'moa' | 'combination' | 'toxicity' | 'tissue' | 'custom';
+
+export interface ModuleSettings {
+  kind: ModuleKind;
+  /** Target ID, target combination: only the receptor and its DEGs, joined directly. */
+  directOnly: boolean;
+  /** Ring each pathway receptor as a drug target. */
+  markTargets: boolean;
+  targetColor: string;
+  /** MOA elucidation: the DEG whose route is traced (1 = leftmost active DEG; 0 = every DEG). */
+  focusDeg: number;
+  /** MOA elucidation: how many routes into the DEG are traced (1–3), each one protein per layer. */
+  routes: number;
+  /** MOA elucidation: how visible the proteins off the traced route stay, 0–1. */
+  dimOpacity: number;
+  /** Target toxicity: how many DEGs of each pathway are toxic. */
+  toxicDegs: number;
+  /** Target toxicity: the colour the cell and toxic DEGs turn. */
+  toxicColor: string;
 }
 
 /** One cell of an imported map. Coordinates are flat x,y pairs in the map's own units. */
@@ -136,6 +162,10 @@ export interface NodeGeom {
   rho: number;
   /** Signed arc-length position across the node's row (0 on the pathway axis). */
   lateral: number;
+  /** Off the traced route (MOA elucidation): drawn faint, never signalled. */
+  dim?: boolean;
+  /** A DEG that makes the cell toxic when it fires (target toxicity). */
+  toxic?: boolean;
 }
 
 export type Bezier = [Vec2, Vec2, Vec2, Vec2];
@@ -155,6 +185,10 @@ export interface EdgeGeom {
   depthTo: number;
   /** A cell-to-cell link into a neighbour's relay receptor (cell maps). */
   link?: boolean;
+  /** Off the traced route (MOA elucidation): drawn faint, never signalled. */
+  dim?: boolean;
+  /** Layer hops this edge stands for (a direct receptor → DEG edge spans several); scales its travel time. */
+  hops?: number;
 }
 
 export interface ReceptorGeom {
@@ -165,6 +199,8 @@ export interface ReceptorGeom {
   inner: Vec2; // inner end, where edges start
   /** The receptor node this capsule belongs to (pathway and relay receptors). */
   nodeId?: string;
+  /** Marked as a drug target. */
+  target?: boolean;
 }
 
 export interface Outline {

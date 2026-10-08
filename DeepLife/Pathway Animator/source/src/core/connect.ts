@@ -22,7 +22,7 @@ export function edgeCurve(a: NodeGeom, b: NodeGeom, curvature: number): Bezier {
   ];
 }
 
-function makeEdge(scene: Scene, a: NodeGeom, b: NodeGeom, crosstalk: boolean, rng: Rng): EdgeGeom {
+export function makeEdge(scene: Scene, a: NodeGeom, b: NodeGeom, crosstalk: boolean, rng: Rng): EdgeGeom {
   const bezier = edgeCurve(a, b, scene.style.edgeCurvature);
   const lut = arcLengthLut(bezier);
   const { min, max } = scene.style.edgeOpacity;

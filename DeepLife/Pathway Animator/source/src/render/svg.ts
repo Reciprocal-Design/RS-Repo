@@ -50,6 +50,13 @@ export function displayListToSvg(list: DisplayList, opts: SvgOptions = {}): stri
   const clips = new Set<string>();
   const groups = new Map<Group, string[]>(GROUP_ORDER.map((g) => [g, []]));
 
+  // Underlays (a membrane cross-fading to another colour) come first in their group, each as one faded group.
+  for (const u of list.underlays ?? []) {
+    if (u.opacity <= 0.001) continue;
+    const els = u.prims.map((p) => primToSvg(p, defs, clips)).filter((el): el is string => !!el);
+    if (!els.length) continue;
+    groups.get(u.prims[0].group)!.push(`<g id="${safeId(u.id)}"${opacityAttr('opacity', u.opacity)}>\n${els.join('\n')}\n</g>`);
+  }
   for (const p of list.prims) {
     const el = primToSvg(p, defs, clips);
     if (el) groups.get(p.group)!.push(el);

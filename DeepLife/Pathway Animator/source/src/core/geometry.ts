@@ -1,6 +1,7 @@
 import { buildMapGeometry, mapActive } from './cellMap';
 import { connectCrosstalk, connectPathway } from './connect';
 import { cellFrame, decorativeReceptors, layoutPathway } from './layout';
+import { applyModule } from './modules';
 import type { NodeGeom, Scene, SceneGeom } from './types';
 
 const cache = new WeakMap<Scene, SceneGeom>();
@@ -14,7 +15,7 @@ const cache = new WeakMap<Scene, SceneGeom>();
 export function buildGeometry(scene: Scene): SceneGeom {
   const hit = cache.get(scene);
   if (hit) return hit;
-  const geom = (mapActive(scene) && buildMapGeometry(scene)) || buildCellGeometry(scene);
+  const geom = applyModule(scene, (mapActive(scene) && buildMapGeometry(scene)) || buildCellGeometry(scene));
   cache.set(scene, geom);
   return geom;
 }

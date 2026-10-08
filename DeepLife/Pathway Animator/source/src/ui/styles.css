@@ -132,6 +132,26 @@ input[type=range] { accent-color: var(--accent); }
 .chip.on { color: var(--text); border-color: #444b63; }
 
 .stage { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+/* Module tabs */
+.module-tabs {
+  display: flex; gap: 2px; padding: 0 12px; overflow-x: auto;
+  border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.module-tab {
+  display: flex; align-items: center; gap: 7px; white-space: nowrap;
+  padding: 13px 14px 11px; border: 0; border-bottom: 2px solid transparent;
+  background: none; color: var(--dim); font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.module-tab em {
+  font: 600 10.5px ui-monospace, 'SF Mono', monospace; font-style: normal;
+  width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center;
+  border: 1px solid var(--line); color: var(--dim);
+}
+.module-tab:hover { color: var(--text); }
+.module-tab.on { color: var(--text); border-bottom-color: var(--accent); }
+.module-tab.on em { border-color: var(--accent); color: var(--accent); }
+.module-blurb { margin-top: 0; }
 .preview {
   flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
   padding: 20px;

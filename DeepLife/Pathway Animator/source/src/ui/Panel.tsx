@@ -6,6 +6,7 @@ import { ColorAlphaField, ColorField, NumberInput, Section, Select, Slider, Togg
 import { AnimationSection } from './AnimationSection';
 import { CellMapSection } from './CellMapSection';
 import { ExportSection } from './ExportSection';
+import { ModuleSection } from './ModuleSection';
 import { OutlineControls } from './OutlineControls';
 import { CrosstalkSection, PathwaysSection } from './PathwaysSection';
 import { useApp } from './store';
@@ -41,6 +42,8 @@ export function Panel() {
           {warnings.map((w) => <p key={w}>{w}</p>)}
         </div>
       )}
+
+      <ModuleSection />
 
       <Section title="Scene">
         <div className="row">

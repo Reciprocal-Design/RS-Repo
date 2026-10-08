@@ -122,6 +122,7 @@ export function ExportSection() {
   const scene = useApp((s) => s.scene);
   const time = useApp((s) => s.time);
   const setScene = useApp((s) => s.setScene);
+  const loadScene = useApp((s) => s.loadScene);
   const setTime = useApp((s) => s.setTime);
   const setPlaying = useApp((s) => s.setPlaying);
 
@@ -225,7 +226,7 @@ export function ExportSection() {
             const loaded = await readSceneFile(file);
             setPlaying(false);
             setTime(0);
-            setScene(() => loaded);
+            loadScene(loaded);
           });
         }}
       />

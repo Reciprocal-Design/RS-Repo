@@ -1,6 +1,6 @@
-import { DEFAULT_ANIMATION, defaultCellMap, defaultLayers, defaultScene, makePathway } from './defaults';
+import { DEFAULT_ANIMATION, defaultCellMap, defaultLayers, defaultModule, defaultScene, makePathway } from './defaults';
 import { MAX_LAYERS, MAX_NODES, MIN_LAYERS } from './layers';
-import type { CellMap, LayerSpec, MapCell, Pathway, Region, Scene } from './types';
+import type { CellMap, LayerSpec, MapCell, ModuleKind, ModuleSettings, Pathway, Region, Scene } from './types';
 
 // Scene JSON: save the full Scene, and load it back tolerantly. Missing fields
 // take their defaults and out-of-range values are clamped, so older or
@@ -87,6 +87,23 @@ function normalizeCellMap(raw: unknown): CellMap {
   };
 }
 
+const MODULE_KINDS: ModuleKind[] = ['targetId', 'moa', 'combination', 'toxicity', 'tissue', 'custom'];
+
+/** Scenes saved before modules existed show their pathway unchanged ('custom'). */
+function normalizeModule(raw: unknown): ModuleSettings {
+  const kind = isObj(raw) && MODULE_KINDS.includes(raw.kind as ModuleKind) ? (raw.kind as ModuleKind) : 'custom';
+  const base = defaultModule(kind);
+  const m = merge(base, raw);
+  return {
+    ...m,
+    kind,
+    focusDeg: Math.round(num(m.focusDeg, base.focusDeg, 0, 10)),
+    routes: Math.round(num(m.routes, base.routes, 1, 3)),
+    dimOpacity: num(m.dimOpacity, base.dimOpacity, 0, 1),
+    toxicDegs: Math.round(num(m.toxicDegs, base.toxicDegs, 0, 10)),
+  };
+}
+
 export function normalizeScene(raw: unknown): Scene {
   if (!isObj(raw) || !isObj(raw.canvas) || !Array.isArray(raw.pathways)) {
     throw new Error('This file is not a Pathway Animator scene.');
@@ -124,6 +141,7 @@ export function normalizeScene(raw: unknown): Scene {
   s.animation.density = num(s.animation.density, DEFAULT_ANIMATION.density, 0, 1);
   s.crosstalk.amount = num(s.crosstalk.amount, 0.4, 0, 1);
   s.cellMap = normalizeCellMap(raw.cellMap);
+  s.module = normalizeModule(raw.module);
 
   const rawPathways = raw.pathways as unknown[];
   const pathways: Pathway[] = [];

@@ -3,7 +3,7 @@ import { makeRamp, parseColor, rgbaString, type RGBA } from '../core/color';
 import { buildGeometry } from '../core/geometry';
 import { closedSplineSegments } from '../core/outline';
 import { buildSchedule, cycleTime, ease, FADE_OUT, pulseEnvelope, since } from '../core/timeline';
-import type { Bezier, OutlineLook, Scene, Vec2 } from '../core/types';
+import type { Bezier, OutlineLook, Scene, SceneGeom, Vec2 } from '../core/types';
 
 // A flat list of draw primitives, consumed by both the Canvas and SVG backends.
 
@@ -52,12 +52,21 @@ export interface DisplayList {
    */
   staticCount: number;
   staticKey: object;
+  /**
+   * Layers drawn between the background and the static layer, each faded by
+   * its opacity. Each layer's prims are the same array in every frame, so a
+   * backend may render one once and reuse it (target toxicity cross-fades the
+   * membrane from its own colour to red this way).
+   */
+  underlays?: { id: string; prims: Prim[]; opacity: number }[];
 }
 
 const TRAIL_SEGMENTS = 12;
 /** Seconds a pathway takes to light up from grey (grey idle mode). */
 const RISE = 0.3;
 const GLOW_LAYERS = 26;
+/** Seconds the cell takes to turn red once a toxic DEG fires. */
+const TINT_RISE = 0.8;
 
 /**
  * An outline as a plain line, or as a glowing rim: a stack of strokes clipped
@@ -130,6 +139,32 @@ function buildOutlinePrims(
   return out;
 }
 const mixWhite = ([r, g, b]: RGBA, k: number): RGBA => [r + (255 - r) * k, g + (255 - g) * k, b + (255 - b) * k, 1];
+
+/** The membrane in the toxicity colour: its glow turns that colour, its rim a pale tint of it. */
+function toxicLook(scene: Scene): Scene['cell'] {
+  const c = parseColor(scene.module.toxicColor);
+  const a = parseColor(scene.cell.color)[3];
+  return {
+    ...scene.cell,
+    glowColor: rgbaString([c[0], c[1], c[2], 1]),
+    edgeColor: rgbaString(mixWhite(c, 0.78)),
+    color: rgbaString([c[0], c[1], c[2], Math.max(a, 0.6)]),
+  };
+}
+
+/** Every cell's membrane in one look, as one array per geometry and look (stable across frames). */
+const membraneCache = new WeakMap<SceneGeom, Map<string, Prim[]>>();
+function membranes(g: SceneGeom, look: Scene['cell'], prefix: string): Prim[] {
+  const key = JSON.stringify([look, prefix]);
+  let byKey = membraneCache.get(g);
+  if (!byKey) membraneCache.set(g, (byKey = new Map()));
+  let prims = byKey.get(key);
+  if (!prims) {
+    prims = g.cells.flatMap((c) => outlinePrims('membrane', c.cell.points, look, g.scale, `${prefix}${c.id ? `${c.id}-` : ''}`));
+    byKey.set(key, prims);
+  }
+  return prims;
+}
 const withAlpha = ([r, g, b]: RGBA, a: number) => rgbaString([r, g, b, a]);
 
 /**
@@ -155,11 +190,33 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
   const fade = period ? 1 : an.loop ? Math.max(0, Math.min(1, (schedule.total - tau) / FADE_OUT)) : 1;
   const litHold = Math.max(0, an.holdAtEnd);
 
+  // Target toxicity: the cell turns red once a toxic DEG fires, and back
+  // again as the loop closes (or, in continuous mode, before it fires again).
+  const toxicity = scene.module.kind === 'toxicity';
+  let tint = 0;
+  if (toxicity && signal) {
+    let t0 = Infinity;
+    for (const n of g.nodes) if (n.toxic) t0 = Math.min(t0, schedule.fire.get(n.id) ?? Infinity);
+    if (Number.isFinite(t0)) {
+      const x = since(tau, t0, period);
+      tint = period
+        ? Math.min(x / TINT_RISE, (period - x) / FADE_OUT)
+        : Math.min(1, x / TINT_RISE) * fade;
+      tint = Math.max(0, Math.min(1, tint));
+    }
+  }
+  // In toxicity mode the membranes are cross-faded underlays instead of static prims.
+  const underlays: DisplayList['underlays'] = [];
+  if (toxicity && scene.cell.visible) {
+    underlays.push({ id: 'membrane-own', prims: membranes(g, scene.cell, ''), opacity: 1 - tint });
+    underlays.push({ id: 'membrane-toxic', prims: membranes(g, toxicLook(scene), 'toxic-'), opacity: tint });
+  }
+
   // Every cell's outlines (one cell, or each cell of a map), before anything else,
   // so the canvas backend can cache them all as one static bitmap.
   for (const c of g.cells) {
     const prefix = c.id ? `${c.id}-` : '';
-    if (scene.cell.visible) prims.push(...outlinePrims('membrane', c.cell.points, scene.cell, s, prefix));
+    if (scene.cell.visible && !toxicity) prims.push(...outlinePrims('membrane', c.cell.points, scene.cell, s, prefix));
     if (scene.nucleus.visible) prims.push(...outlinePrims('nucleus', c.nucleus.points, scene.nucleus, s, prefix));
   }
 
@@ -184,19 +241,32 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
     }
   }
 
+  // Drug targets: a ring round each targeted receptor.
+  for (const r of g.receptors) {
+    if (!r.target) continue;
+    prims.push({
+      kind: 'ring', id: `${r.id}-target`, group: 'receptors', c: r.center, r: Math.max(len, wid) * 0.72,
+      stroke: scene.module.targetColor, width: Math.max(0.75, 1.5 * s), opacity: 0.9,
+    });
+  }
+
   // Grey idle mode: the network rests in grey, and a pathway lights up in
   // colour while a signal runs through it, then fades back.
   const grey = st.greyIdle;
   const idle = Math.max(0, Math.min(1, st.idleOpacity));
   const greyRgb = parseColor(st.inactiveNodeColor);
   const greyCss = rgbaString([greyRgb[0], greyRgb[1], greyRgb[2], 1]);
+  // MOA focus: the network off the traced route rests faint and grey.
+  const dimA = Math.max(0, Math.min(1, scene.module.dimOpacity));
 
   for (const e of g.edges) {
     prims.push({
       kind: 'bezier', id: e.id, group: e.crosstalk ? 'crosstalk' : 'edges', p: e.bezier, width: st.edgeWidth * s,
-      ...(grey
-        ? { from: greyCss, to: greyCss, opacity: e.opacity * idle }
-        : { from: color(e.depthFrom), to: color(e.depthTo), opacity: e.opacity }),
+      ...(e.dim
+        ? { from: greyCss, to: greyCss, opacity: e.opacity * dimA }
+        : grey
+          ? { from: greyCss, to: greyCss, opacity: e.opacity * idle }
+          : { from: color(e.depthFrom), to: color(e.depthTo), opacity: e.opacity }),
     });
   }
 
@@ -223,7 +293,7 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
     }
     for (const e of g.edges) {
       const a = act.get(e.pathwayId) ?? 0;
-      if (a <= 0) continue;
+      if (a <= 0 || e.dim) continue;
       prims.push({
         kind: 'bezier', id: `${e.id}-on`, group: e.crosstalk ? 'crosstalk' : 'edges', p: e.bezier,
         width: st.edgeWidth * s, from: color(e.depthFrom), to: color(e.depthTo), opacity: e.opacity * a,
@@ -313,6 +383,8 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
   // for each later arrival from a convergent or crosstalk edge; on a cell map,
   // each relay that runs the pathway again fires it again.
   const pulse = new Map<string, number>();
+  const toxicRgb = parseColor(scene.module.toxicColor);
+  const toxicFill = rgbaString([toxicRgb[0], toxicRgb[1], toxicRgb[2], 1]);
   if (signal) {
     for (const n of g.nodes) {
       if (!n.active) continue;
@@ -324,7 +396,7 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
       const n = g.nodeById.get(id)!;
       prims.push({
         kind: 'glow', id: `${id}-flash`, group: 'signal', blend: 'lighter', c: n,
-        r: st.haloRadius * s * (1.4 + 1.6 * e), color: withAlpha(ramp(n.depth), 0.7 * e),
+        r: st.haloRadius * s * (n.toxic ? 2 : 1) * (1.4 + 1.6 * e), color: withAlpha(n.toxic ? toxicRgb : ramp(n.depth), 0.7 * e),
       });
     }
   }
@@ -336,6 +408,7 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
   for (const n of active) {
     const isReceptor = n.layer === 0;
     if (isReceptor && st.receptorStyle === 'capsule') continue;
+    if (n.dim) continue;
     const a = on(n);
     if (a <= 0) continue;
     prims.push({
@@ -353,10 +426,13 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
         r: st.activeNodeRadius * 1.6 * s * grow(n.id), angle: rec.angle, fill: nodeFill(a),
         ...(a < 1 ? { opacity: idle + (1 - idle) * a } : {}),
       });
+    } else if (n.dim) {
+      prims.push({ kind: 'circle', id: n.id, group: 'nodes-active', c: n, r: st.activeNodeRadius * s, fill: greyCss, opacity: dimA });
     } else {
       const a = on(n);
       prims.push({
-        kind: 'circle', id: n.id, group: 'nodes-active', c: n, r: st.activeNodeRadius * s * grow(n.id), fill: nodeFill(a),
+        kind: 'circle', id: n.id, group: 'nodes-active', c: n, r: st.activeNodeRadius * s * grow(n.id) * (n.toxic ? 1.25 : 1),
+        fill: n.toxic ? toxicFill : nodeFill(a),
         ...(a < 1 ? { opacity: idle + (1 - idle) * a } : {}),
       });
     }
@@ -376,5 +452,6 @@ export function buildDisplayList(scene: Scene, t = 0, opts: { signal?: boolean }
     prims,
     staticCount,
     staticKey: g,
+    ...(underlays.length ? { underlays } : {}),
   };
 }

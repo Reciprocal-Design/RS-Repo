@@ -19,6 +19,25 @@ The built files one level up are what GitHub Pages serves, so rebuild and commit
 - `src/render/` display list + Canvas and SVG backends; `render(ctx, scene, t)` is the single canvas entry point
 - `src/ui/` React app, store and exporters
 
+## Module tabs
+
+Six tabs across the top, one per client module, each with its own scene. All start from the same seed, so they show
+the same pathway; "Use this look and pathway in all tabs" copies the current tab's seed, pathway, cell, style and
+animation to the others (each keeps its module settings, pathway count, start delays and cell map). The modules are
+a preset scene plus a pure transform of the geometry (`src/core/modules.ts`):
+
+1. **Target ID**: only the receptor and its active DEGs, joined directly; the receptor is ringed as the drug target.
+2. **MOA elucidation**: one to three routes from the receptor into a chosen DEG (one protein per layer) stay lit and
+   carry the signal; the rest of the network is dimmed.
+3. **Target combination**: several ringed receptors (one per pathway) fire together, each straight to its DEGs.
+4. **Target toxicity**: when the signal reaches a toxic DEG (drawn red), the cell's membrane cross-fades to red,
+   and back as the loop closes.
+5. **Tissue-level target ID** (indication extension): a cell map, starting from the bundled sample tissue.
+6. **Module 6**: not defined yet; the standard animator.
+
+Scene JSON saves the current tab, including its module settings; a file loads into the current tab and keeps the
+tab's module.
+
 ## Video export
 
 "Export → Video" renders the animation frame by frame (not a screen recording, so every frame is exact at

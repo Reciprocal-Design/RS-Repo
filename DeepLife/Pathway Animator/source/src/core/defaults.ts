@@ -1,5 +1,5 @@
 import { hash } from './rng';
-import type { AnimationSettings, CellMap, LayerSpec, Pathway, Scene } from './types';
+import type { AnimationSettings, CellMap, LayerSpec, ModuleKind, ModuleSettings, Pathway, Scene } from './types';
 
 export function defaultCellMap(): CellMap {
   return {
@@ -14,6 +14,21 @@ export function defaultCellMap(): CellMap {
     relayHops: 3,
     startShare: 1,
     variation: 0.4,
+  };
+}
+
+/** Module settings; 'custom' (the plain animator) unless a kind is given. */
+export function defaultModule(kind: ModuleKind = 'custom'): ModuleSettings {
+  return {
+    kind,
+    directOnly: kind === 'targetId' || kind === 'combination',
+    markTargets: kind === 'targetId' || kind === 'combination' || kind === 'toxicity',
+    targetColor: '#FFFFFF',
+    focusDeg: 1,
+    routes: 1,
+    dimOpacity: 0.22,
+    toxicDegs: 1,
+    toxicColor: '#FF2B45',
   };
 }
 
@@ -123,5 +138,6 @@ export function defaultScene(seed = 1234): Scene {
     crosstalk: { enabled: false, amount: 0.4 },
     animation: { ...DEFAULT_ANIMATION },
     cellMap: defaultCellMap(),
+    module: defaultModule(),
   };
 }
