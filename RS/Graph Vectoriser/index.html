@@ -686,8 +686,8 @@
         </svg>
       </div>
       <div class="drop-title">Drop graph image here</div>
-      <div class="drop-sub">PNG · JPG · WEBP · SVG accepted</div>
-      <input type="file" id="fileInput" accept="image/*">
+      <div class="drop-sub">PNG · JPG · WEBP · SVG · EMF accepted</div>
+      <input type="file" id="fileInput" accept="image/*,.emf">
     </div>
 
     <!-- Status -->
@@ -1019,6 +1019,291 @@ function buildSwatches() {
 }
 buildSwatches();
 
+// ── EMF → PNG ──────────────────────────────────────────────────────────────
+// Browsers can't display EMF, so we render the GDI records onto a canvas.
+// Covers the records produced by Office/Excel/Origin-style chart exports
+// (lines, polygons, curves, text, bitmaps, paths, clipping, transforms).
+// EMF+-only files (no GDI fallback records) are not supported.
+function emfToPngDataUrl(buf, maxSide = 2000) {
+  const dv = new DataView(buf);
+  if (buf.byteLength < 88 || dv.getUint32(0, true) !== 1 || dv.getUint32(40, true) !== 0x464D4520)
+    throw new Error('Not a valid EMF file');
+  const i32 = o => dv.getInt32(o, true);
+  const colour = v => `rgb(${v & 255},${(v >> 8) & 255},${(v >> 16) & 255})`;
+
+  // Drawing extent in device units (frame is 0.01 mm)
+  const devX = i32(72) || 1, devY = i32(76) || 1, mmX = i32(80) || 1, mmY = i32(84) || 1;
+  let L = i32(24) / 100 * devX / mmX, T = i32(28) / 100 * devY / mmY;
+  let R = i32(32) / 100 * devX / mmX, B = i32(36) / 100 * devY / mmY;
+  if (!(R > L && B > T)) { L = i32(8); T = i32(12); R = i32(16) + 1; B = i32(20) + 1; }
+  if (!(R > L && B > T)) throw new Error('EMF has no drawable extent');
+  const sc = maxSide / Math.max(R - L, B - T);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round((R - L) * sc));
+  canvas.height = Math.max(1, Math.round((B - T) * sc));
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const base = new DOMMatrix([sc, 0, 0, sc, -L * sc, -T * sc]);
+
+  const stockBrush = [
+    {c:'#fff'}, {c:'#c0c0c0'}, {c:'#808080'}, {c:'#404040'}, {c:'#000'}, null];
+  let st = {
+    wOrg:[0,0], wExt:[1,1], vOrg:[0,0], vExt:[1,1], aniso:false,
+    world:new DOMMatrix(), pen:{c:'#000', w:1, style:0, cap:'round', join:'round'},
+    brush:{c:'#fff'}, font:{h:12, face:'sans-serif', bold:false, italic:false, esc:0},
+    textColor:'#000', bkColor:'#fff', bkMode:2, align:0, fillRule:'evenodd', x:0, y:0
+  };
+  const stack = [], objs = {};
+  let inPath = false;
+
+  const applyTransform = () => {
+    const sx = st.aniso ? st.vExt[0] / st.wExt[0] : 1, sy = st.aniso ? st.vExt[1] / st.wExt[1] : 1;
+    const view = new DOMMatrix([sx, 0, 0, sy,
+      st.aniso ? st.vOrg[0] - st.wOrg[0] * sx : 0, st.aniso ? st.vOrg[1] - st.wOrg[1] * sy : 0]);
+    const m = base.multiply(view).multiply(st.world);
+    ctx.setTransform(m);
+  };
+  applyTransform();
+
+  const penPaint = () => {
+    const p = st.pen; if (!p) return false;
+    ctx.strokeStyle = p.c; ctx.lineWidth = Math.max(p.w, 1);
+    ctx.lineCap = p.cap; ctx.lineJoin = p.join;
+    const w = ctx.lineWidth;
+    ctx.setLineDash([[], [3*w, w], [w, w], [3*w, w, w, w], [3*w, w, w, w, w, w]][p.style] || []);
+    ctx.stroke(); return true;
+  };
+  const paint = (fill, stroke) => {
+    if (inPath) return;
+    if (fill && st.brush) { ctx.fillStyle = st.brush.c; ctx.fill(st.fillRule); }
+    if (stroke) penPaint();
+  };
+  const pts = (o, n, w16) => {
+    const a = [];
+    for (let k = 0; k < n; k++) a.push(w16
+      ? [dv.getInt16(o + k * 4, true), dv.getInt16(o + k * 4 + 2, true)]
+      : [i32(o + k * 8), i32(o + k * 8 + 4)]);
+    return a;
+  };
+  const poly = (list, close) => {
+    if (!list.length) return;
+    if (!inPath) ctx.beginPath();
+    ctx.moveTo(...list[0]); for (let k = 1; k < list.length; k++) ctx.lineTo(...list[k]);
+    if (close) ctx.closePath();
+  };
+  const bezier = (list, from) => {
+    if (!inPath) ctx.beginPath();
+    let k = 0; if (!from) { ctx.moveTo(...list[0]); k = 1; }
+    for (; k + 2 < list.length; k += 3) ctx.bezierCurveTo(...list[k], ...list[k+1], ...list[k+2]);
+  };
+  const arcPath = (o, kind) => {
+    const l = i32(o), t = i32(o+4), r = i32(o+8), b = i32(o+12);
+    const cx = (l + r) / 2, cy = (t + b) / 2, rx = Math.abs(r - l) / 2, ry = Math.abs(b - t) / 2;
+    if (!rx || !ry) return;
+    const ang = (x, y) => Math.atan2((y - cy) / ry, (x - cx) / rx);
+    const a1 = ang(i32(o+16), i32(o+20)), a2 = ang(i32(o+24), i32(o+28));
+    if (!inPath) ctx.beginPath();
+    if (kind === 'pie') ctx.moveTo(cx, cy);
+    ctx.ellipse(cx, cy, rx, ry, 0, a1, a2, true);
+    if (kind !== 'arc') ctx.closePath();
+  };
+  const dib = (offBmi, cbBmi, offBits, cbBits, rec) => {
+    const b = rec + offBmi, hs = dv.getUint32(b, true);
+    const w = i32(b + 4); let h = i32(b + 8); const bpp = dv.getUint16(b + 14, true);
+    const comp = dv.getUint32(b + 16, true);
+    if (comp !== 0 && comp !== 3) return null;
+    const top = h < 0; h = Math.abs(h);
+    let used = dv.getUint32(b + 32, true);
+    if (bpp <= 8 && !used) used = 1 << bpp;
+    const pal = [];
+    for (let k = 0; k < used && bpp <= 8; k++) {
+      const p = b + hs + k * 4; pal.push([dv.getUint8(p+2), dv.getUint8(p+1), dv.getUint8(p)]);
+    }
+    const bits = rec + offBits, stride = ((w * bpp + 31) >> 5) << 2;
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const cx2 = c.getContext('2d'), img = cx2.createImageData(w, h);
+    for (let y = 0; y < h; y++) {
+      const row = bits + (top ? y : h - 1 - y) * stride;
+      for (let x = 0; x < w; x++) {
+        let rgb, a = 255;
+        if (bpp === 24) rgb = [dv.getUint8(row+x*3+2), dv.getUint8(row+x*3+1), dv.getUint8(row+x*3)];
+        else if (bpp === 32) { rgb = [dv.getUint8(row+x*4+2), dv.getUint8(row+x*4+1), dv.getUint8(row+x*4)]; }
+        else {
+          const per = 8 / bpp, byte = dv.getUint8(row + Math.floor(x / per));
+          const idx = (byte >> (8 - bpp - (x % per) * bpp)) & ((1 << bpp) - 1);
+          rgb = pal[idx] || [0,0,0];
+        }
+        const q = (y * w + x) * 4; img.data[q] = rgb[0]; img.data[q+1] = rgb[1]; img.data[q+2] = rgb[2]; img.data[q+3] = a;
+      }
+    }
+    cx2.putImageData(img, 0, 0); return c;
+  };
+
+  let pos = 0;
+  while (pos + 8 <= buf.byteLength) {
+    const type = dv.getUint32(pos, true), size = dv.getUint32(pos + 4, true);
+    if (size < 8 || pos + size > buf.byteLength) break;
+    const o = pos + 8;
+    try {
+      switch (type) {
+        case 14: pos = buf.byteLength; break;
+        case 9: st.wExt = [i32(o) || 1, i32(o+4) || 1]; applyTransform(); break;
+        case 10: st.wOrg = [i32(o), i32(o+4)]; applyTransform(); break;
+        case 11: st.vExt = [i32(o) || 1, i32(o+4) || 1]; applyTransform(); break;
+        case 12: st.vOrg = [i32(o), i32(o+4)]; applyTransform(); break;
+        case 17: st.aniso = (i32(o) === 7 || i32(o) === 8); applyTransform(); break;
+        case 18: st.bkMode = i32(o); break;
+        case 19: st.fillRule = i32(o) === 2 ? 'nonzero' : 'evenodd'; break;
+        case 22: st.align = i32(o); break;
+        case 24: st.textColor = colour(dv.getUint32(o, true)); break;
+        case 25: st.bkColor = colour(dv.getUint32(o, true)); break;
+        case 27: st.x = i32(o); st.y = i32(o+4); if (inPath) ctx.moveTo(st.x, st.y); break;
+        case 54:
+          if (!inPath) { ctx.beginPath(); ctx.moveTo(st.x, st.y); }
+          ctx.lineTo(i32(o), i32(o+4)); st.x = i32(o); st.y = i32(o+4);
+          if (!inPath) paint(false, true);
+          break;
+        case 30:
+          ctx.beginPath(); ctx.rect(i32(o), i32(o+4), i32(o+8) - i32(o), i32(o+12) - i32(o+4)); ctx.clip(); break;
+        case 33: stack.push({...st, wOrg:[...st.wOrg], wExt:[...st.wExt], vOrg:[...st.vOrg], vExt:[...st.vExt]}); ctx.save(); break;
+        case 34: {
+          let n = Math.abs(i32(o)) || 1;
+          while (n-- > 0 && stack.length) { st = stack.pop(); ctx.restore(); }
+          applyTransform(); break;
+        }
+        case 35: case 36: {
+          const f = k => dv.getFloat32(o + k * 4, true);
+          const xf = new DOMMatrix([f(0), f(1), f(2), f(3), f(4), f(5)]);
+          const mode = type === 35 ? 4 : i32(o + 24);
+          st.world = mode === 1 ? new DOMMatrix() : mode === 2 ? st.world.multiply(xf)
+            : mode === 3 ? xf.multiply(st.world) : xf;
+          applyTransform(); break;
+        }
+        case 37: {
+          const id = dv.getUint32(o, true);
+          let ob = id & 0x80000000 ? (() => {
+            const s = id & 0x7fffffff;
+            if (s <= 5) return {kind:'brush', v:stockBrush[s]};
+            if (s === 6) return {kind:'pen', v:{c:'#fff', w:1, style:0, cap:'round', join:'round'}};
+            if (s === 7) return {kind:'pen', v:{c:'#000', w:1, style:0, cap:'round', join:'round'}};
+            if (s === 8) return {kind:'pen', v:null};
+            return {kind:'font', v:{h:12, face:'sans-serif', bold:false, italic:false, esc:0}};
+          })() : objs[id];
+          if (ob) st[ob.kind] = ob.v;
+          break;
+        }
+        case 40: delete objs[dv.getUint32(o, true)]; break;
+        case 38: {
+          const s = dv.getUint32(o+4, true) & 0xff;
+          objs[dv.getUint32(o, true)] = {kind:'pen', v: s === 5 ? null
+            : {c:colour(dv.getUint32(o+16, true)), w:i32(o+8), style:s, cap:'round', join:'round'}};
+          break;
+        }
+        case 95: {
+          const sty = dv.getUint32(o+20, true), s = sty & 0xff;
+          objs[dv.getUint32(o, true)] = {kind:'pen', v: s === 5 ? null
+            : {c:colour(dv.getUint32(o+32, true)), w:dv.getUint32(o+24, true), style:s <= 4 ? s : 0,
+               cap:{0x100:'square', 0x200:'butt'}[sty & 0xf00] || 'round',
+               join:{0x1000:'bevel', 0x2000:'miter'}[sty & 0xf000] || 'round'}};
+          break;
+        }
+        case 39: {
+          const s = dv.getUint32(o+4, true);
+          objs[dv.getUint32(o, true)] = {kind:'brush', v: s === 1 ? null : {c:colour(dv.getUint32(o+8, true))}};
+          break;
+        }
+        case 82: {
+          let face = ''; for (let k = 0; k < 32; k++) { const ch = dv.getUint16(o + 32 + k * 2, true); if (!ch) break; face += String.fromCharCode(ch); }
+          objs[dv.getUint32(o, true)] = {kind:'font', v:{h:Math.abs(i32(o+4)) || 12, face:face || 'sans-serif',
+            bold:i32(o+20) >= 600, italic:!!dv.getUint8(o+24), esc:i32(o+12) / 10}};
+          break;
+        }
+        case 59: ctx.beginPath(); inPath = true; break;
+        case 60: inPath = false; break;
+        case 61: ctx.closePath(); break;
+        case 62: ctx.fillStyle = st.brush ? st.brush.c : '#fff'; if (st.brush) ctx.fill(st.fillRule); break;
+        case 63: if (st.brush) { ctx.fillStyle = st.brush.c; ctx.fill(st.fillRule); } penPaint(); break;
+        case 64: penPaint(); break;
+        case 67: ctx.clip(st.fillRule); break;
+        case 43: case 42: case 44: {
+          const l = i32(o), t = i32(o+4), r = i32(o+8), b = i32(o+12);
+          if (!inPath) ctx.beginPath();
+          if (type === 43) ctx.rect(l, t, r - l, b - t);
+          else if (type === 42) ctx.ellipse((l+r)/2, (t+b)/2, Math.abs(r-l)/2, Math.abs(b-t)/2, 0, 0, Math.PI * 2);
+          else ctx.roundRect(Math.min(l,r), Math.min(t,b), Math.abs(r-l), Math.abs(b-t), [i32(o+16)/2]);
+          paint(true, true); break;
+        }
+        case 45: arcPath(o, 'arc'); paint(false, true); break;
+        case 46: arcPath(o, 'chord'); paint(true, true); break;
+        case 47: arcPath(o, 'pie'); paint(true, true); break;
+        case 2: case 85: bezier(pts(o + 20, i32(o + 16), type === 85), false); paint(false, true); break;
+        case 5: case 88: {
+          if (!inPath) { ctx.beginPath(); ctx.moveTo(st.x, st.y); }
+          bezier(pts(o + 20, i32(o + 16), type === 88), true); paint(false, true); break;
+        }
+        case 3: case 86: poly(pts(o + 20, i32(o + 16), type === 86), true); paint(true, true); break;
+        case 4: case 87: poly(pts(o + 20, i32(o + 16), type === 87), false); paint(false, true); break;
+        case 6: case 89: {
+          const l = pts(o + 20, i32(o + 16), type === 89);
+          poly([[st.x, st.y], ...l], false);
+          if (l.length) [st.x, st.y] = l[l.length - 1];
+          paint(false, true); break;
+        }
+        case 7: case 8: case 90: case 91: {
+          const w16 = type > 8, closed = type === 8 || type === 91;
+          const np = i32(o + 16), counts = [];
+          for (let k = 0; k < np; k++) counts.push(dv.getUint32(o + 24 + k * 4, true));
+          let p = o + 24 + np * 4;
+          if (!inPath) ctx.beginPath();
+          for (const c of counts) { poly(pts(p, c, w16), closed); p += c * (w16 ? 4 : 8); }
+          paint(closed, true); break;
+        }
+        case 83: case 84: {
+          const rx = i32(o + 28), ry = i32(o + 32), n = i32(o + 36), off = dv.getUint32(o + 40, true);
+          let s = '';
+          for (let k = 0; k < n; k++) s += type === 84
+            ? String.fromCharCode(dv.getUint16(pos + off + k * 2, true))
+            : String.fromCharCode(dv.getUint8(pos + off + k));
+          const f = st.font, a = st.align;
+          ctx.save();
+          ctx.translate(rx, ry); if (f.esc) ctx.rotate(-f.esc * Math.PI / 180);
+          ctx.font = `${f.italic ? 'italic ' : ''}${f.bold ? 'bold ' : ''}${f.h}px "${f.face}", sans-serif`;
+          ctx.textAlign = (a & 6) === 6 ? 'center' : (a & 6) === 2 ? 'right' : 'left';
+          ctx.textBaseline = (a & 24) === 24 ? 'alphabetic' : (a & 8) ? 'bottom' : 'top';
+          if (st.bkMode === 2) {
+            const m = ctx.measureText(s), x0 = ctx.textAlign === 'center' ? -m.width / 2 : ctx.textAlign === 'right' ? -m.width : 0;
+            ctx.fillStyle = st.bkColor; ctx.fillRect(x0, 0, m.width, f.h);
+          }
+          ctx.fillStyle = st.textColor; ctx.fillText(s, 0, 0);
+          ctx.restore(); break;
+        }
+        case 81: {
+          const xD = i32(o+16), yD = i32(o+20), xS = i32(o+24), yS = i32(o+28), cxS = i32(o+32), cyS = i32(o+36);
+          const cxD = i32(o+64), cyD = i32(o+68);
+          const c = dib(dv.getUint32(o+40, true), dv.getUint32(o+44, true), dv.getUint32(o+48, true), dv.getUint32(o+52, true), pos);
+          if (c) {
+            ctx.save(); ctx.imageSmoothingEnabled = true;
+            ctx.translate(xD, yD); ctx.scale(Math.sign(cxD) || 1, Math.sign(cyD) || 1);
+            ctx.drawImage(c, xS, yS, cxS, cyS, 0, 0, Math.abs(cxD), Math.abs(cyD));
+            ctx.restore();
+          }
+          break;
+        }
+        case 76: {
+          const offBmi = dv.getUint32(o + 76, true), cbBmi = dv.getUint32(o + 80, true);
+          if (cbBmi) {
+            const c = dib(offBmi, cbBmi, dv.getUint32(o + 84, true), dv.getUint32(o + 88, true), pos);
+            if (c) ctx.drawImage(c, i32(o+36), i32(o+40), i32(o+24), i32(o+28), i32(o+16), i32(o+20), i32(o+24), i32(o+28));
+          }
+          break;
+        }
+      }
+    } catch (err) { /* skip a malformed record, keep rendering */ }
+    pos += size;
+  }
+  return canvas.toDataURL('image/png');
+}
+
 // ── Drop Zone ──────────────────────────────────────────────────────────────
 dropZone.addEventListener('click', () => { if(!dropZone.classList.contains('has-image')) fileInput.click(); });
 fileInput.addEventListener('change', e => { if(e.target.files[0]) handleFile(e.target.files[0]); });
@@ -1029,18 +1314,29 @@ dropZone.addEventListener('drop', e => {
   e.preventDefault();
   dropZone.classList.remove('dragging');
   const f = e.dataTransfer.files[0];
-  if(f && f.type.startsWith('image/')) handleFile(f);
+  if(f && (f.type.startsWith('image/') || isEmf(f))) handleFile(f);
 });
+
+const isEmf = f => /\.emf$/i.test(f.name) || /^image\/(x-)?emf$/.test(f.type);
 
 function handleFile(file) {
   const reader = new FileReader();
-  reader.onload = e => {
-    uploadedDataUrl = e.target.result;
+  const done = dataUrl => {
+    uploadedDataUrl = dataUrl;
     uploadedImage = file;
-    showImagePreview(e.target.result);
+    showImagePreview(dataUrl);
     setStatus('idle', `Image loaded: ${file.name}`);
     analyseBtn.disabled = !apiKeyInput.value.trim();
   };
+  if (isEmf(file)) {
+    reader.onload = e => {
+      try { done(emfToPngDataUrl(e.target.result)); }
+      catch (err) { setStatus('error', `Could not read EMF: ${err.message}`); }
+    };
+    reader.readAsArrayBuffer(file);
+    return;
+  }
+  reader.onload = e => done(e.target.result);
   reader.readAsDataURL(file);
 }
 
@@ -1072,8 +1368,8 @@ function clearAll() {
       </svg>
     </div>
     <div class="drop-title">Drop graph image here</div>
-    <div class="drop-sub">PNG · JPG · WEBP · SVG accepted</div>
-    <input type="file" id="fileInput" accept="image/*">`;
+    <div class="drop-sub">PNG · JPG · WEBP · SVG · EMF accepted</div>
+    <input type="file" id="fileInput" accept="image/*,.emf">`;
   dropZone.classList.remove('has-image');
   document.getElementById('fileInput').addEventListener('change', e => { if(e.target.files[0]) handleFile(e.target.files[0]); });
   outputArea.style.display = 'none';
