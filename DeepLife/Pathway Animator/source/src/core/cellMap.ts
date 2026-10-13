@@ -29,6 +29,23 @@ export function mapCells(scene: Scene): MapCell[] {
   return hero ? [hero] : cm.cells;
 }
 
+/** A cell's radius in map units: that of the circle with its area. */
+function cellRadius(c: MapCell): number {
+  let a = 0;
+  const m = c.membrane, n = m.length / 2;
+  for (let i = 0, j = n - 1; i < n; j = i++) a += m[2 * j] * m[2 * i + 1] - m[2 * i] * m[2 * j + 1];
+  return Math.sqrt(Math.abs(a / 2) / Math.PI);
+}
+const radii = new WeakMap<MapCell[], number>();
+function meanRadius(cm: CellMap): number {
+  let hit = radii.get(cm.cells);
+  if (hit === undefined) {
+    hit = cm.cells.reduce((s, c) => s + cellRadius(c), 0) / Math.max(1, cm.cells.length);
+    radii.set(cm.cells, hit);
+  }
+  return hit;
+}
+
 const boxes = new WeakMap<MapCell[], CellMap['viewBox']>();
 /** The area the map's cells cover, padded by 4% (map units). */
 function cellsBox(cm: CellMap): CellMap['viewBox'] {
@@ -59,7 +76,7 @@ function cellsBox(cm: CellMap): CellMap['viewBox'] {
  */
 export function mapTransform(scene: Scene) {
   const cm = scene.cellMap;
-  if (cm.around) return { k: 1, map: (x: number, y: number): Vec2 => ({ x, y }) };
+  if (cm.around) return { k: 1, zoom: 1, map: (x: number, y: number): Vec2 => ({ x, y }) };
   const f = cm.frame ?? { x: 0, y: 0, w: scene.canvas.width, h: scene.canvas.height };
   // Given its own part of the canvas, the map is fitted by what its cells
   // cover (a little padded), not by the SVG's whole page.
@@ -81,8 +98,14 @@ export function mapTransform(scene: Scene) {
     // Solo: the cell spans what the single cell does (twice its radius).
     if (cm.solo) k = (2 * scene.cell.radius * Math.min(f.w, f.h)) / Math.max(1e-6, x1 - x0, y1 - y0);
   }
+  // Zoomed in on the selected cell: it, and `rings` cells beyond it, span the canvas's short side.
+  let zoom = 1;
+  if (hero && cm.centerHero && !cm.solo && cm.rings > 0) {
+    const kz = Math.min(f.w, f.h) / 2 / (cellRadius(hero) + cm.rings * 2 * meanRadius(cm));
+    if (kz > k) (zoom = kz / k), (k = kz);
+  }
   const ox = f.x + f.w / 2 - mx * k, oy = f.y + f.h / 2 - my * k;
-  return { k, map: (x: number, y: number): Vec2 => ({ x: x * k + ox, y: y * k + oy }) };
+  return { k, zoom, map: (x: number, y: number): Vec2 => ({ x: x * k + ox, y: y * k + oy }) };
 }
 
 const unflat = (a: number[], map: (x: number, y: number) => Vec2) => {
@@ -185,8 +208,9 @@ export interface MapBuildOptions {
 export function buildMapGeometry(scene: Scene, opts: MapBuildOptions = {}): SceneGeom | null {
   const cm = scene.cellMap;
   const pre = opts.prefix ?? '';
-  // A solo view is the single cell: full-size detail.
-  const detail = soloActive(scene) ? 1 : Math.max(0.05, cm.detailScale);
+  // A solo view is the single cell: full-size detail. Zoomed in on the
+  // selected cell, detail grows with the cells (up to full size).
+  const detail = soloActive(scene) ? 1 : Math.min(1, Math.max(0.05, cm.detailScale) * mapTransform(scene).zoom);
   const scale = (Math.min(scene.canvas.width, scene.canvas.height) / REFERENCE_SHORT_SIDE) * detail;
   const count = Math.max(1, scene.pathwayCount);
 

@@ -189,6 +189,11 @@ export interface CellMap {
   solo: boolean;
   /** Keep the selected cell in the middle of the canvas, the rest of the map round it. */
   centerHero: boolean;
+  /**
+   * With the selected cell in the middle: zoom in until only about this many
+   * cells show beyond it, along the canvas's short side (0: the whole map).
+   */
+  rings: number;
   /** Derived, never saved: the part of the canvas the map is fitted into (the whole canvas when absent). */
   frame?: { x: number; y: number; w: number; h: number };
 }

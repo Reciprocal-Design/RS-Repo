@@ -29,7 +29,9 @@ a preset scene plus a pure transform of the geometry (`src/core/modules.ts`):
 **One tissue map for every cell view.** "Tissue map → Upload SVG tissue map…" (on tabs 1–6 and the journey) takes
 one SVG of the tissue and applies it everywhere; click a cell in the thumbnail (or in the preview on tab 5) to
 select it. Tabs 1–4 then show only the selected cell, as the single cell (its own shape, fitted to the canvas);
-tab 5 shows the whole map with that cell in the middle; tab 6 shows the map twice; the journey starts on it. The
+tab 5 shows the map with that cell in the middle, zoomed in until about two cells show beyond it along the
+canvas's short side ("Cells shown beyond it"; 0 shows the whole map); tab 6 shows the map twice; the journey
+starts on it. The
 selected cell runs the scene's own pathways and starts the signal. "Remove the map" goes back to each view's own
 cell or generated tissue.
 
@@ -52,7 +54,9 @@ cell or generated tissue.
    its cells cover. The first, in the membrane colour, holds the selected cell and starts the signal; the second,
    in its own colour (pink by default) and with its own networks, only answers. A chosen number of heavier
    connections join the nearest cells across the gap, so the signal spreads through one tissue and crosses into
-   the other.
+   the other. With no map uploaded, each tissue is generated (`src/core/organic.ts`): irregular cells packed wall
+   to wall in a clump with an uneven edge (Voronoi cells of evenly scattered points, corners rounded), the two
+   sides with different cells. "New tissue shapes" re-rolls it.
 7. **Body**: organ-level connectivity (`src/core/body.ts`). An anatomical front-view outline drawn like the
    membrane in an X-ray look: a dark core, a wide glow reaching in from a bright rim ("Body glow"), and soft
    highlights along the anatomy (collarbones, chest, ribs, hips, shoulders, knees) that model the form. Organs are
