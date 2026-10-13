@@ -204,6 +204,13 @@ function touching(a: LinkCell, b: LinkCell, reach: number): boolean {
   return false;
 }
 
+/** Radians either side of a pathway's receptor through which its cell never sends the signal back. */
+const FORWARD = (70 * Math.PI) / 180;
+/** Radians a receptor may be turned away from a sender and still take its signal directly. */
+const FACING = (80 * Math.PI) / 180;
+const turn = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+const bearing = (from: Vec2, to: Vec2) => Math.atan2(to.y - from.y, to.x - from.x);
+
 export interface CellLinks {
   edges: EdgeGeom[];
   /** Relay receptor nodes (layer 0 of the pathway they feed). */
@@ -213,11 +220,18 @@ export interface CellLinks {
 
 /**
  * Cell-to-cell links. Each pair of touching cells gets `amount` links on
- * average (0–8). A link runs from an active cytoplasm node of one cell to a
- * relay receptor on the other cell's membrane, on the wall facing it, and that
- * receptor feeds the nearest first-layer nodes of the neighbour's pathway, so
- * the signal enters through a receptor and runs the pathway again from there.
- * Links arriving close together on the same wall share a receptor.
+ * average (0–8). The signal only ever moves forward: surface → nucleus → out
+ * to the next cell.
+ *
+ * - A link leaves from a DEG (the end of a pathway), so a cell passes the
+ *   signal on only once it has run its own pathway.
+ * - It leaves through the far side of the cell: never toward a neighbour that
+ *   lies back along the pathway it has just run (within FORWARD of that
+ *   pathway's receptor), so it does not cross the pathway.
+ * - It arrives at the neighbour's own receptor when that faces the sender
+ *   (cells of a tissue are turned to face the signal), and runs the pathway
+ *   from the surface in. Otherwise it arrives at a relay receptor made on the
+ *   facing wall, which feeds the pathway's first layer.
  */
 export function connectCellLinks(
   scene: Scene,
@@ -246,13 +260,33 @@ export function connectCellLinks(
       for (let k = 0; k < count; k++) {
         const coin = rng();
         const nearer = (c: LinkCell) => (origin ? Math.hypot(c.frame.center.x - origin.x, c.frame.center.y - origin.y) : 0);
-        const [src, dst] = origin ? (nearer(A) <= nearer(B) ? [A, B] : [B, A]) : coin < 0.5 ? [A, B] : [B, A];
-        // Sources near the shared wall, each used by one link while fresh ones
-        // last (with many links per neighbour a node may send more than one).
-        const all = src.layouts.flatMap((l) => l.nodes.filter((n) => n.active && n.layer > 0 && n.region === 'cytoplasm'));
+        let [src, dst] = origin ? (nearer(A) <= nearer(B) ? [A, B] : [B, A]) : coin < 0.5 ? [A, B] : [B, A];
+        // The DEGs a cell may send on from, toward this neighbour: those of
+        // pathways whose receptor is not on the neighbour's side.
+        const exits = (c: LinkCell, to: LinkCell) => {
+          const out = bearing(c.frame.cell.center, to.frame.cell.center);
+          return c.layouts.flatMap((l) =>
+            turn(bearing(c.frame.cell.center, l.receptor.center), out) < FORWARD
+              ? []
+              : (l.layers[l.layers.length - 1] ?? []).filter((n) => n.active && n.layer > 0));
+        };
+        let all = exits(src, dst);
+        // With no set direction, the other way round may be the forward one.
+        if (!all.length && !origin) ([src, dst] = [dst, src]), (all = exits(src, dst));
+        if (!all.length) continue;
+        // Each DEG is used by one link while fresh ones last.
         const fresh = all.filter((n) => !usedSources.has(n.id));
         const from = fresh.length ? fresh : all;
+
+        // Where it arrives: the neighbour's own receptor, if one faces the sender…
+        const back = bearing(dst.frame.cell.center, src.frame.cell.center);
+        const facing = dst.layouts
+          .map((l) => ({ l, off: turn(bearing(dst.frame.cell.center, l.receptor.center), back) }))
+          .filter((x) => x.off <= FACING && x.l.layers[0]?.[0])
+          .sort((x, y) => x.off - y.off)[0];
+        const aim = facing ? facing.l.layers[0][0] : null;
         const near = (a: NodeGeom) => {
+          if (aim) return { q: { x: aim.x, y: aim.y }, d: Math.hypot(aim.x - a.x, aim.y - a.y) };
           let best = dst.points[0], bd = Infinity;
           for (const q of dst.points) {
             const d = Math.hypot(q.x - a.x, q.y - a.y);
@@ -260,17 +294,17 @@ export function connectCellLinks(
           }
           return { q: best, d: bd };
         };
-        const cands = from.map((a) => ({ a, ...near(a) })).filter((c) => pairs || c.d < 1.2 * src.R);
-        if (!cands.length) continue;
+        const cands = from.map((a) => ({ a, ...near(a) }));
         const dMin = Math.min(...cands.map((c) => c.d));
         const pick = weightedPick(rng, cands.map((c) => Math.exp(-3 * (c.d / dMin - 1))), 1)[0];
         if (pick === undefined) continue;
         const { a, q } = cands[pick];
         usedSources.add(a.id);
-        const relay = relayAt(scene, dst, q, relays, out, tag);
+        // …otherwise a relay receptor on the wall facing the sender.
+        const target = aim ?? relayAt(scene, dst, q, relays, out, tag);
         // A reused source may land on a receptor it already feeds: one link is enough.
-        if (relay && !out.edges.some((e) => e.link && e.from === a.id && e.to === relay.id)) {
-          out.edges.push(makeLinkEdge(scene, a, relay, rng));
+        if (target && !out.edges.some((e) => e.link && e.from === a.id && e.to === target.id)) {
+          out.edges.push(makeLinkEdge(scene, a, target, rng));
         }
       }
     }
@@ -318,8 +352,8 @@ function relayAt(
   out.nodes.push(node);
   out.receptors.push(rec);
   // Into the pathway: like its own receptor, a relay receptor feeds every
-  // active first-layer node, so a relay runs the whole pathway again (and can
-  // pass on from any of its cytoplasm nodes).
+  // active first-layer node, so a relay runs the whole pathway again (and
+  // passes on from its DEGs).
   for (const c of nodes) out.edges.push(makeEdge(scene, node, c, false, rngFor(hash(scene.seed, id), c.id)));
   return node;
 }

@@ -108,9 +108,13 @@ largest shape inside it its nucleus; a frame or background holding several cells
 without a nucleus gets one. Every cell grows its own network from the shared pathway settings; click a cell
 in the preview to add or remove its pathways, Shift-click to re-roll it. "Cell variation" lets node and
 layer counts drift from cell to cell, and each cell turns its pathways toward its widest cytoplasm. Cells
-start at random offsets ("Start spread"). Links (0–3 per pair of touching cells) run from a cytoplasm node
-into a relay receptor on the neighbour's shared wall, which runs that cell's pathway again from there; the
-"Relay chain" sets how many cells in a row a signal can pass on. The map is saved in the scene JSON. Try
+start at random offsets ("Start spread"). Links (0–8 per pair of touching cells) keep the signal moving forward:
+surface → nucleus → out to the next cell. A link leaves from a DEG (so a cell passes the signal on only once its
+own pathway has run), through the far side of the cell (never back across the pathway it has just run), and
+arrives at a receptor of the neighbour: the neighbour's own where that faces the sender, otherwise a relay
+receptor made on the facing wall. Where the signal has a source (a selected or centre cell, or the side a second
+tissue receives it on), the other cells turn their receptors to face it. The "Relay chain" sets how many cells in
+a row a signal can pass on; as each step is a whole pathway, long chains make long loops. The map is saved in the scene JSON. Try
 `../samples/cell-cluster-voronoi.svg`.
 
 Status: milestone 5 (PNG and SVG export, scene JSON save/load), plus cell maps. See `milestone-5.png`.

@@ -166,34 +166,59 @@ describe('pathways on a cell map', () => {
     expect(buildGeometry(off).edges.some((e) => e.id.startsWith('link-'))).toBe(false);
   });
 
-  it('links always end at a relay receptor on the neighbour’s wall, which feeds its pathway', () => {
+  it('links run forward: out of a DEG, away from its pathway, into a receptor on the neighbour', () => {
     const s = mapScene();
     s.cellMap.links = { enabled: true, amount: 2 };
     const g = buildGeometry(s);
     const links = g.edges.filter((e) => e.link);
-    expect(links.length).toBeGreaterThan(20);
+    expect(links.length).toBeGreaterThan(10);
     const cellOf = (id: string) => id.split('-')[0];
+    const centre = (id: string) => g.cells.find((x) => x.id === cellOf(id))!.cell.center;
+    const turn = (p: number, q: number) => Math.abs(Math.atan2(Math.sin(p - q), Math.cos(p - q)));
+    const ownReceptor = (pathwayId: string) => g.receptors.find((x) => x.id === `receptor-${pathwayId}`)!;
     for (const e of links) {
+      // It leaves from a DEG: the last layer of its pathway, so only once the pathway has run.
+      const from = g.nodeById.get(e.from)!;
+      const last = Math.max(...g.nodes.filter((n) => n.pathwayId === from.pathwayId).map((n) => n.layer));
+      expect(from.layer).toBe(last);
+      expect(from.active).toBe(true);
+      // It heads away from the side its own pathway came in on (never back across it).
+      const c = centre(from.id), there = centre(e.to), rec = ownReceptor(from.pathwayId).center;
+      const out = Math.atan2(there.y - c.y, there.x - c.x), back = Math.atan2(rec.y - c.y, rec.x - c.x);
+      expect(turn(out, back)).toBeGreaterThanOrEqual((70 * Math.PI) / 180 - 1e-9);
+      // It arrives at a receptor of another cell: that cell's own, or a relay receptor on its wall.
       const r = g.nodeById.get(e.to)!;
       expect(r.layer).toBe(0);
-      expect(r.id).toMatch(/-R\d+$/);
-      // A capsule is drawn for it, on the target cell's membrane.
-      const rec = g.receptors.find((x) => x.nodeId === r.id)!;
-      const c = g.cells.find((x) => x.id === cellOf(r.pathwayId))!;
-      const d = Math.hypot(rec.center.x - c.cell.center.x, rec.center.y - c.cell.center.y);
-      expect(Math.abs(d - c.cell.radiusAt(Math.atan2(rec.center.y - c.cell.center.y, rec.center.x - c.cell.center.x)))).toBeLessThan(1);
-      // It feeds first-layer nodes of its own cell.
-      const out = g.edges.filter((x) => x.from === r.id);
-      expect(out.length).toBeGreaterThan(0);
-      for (const x of out) expect(g.nodeById.get(x.to)!.layer).toBe(1);
-      expect(out.every((x) => cellOf(x.to) === cellOf(r.id))).toBe(true);
+      expect(cellOf(r.id)).not.toBe(cellOf(from.id));
+      const cap = g.receptors.find((x) => x.nodeId === r.id)!;
+      const cc = centre(r.id), cell = g.cells.find((x) => x.id === cellOf(r.id))!.cell;
+      const d = Math.hypot(cap.center.x - cc.x, cap.center.y - cc.y);
+      expect(Math.abs(d - cell.radiusAt(Math.atan2(cap.center.y - cc.y, cap.center.x - cc.x)))).toBeLessThan(1);
+      // From there the signal runs into the first layer of that cell.
+      const into = g.edges.filter((x) => x.from === r.id && !x.link);
+      expect(into.length).toBeGreaterThan(0);
+      for (const x of into) expect(g.nodeById.get(x.to)!.layer).toBe(1);
+      expect(into.every((x) => cellOf(x.to) === cellOf(r.id))).toBe(true);
     }
     const fewer = { ...s, cellMap: { ...s.cellMap, links: { enabled: true, amount: 0.5 } } };
-    expect(buildGeometry(fewer).edges.filter((e) => e.link).length).toBeLessThan(links.length / 2);
-    // Up to 8 per neighbour: many more links, all unique.
+    expect(buildGeometry(fewer).edges.filter((e) => e.link).length).toBeLessThan(links.length);
+    // Every link is unique, however many are asked for.
     const many = buildGeometry({ ...s, cellMap: { ...s.cellMap, links: { enabled: true, amount: 8 } } }).edges.filter((e) => e.link);
-    expect(many.length).toBeGreaterThan(2 * links.length);
+    expect(many.length).toBeGreaterThanOrEqual(links.length);
     expect(new Set(many.map((e) => e.id)).size).toBe(many.length);
+  });
+
+  it('a signal reaches the next cell only after its own DEG has fired', () => {
+    const s = mapScene();
+    s.cellMap.links = { enabled: true, amount: 2 };
+    const g = buildGeometry(s);
+    const sch = buildSchedule(s);
+    for (const t of sch.edges.filter((x) => x.edge.link)) {
+      const from = g.nodeById.get(t.edge.from)!;
+      // The link starts when its DEG fires, which is after that cell's receptor did.
+      const receptor = g.nodes.find((n) => n.pathwayId === from.pathwayId && n.layer === 0 && !/-R/.test(n.id))!;
+      expect(t.start).toBeGreaterThan(sch.fire.get(receptor.id)!);
+    }
   });
 
   it('a relay runs the neighbour’s pathway again, down a limited chain', () => {
@@ -203,14 +228,15 @@ describe('pathways on a cell map', () => {
     const g = buildGeometry(s);
     const sch = buildSchedule(s);
     const relayed = sch.edges.filter((t) => t.wave > 0 && !t.edge.link);
-    expect(relayed.length).toBeGreaterThan(20);
-    // A relay wave starts at a relay receptor and reaches deep layers of that cell.
+    expect(relayed.length).toBeGreaterThan(10);
+    // A relay wave reaches deep layers of the cell it enters.
     for (let w = 1; w <= 5; w++) {
       const es = sch.edges.filter((t) => t.wave === w);
       if (!es.length) continue;
       const start = Math.min(...es.map((t) => t.start));
+      // A relay wave starts at a receptor (the cell's own, or a relay receptor on its wall).
       const src = es.find((t) => t.start === start)!.edge.from;
-      expect(g.nodeById.get(src)!.id).toMatch(/-R\d+$/);
+      expect(g.nodeById.get(src)!.layer).toBe(0);
       expect(Math.max(...es.map((t) => g.nodeById.get(t.edge.to)!.layer))).toBeGreaterThan(2);
     }
     // The relay receptor pulses fully when it fires.

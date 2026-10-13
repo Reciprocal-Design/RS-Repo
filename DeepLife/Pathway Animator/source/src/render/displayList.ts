@@ -574,7 +574,7 @@ export function buildDisplayList(
     }
   }
   for (const n of g.nodes) {
-    if (n.active) continue;
+    if (n.active || !st.showInactiveNodes) continue;
     const r = st.inactiveNodeRadius * s;
     const w = Math.max(0.75, 1 * s);
     prims.push({ kind: 'ring', id: `${n.id}-outer`, group: 'nodes-inactive', c: n, r, stroke: st.inactiveNodeColor, width: w });

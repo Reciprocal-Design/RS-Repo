@@ -8,7 +8,7 @@ import type { Bezier, CellMap, EdgeGeom, ModuleKind, NodeGeom, ReceptorGeom, Sce
 
 /** A tissue built round the single cell: the same cell at the centre, neighbours relaying its signal on. */
 export function tissueMap(): CellMap {
-  return { ...defaultCellMap(), enabled: true, around: true, name: 'tissue', detailScale: 0.5, startShare: 0 };
+  return { ...defaultCellMap(), enabled: true, around: true, name: 'tissue', detailScale: 0.5, startShare: 0, relayHops: 4 };
 }
 
 // The client's modules: six views of the same pathway, one per tab. Each is a
@@ -80,8 +80,8 @@ export function withTissueMap(scene: Scene, map: TissueUpload, heroId: string): 
   if (SINGLE_CELL.includes(kind)) return { ...scene, cellMap: { ...base, solo: true, detailScale: 1 } };
   const fit = (s: Scene) => suggestedDetailScale(s, map);
   // The tissue view is zoomed in on the selected cell, two cells showing beyond it.
-  if (kind === 'tissue') return { ...scene, cellMap: { ...base, centerHero: true, rings: 2, startShare: 0, detailScale: fit(scene) } };
-  if (kind === 'journey') return { ...scene, cellMap: { ...base, startShare: 0, detailScale: fit(scene) } };
+  if (kind === 'tissue') return { ...scene, cellMap: { ...base, centerHero: true, rings: 2, startShare: 0, relayHops: 4, detailScale: fit(scene) } };
+  if (kind === 'journey') return { ...scene, cellMap: { ...base, startShare: 0, relayHops: 4, detailScale: fit(scene) } };
   if (kind === 'crossTissue') {
     // Each tissue has (a little under) half the canvas, fitted by its cells.
     const { width: W, height: H } = scene.canvas;

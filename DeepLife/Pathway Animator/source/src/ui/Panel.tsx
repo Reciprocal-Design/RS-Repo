@@ -170,8 +170,11 @@ export function Panel() {
         <Slider label="Node size" value={st.activeNodeRadius} min={1} max={12} step={0.5} unit=" px" onChange={(activeNodeRadius) => style({ activeNodeRadius })} />
         <Slider label="Halo size" value={st.haloRadius} min={0} max={30} step={0.5} unit=" px" onChange={(haloRadius) => style({ haloRadius })} />
         <ColorAlphaField label="Halo colour" value={st.haloColor} onChange={(haloColor) => style({ haloColor })} />
-        <Slider label="Inactive node size" value={st.inactiveNodeRadius} min={2} max={16} step={0.5} unit=" px"
-          onChange={(inactiveNodeRadius) => style({ inactiveNodeRadius })} />
+        <Toggle label="Show inactive nodes" checked={st.showInactiveNodes} onChange={(showInactiveNodes) => style({ showInactiveNodes })} />
+        {st.showInactiveNodes && (
+          <Slider label="Inactive node size" value={st.inactiveNodeRadius} min={2} max={16} step={0.5} unit=" px"
+            onChange={(inactiveNodeRadius) => style({ inactiveNodeRadius })} />
+        )}
         <ColorField label="Inactive node colour" value={st.inactiveNodeColor} onChange={(inactiveNodeColor) => style({ inactiveNodeColor })} />
         <Select<ReceptorStyle>
           label="Receptor style"

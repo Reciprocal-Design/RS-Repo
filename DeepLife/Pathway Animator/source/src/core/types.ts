@@ -80,6 +80,7 @@ export interface Scene {
     haloColor: string;
     inactiveNodeColor: string;
     inactiveNodeRadius: number;
+    showInactiveNodes: boolean; // the ringed nodes that take no part in the signal
     receptorStyle: ReceptorStyle;
     greyIdle: boolean; // idle pathways drawn grey; a pathway lights up while a signal runs through it
     idleOpacity: number; // 0–1, how visible idle pathways stay

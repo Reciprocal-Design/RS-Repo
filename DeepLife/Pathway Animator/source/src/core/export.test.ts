@@ -104,3 +104,18 @@ describe('scene JSON', () => {
     expect(name).toBe('My-scene-v2_3840x2160_20260928-140509.png');
   });
 });
+
+describe('inactive nodes', () => {
+  it('can be hidden, without moving anything else', () => {
+    const s = defaultScene(21);
+    const shown = buildDisplayList(s, 0).prims;
+    expect(shown.some((p) => p.group === 'nodes-inactive')).toBe(true);
+    const hidden = buildDisplayList({ ...s, style: { ...s.style, showInactiveNodes: false } }, 0).prims;
+    expect(hidden.some((p) => p.group === 'nodes-inactive')).toBe(false);
+    expect(hidden.length).toBe(shown.filter((p) => p.group !== 'nodes-inactive').length);
+    // Older scenes, saved before the setting existed, keep showing them.
+    const old = JSON.parse(serializeScene(s));
+    delete old.style.showInactiveNodes;
+    expect(parseSceneJson(JSON.stringify(old)).style.showInactiveNodes).toBe(true);
+  });
+});

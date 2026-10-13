@@ -116,6 +116,8 @@ const unflat = (a: number[], map: (x: number, y: number) => Vec2) => {
 
 /** Degrees an oriented cell may turn away from its roomiest direction, so similar cells still differ. */
 const ORIENT_JITTER = 8;
+/** Degrees a cell facing the signal may lean toward its widest cytoplasm. */
+const FACE_LEAN = 35;
 
 /**
  * The cell rotation (degrees) that puts its pathways where there is most room:
@@ -223,6 +225,11 @@ export function buildMapGeometry(scene: Scene, opts: MapBuildOptions = {}): Scen
   const linkCells: LinkCell[] = [];
 
   const prepared = cm.around ? tissueCells(scene) : importedCells(scene);
+  // Where the signal comes from: the centre cell, or the side a second tissue
+  // receives it on. Other cells turn their receptors to face it, so the signal
+  // arrives at the surface, runs in to the nucleus and leaves by the far side.
+  const heroPrep = prepared.find((p) => p.mc.hero);
+  const source = opts.noStart || !heroPrep ? opts.linkOrigin : heroPrep.cell.center;
   for (const { mc: mc0, cell, nucleus, R, polygon } of prepared) {
     const mc = pre ? { ...mc0, id: `${pre}${mc0.id}` } : mc0;
     const frame: CellFrame = { scale, center: cell.center, R, cell, nucleus };
@@ -235,9 +242,16 @@ export function buildMapGeometry(scene: Scene, opts: MapBuildOptions = {}): Scen
     let cs: Scene = hero ? scene : { ...scene, seed: hash(scene.seed, 'cell', mc.seed) };
     if (!hero) {
       const spin = rngFor(scene.seed, 'cell-rotation', mc.seed)();
-      cs.rotation = cm.orient
-        ? roomiestRotation(cs, cell, nucleus, polygonOutline(polygon, 4, nucleus.center), count) + (spin - 0.5) * 2 * ORIENT_JITTER
-        : spin * 360 - 180;
+      const roomy = () => roomiestRotation(cs, cell, nucleus, polygonOutline(polygon, 4, nucleus.center), count);
+      if (source) {
+        // Facing the signal (rotation 0 puts the first pathway at the top),
+        // leaning up to FACE_LEAN toward the widest cytoplasm.
+        const facing = (Math.atan2(source.y - cell.center.y, source.x - cell.center.x) * 180) / Math.PI + 90;
+        const lean = cm.orient ? Math.max(-FACE_LEAN, Math.min(FACE_LEAN, ((roomy() - facing + 540) % 360) - 180)) : 0;
+        cs.rotation = facing + lean + (spin - 0.5) * 2 * ORIENT_JITTER;
+      } else {
+        cs.rotation = cm.orient ? roomy() + (spin - 0.5) * 2 * ORIENT_JITTER : spin * 360 - 180;
+      }
     } else if (!cm.around && cm.orient) {
       cs = { ...scene, rotation: roomiestRotation(scene, cell, nucleus, polygonOutline(polygon, 4, nucleus.center), count) + scene.rotation };
     }
@@ -275,8 +289,7 @@ export function buildMapGeometry(scene: Scene, opts: MapBuildOptions = {}): Scen
   if (!opts.noStart && pathways.length && pathways.every((p) => p.relayOnly)) pathways[0].relayOnly = false;
   // A tissue's cells sit a little apart, so neighbours may link across a wider
   // gap. Where there is a centre cell, links run outward from it, so its signal spreads.
-  const heroCell = cells.find((c) => c.hero);
-  const origin = heroCell && !opts.noStart ? heroCell.cell.center : opts.linkOrigin;
+  const origin = source;
   const links = connectCellLinks(scene, linkCells, {
     ...(cm.around ? { reach: 0.6 } : {}),
     ...(origin ? { origin } : {}),

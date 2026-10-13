@@ -146,6 +146,7 @@ export function defaultScene(seed = 1234): Scene {
       haloColor: 'rgba(90,95,130,0.25)',
       inactiveNodeColor: '#6B6F85',
       inactiveNodeRadius: 8,
+      showInactiveNodes: true,
       receptorStyle: 'capsuleDiamond',
       greyIdle: false,
       idleOpacity: 0.35,
