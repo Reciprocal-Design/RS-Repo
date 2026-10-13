@@ -1609,6 +1609,7 @@ In addition to the fields above, add a top-level "vectorMap" object:
   "significance": [{"index": 0, "ref": "L7"}, ...]
 }
 - p1/p2 calibrate an axis: choose two well-separated tick values; use the pixel position of the tick mark or gridline from LINES when present, otherwise the tick label's centre.
+- If the y axis has breaks, give "pieces" instead of p1/p2: one {"p1": [pixelY, value], "p2": [pixelY, value]} per axis segment, each using two ticks from that segment, e.g. "y": {"scale": "linear", "pieces": [{...lower...}, {...upper...}]}.
 - "index" is the position of the series in your "series" array. "refs" are the ids that draw that series' data: a marker group (M#) for scatter points, a line (L#) for a connected line or best-fit line, or bar rects (R#) for bars. Exclude legend swatches, error bars and gridlines. To take only some points of a marker group, use index ranges, e.g. "M1[0-10,12]".
 - Leave a series out of "series" if you can't identify its primitives.
 - "significance" links each entry in your "significance" array (by position) to the LINES id that draws its bracket or line. Leave out entries with no line.
@@ -1617,6 +1618,16 @@ In addition to the fields above, add a top-level "vectorMap" object:
 `;
 
 function axisMapper(a) {
+  // Broken axis: one calibration per segment; use the segment whose pixel span is nearest
+  if (a && Array.isArray(a.pieces) && a.pieces.length) {
+    const parts = a.pieces.map(pc => ({m: axisMapper({...pc, scale: a.scale}),
+      lo: Math.min(pc?.p1?.[0], pc?.p2?.[0]), hi: Math.max(pc?.p1?.[0], pc?.p2?.[0])})).filter(pc => pc.m);
+    if (!parts.length) return null;
+    return p => parts.reduce((best, pc) => {
+      const d = p < pc.lo ? pc.lo - p : p > pc.hi ? p - pc.hi : 0;
+      return d < best.d ? {d, pc} : best;
+    }, {d: Infinity, pc: parts[0]}).pc.m(p);
+  }
   if (!a || !Array.isArray(a.p1) || !Array.isArray(a.p2)) return null;
   const [p1, v1] = a.p1.map(Number), [p2, v2] = a.p2.map(Number);
   if (![p1, v1, p2, v2].every(Number.isFinite) || Math.abs(p2 - p1) < 1 || v1 === v2) return null;
@@ -1664,7 +1675,14 @@ function refineWithVectors(g, info) {
 
     if (parts.every(p => p.type === 'rect')) {
       // Bars: one rect per point, matched left→right
-      const boxes = parts.flatMap(p => p.items).sort((a, b) => (a[0] + a[2]) - (b[0] + b[2]));
+      // A bar crossing an axis break is drawn as two rects at the same x: join them
+      const boxes = [];
+      parts.flatMap(p => p.items).sort((a, b) => (a[0] + a[2]) - (b[0] + b[2])).forEach(r => {
+        const prev = boxes[boxes.length - 1];
+        if (prev && Math.abs(prev[0] - r[0]) < 1 && Math.abs(prev[2] - r[2]) < 1)
+          boxes[boxes.length - 1] = [prev[0], Math.min(prev[1], r[1]), prev[2], Math.max(prev[3], r[3])];
+        else boxes.push(r);
+      });
       if (boxes.length !== old.length) return;
       const stacked = g.graphType === 'stacked-bar';
       boxes.forEach((b, k) => {
@@ -1889,9 +1907,11 @@ async function analyseGraph() {
     "label": "left y axis title/label text or null",
     "unit": "unit if visible or null",
     "scale": "linear or log",
-    "min": number,
+    "min": number (negative if the axis extends below zero),
     "max": number,
-    "ticks": [list of numeric tick values]
+    "ticks": [list of numeric tick values, across all axis segments],
+    "breaks": [{"from": value_where_the_lower_segment_ends, "to": value_where_the_axis_resumes}] or [],
+    "segmentHeights": [fraction of the axis height taken by each segment, bottom to top] or null
   },
   "yAxisRight": {
     "label": "right y axis title/label text or null (set to null if no right axis)",
@@ -1952,7 +1972,10 @@ CRITICAL RULES:
 7. UNEQUAL SERIES LENGTHS: Different series will often have different numbers of data points. NEVER invent or pad points to make series lengths match. Only report points you can actually see in the graph. It is completely valid and expected for one series to have 3 points and another to have 12.
 8. Be precise: read all values carefully against the axis scales.
 9. Extract ALL real data points. Do not fabricate any.
-10. SIGNIFICANCE / P-VALUES: Look carefully for statistical significance annotations: asterisks (*, **, ***, ****), "ns", "n.s.", hash/dagger symbols, and written p-values ("p < 0.05", "P = 0.003", "p=1.2e-4"). These usually sit above bars, boxes or points, often on a bracket: a horizontal line joining two groups, usually with short downward ticks at each end. Report every annotation in "significance" (use [] if there are none). Use type "bracket" for a line with end ticks, "line" for a plain horizontal line without ticks, and "text" for a label on its own above a single group. x1/x2 are the two groups the line joins (category indices for categorical x). For grouped bars or boxes, set series1/series2 to the series index of the specific bar each end sits on; otherwise null. "y" is the height of the horizontal line in y-axis data units (for type "text", the height of the bottom of the label). Copy the label text exactly. Set "pValue" only when a number is written.`
+10. SIGNIFICANCE / P-VALUES: Look carefully for statistical significance annotations: asterisks (*, **, ***, ****), "ns", "n.s.", hash/dagger symbols, and written p-values ("p < 0.05", "P = 0.003", "p=1.2e-4"). These usually sit above bars, boxes or points, often on a bracket: a horizontal line joining two groups, usually with short downward ticks at each end. Report every annotation in "significance" (use [] if there are none). Use type "bracket" for a line with end ticks, "line" for a plain horizontal line without ticks, and "text" for a label on its own above a single group. x1/x2 are the two groups the line joins (category indices for categorical x). For grouped bars or boxes, set series1/series2 to the series index of the specific bar each end sits on; otherwise null. "y" is the height of the horizontal line in y-axis data units (for type "text", the height of the bottom of the label). Copy the label text exactly. Set "pValue" only when a number is written.
+11. NEGATIVE VALUES: The y axis may extend below zero (e.g. % change, waterfall plots). Set yAxis.min to the true minimum (e.g. -100) and report bars or points below zero with negative y values. Bars grow from zero: a bar hanging down from the zero line has a negative value equal to where its bottom ends.
+12. AXIS BREAKS: If the y axis is split into separate segments with a jump in values (a gap in the axis line, // break marks, or two stacked axis sections such as 0–200 below and 800–1400 above), list each break in yAxis.breaks as {"from": top value of the lower segment, "to": bottom value of the upper segment}, include the ticks of every segment in yAxis.ticks, set yAxis.max to the top of the highest segment, and estimate segmentHeights (e.g. [0.75, 0.25]). For bars that continue into the upper segment, report their true value read from the upper segment's scale. A bar that stops exactly at the top of the lower segment with nothing above it is reported at that value.
+13. WATERFALL PLOTS: Charts with one bar per subject, sorted by size, often coloured by group, are bar charts where every bar is its own category. Set "categories" to one label per bar, left to right (use the visible labels, or "1", "2", ... if none), make each colour group a series, and give each series points only at its own bars' category indices.`
       + (vectorInfo ? VECTOR_PROMPT + vectorInfo.text : '');
 
     const content = [
@@ -2115,14 +2138,42 @@ function buildSvg(g, o) {
     return ml + ((v - xMin) / (xMax - xMin)) * pw;
   }
 
-  // Left y (linear or log)
+  // Left y axis breaks: the visible value ranges ("segments"), bottom to top,
+  // each with its own pixel band; a small gap separates the bands.
+  const yBreaks = yLog ? [] : (Array.isArray(g.yAxis?.breaks) ? g.yAxis.breaks : [])
+    .map(b => ({from: Number(b?.from), to: Number(b?.to)}))
+    .filter(b => Number.isFinite(b.from) && Number.isFinite(b.to) && b.to > b.from && b.from > yMin && b.to < yMax)
+    .sort((a, b) => a.from - b.from)
+    .filter((b, i, arr) => i === 0 || b.from >= arr[i - 1].to);
+  const BREAK_GAP = 12;
+  const ySegs = [];
+  {
+    let lo = yMin;
+    yBreaks.forEach(b => { ySegs.push({lo, hi: b.from}); lo = b.to; });
+    ySegs.push({lo, hi: yMax});
+    const avail = ph - BREAK_GAP * (ySegs.length - 1);
+    const given = g.yAxis?.segmentHeights;
+    let fr = Array.isArray(given) && given.length === ySegs.length && given.every(f => Number(f) > 0)
+      ? given.map(Number)
+      : ySegs.map(sg => Math.max((sg.hi - sg.lo) / (yMax - yMin), ySegs.length > 1 ? 0.25 : 0));
+    const tot = fr.reduce((a, b) => a + b, 0);
+    let bottom = mt + ph;
+    ySegs.forEach((sg, i) => { sg.y0 = bottom; sg.y1 = bottom - avail * fr[i] / tot; bottom = sg.y1 - BREAK_GAP; });
+  }
+  const inYGap = v => yBreaks.some(b => v > b.from && v < b.to);
+
+  // Left y (linear, log, or linear with breaks)
   function cy(v) {
     if(v == null || isNaN(v)) return mt + ph;
     if(yLog) {
       if(v <= 0) return mt + ph;
       return mt + ph - (Math.log10(v) - Math.log10(yMin)) / (Math.log10(yMax) - Math.log10(yMin)) * ph;
     }
-    return mt + ph - ((v - yMin) / (yMax - yMin)) * ph;
+    let k = ySegs.findIndex(sg => v <= sg.hi);
+    if(k === -1) k = ySegs.length - 1;
+    if(k > 0 && v < ySegs[k].lo) return ySegs[k - 1].y1;   // inside a break: pin to the top of the band below
+    const sg = ySegs[k];
+    return sg.y0 - (v - sg.lo) / (sg.hi - sg.lo) * (sg.y0 - sg.y1);
   }
 
   // Right y (linear or log)
@@ -2140,6 +2191,22 @@ function buildSvg(g, o) {
   function yMinFor(ser) { return (hasDual && ser.yAxis === 'right') ? yMinR : yMin; }
   function yMaxFor(ser) { return (hasDual && ser.yAxis === 'right') ? yMaxR : yMax; }
   function yLogFor(ser) { return (hasDual && ser.yAxis === 'right') ? yLogR : yLog; }
+  // Bars grow from zero when the axis spans it, otherwise from the axis minimum
+  function baseFor(ser) {
+    const lo = yMinFor(ser), hi = yMaxFor(ser);
+    return yLogFor(ser) ? lo : (lo <= 0 && hi >= 0 ? 0 : lo);
+  }
+  // Rect(s) for a bar between two values; split into one rect per axis segment when the axis is broken
+  function barRects(x, w, v0, v1, ser, attrs) {
+    const a = Math.min(v0, v1), b = Math.max(v0, v1);
+    const pieces = (yBreaks.length && !(hasDual && ser.yAxis === 'right'))
+      ? ySegs.map(sg => [Math.max(a, sg.lo), Math.min(b, sg.hi)]).filter(([lo, hi]) => hi > lo)
+      : [[a, b]];
+    return pieces.map(([lo, hi]) => {
+      const yt = cyFor(ser, hi), yb = cyFor(ser, lo);
+      return `<rect x="${x.toFixed(2)}" y="${yt.toFixed(2)}" width="${w.toFixed(2)}" height="${Math.max(0, yb - yt).toFixed(2)}" ${attrs}/>`;
+    }).join('');
+  }
 
   // For log axes, error bar scaling must use log-space distance not linear
   function errPx(ser, centre, errVal, direction) {
@@ -2153,7 +2220,29 @@ function buildSvg(g, o) {
       const logErrFrac = (errVal / centre) / Math.LN10; // approximate: d(log10 v) ≈ dv / (v * ln10)
       return cyFor(ser, centre) - direction * (logErrFrac / logRange) * ph;
     }
-    return cyFor(ser, centre) - direction * (errVal / (yMaxFor(ser) - yMinFor(ser))) * ph;
+    return cyFor(ser, centre + direction * errVal);
+  }
+
+  const yTickList = (yLog ? (g.yAxis?.ticks || logTicks(yMin, yMax)) : (gtype === 'stacked-bar' && !yBreaks.length ? linspace(yMin, yMax, 6) : (g.yAxis?.ticks || linspace(yMin, yMax, 6))))
+    .filter(t => t != null && !isNaN(t) && (!yLog || t > 0) && !inYGap(t));
+
+  // Grouped bars/boxes: only the series that actually have a bar in a category share its slot,
+  // so non-overlapping groups (e.g. waterfall plots) get full-width bars.
+  const slotSeries = new Map();
+  (g.series || []).forEach((ser, si) => (ser.points || []).forEach((p, pi) => {
+    const k = Math.round(p.x ?? pi);
+    if(!slotSeries.has(k)) slotSeries.set(k, []);
+    if(!slotSeries.get(k).includes(si)) slotSeries.get(k).push(si);
+  }));
+  const maxPerSlot = Math.max(1, ...[...slotSeries.values()].map(l => l.length));
+  function groupGeom(xv, si, box) {
+    const n = cats ? nCats : Math.max(slotSeries.size, 1);
+    const slotW = pw / Math.max(n, 1);
+    const bw = box ? Math.max(8, (slotW * 0.6) / maxPerSlot - 4) : Math.max(2, (slotW * 0.7) / maxPerSlot - 2);
+    const here = slotSeries.get(Math.round(xv)) || [si];
+    const rank = Math.max(0, here.indexOf(si));
+    const centre = (cats ? catX(xv) : cx(xv)) + (si == null ? 0 : (rank - (here.length - 1) / 2) * (bw + (box ? 4 : 2)));
+    return {centre, bw};
   }
 
   const dashMap = { solid: 'none', dashed: `${o.lineThickness*3},${o.lineThickness*2}`, dotted: `${o.lineThickness},${o.lineThickness*2}` };
@@ -2169,17 +2258,17 @@ function buildSvg(g, o) {
       // Vertical grid between categories
       for(let i = 1; i < nCats; i++) {
         const x = ml + i * (pw / nCats);
-        s += `<line x1="${x}" y1="${mt}" x2="${x}" y2="${mt+ph}" stroke="${o.gridColor}" stroke-width="1"/>`;
+        ySegs.forEach(sg => { s += `<line x1="${x}" y1="${sg.y1.toFixed(2)}" x2="${x}" y2="${sg.y0.toFixed(2)}" stroke="${o.gridColor}" stroke-width="1"/>`; });
       }
     } else {
       const xTicks = (g.xAxis?.ticks || linspace(xMin, xMax, 6)).filter(t => t != null && !isNaN(t));
       xTicks.forEach(t => {
         const x = cx(t);
         if(x >= ml - 1 && x <= ml + pw + 1)
-          s += `<line x1="${x}" y1="${mt}" x2="${x}" y2="${mt+ph}" stroke="${o.gridColor}" stroke-width="1"/>`;
+          ySegs.forEach(sg => { s += `<line x1="${x}" y1="${sg.y1.toFixed(2)}" x2="${x}" y2="${sg.y0.toFixed(2)}" stroke="${o.gridColor}" stroke-width="1"/>`; });
       });
     }
-    const yTicks = (yLog ? (g.yAxis?.ticks || logTicks(yMin, yMax)) : (gtype === 'stacked-bar' ? linspace(yMin, yMax, 6) : (g.yAxis?.ticks || linspace(yMin, yMax, 6)))).filter(t => t != null && !isNaN(t) && t > 0 || !yLog);
+    const yTicks = yTickList;
     yTicks.forEach(t => {
       const y = cy(t);
       if(y >= mt - 1 && y <= mt + ph + 1)
@@ -2200,17 +2289,10 @@ function buildSvg(g, o) {
 
       if(gtype === 'box' || ser.seriesType === 'box') {
         // Box & whisker rendering
-        const nCatsLocal = cats ? nCats : pts.length;
-        const slotW = pw / Math.max(nCatsLocal, 1);
-        const boxPad = slotW * 0.2;
-        const bw = Math.max(8, (slotW - boxPad * 2) / nSeries - 4);
-        const groupOff = (si - (nSeries - 1) / 2) * (bw + 4);
-        const capW = Math.min(bw * 0.4, 10);
-
         pts.forEach((p, pi) => {
           if(p.q1 == null || p.q3 == null || p.median == null) return;
-          const centreX = cats ? catX(p.x ?? pi) : cx(p.x ?? pi);
-          const px = centreX + groupOff;
+          const {centre: px, bw} = groupGeom(p.x ?? pi, si, true);
+          const capW = Math.min(bw * 0.4, 10);
 
           const yQ1  = cyFor(ser, p.q1);
           const yQ3  = cyFor(ser, p.q3);
@@ -2248,19 +2330,14 @@ function buildSvg(g, o) {
           // (stacked rendering is done in a separate pass after this loop)
         } else {
           // Grouped bars
-          const bw = Math.max(4, (slotW - groupPad * 2) / nSeries - 2);
-          const groupOff = (si - (nSeries - 1) / 2) * (bw + 2);
-
           pts.forEach((p, pi) => {
-            const centreX = cats ? catX(p.x ?? pi) : cx(p.x ?? pi);
-            const bx = centreX + groupOff - bw / 2;
+            const {centre: px, bw} = groupGeom(p.x ?? pi, si, false);
+            const bx = px - bw / 2;
             const by = cyFor(ser, p.y);
-            const bh = cyFor(ser, yMinFor(ser)) - by;
-            s += `<rect x="${bx.toFixed(2)}" y="${by.toFixed(2)}" width="${bw.toFixed(2)}" height="${bh.toFixed(2)}" fill="${col}" fill-opacity="0.85"/>`;
+            s += barRects(bx, bw, baseFor(ser), p.y ?? 0, ser, `fill="${col}" fill-opacity="0.85"`);
 
             // Error bars on grouped bars
             if(o.showErrorBars && (p.errorYUp != null || p.errorYDown != null || p.errorY != null)) {
-              const px = centreX + groupOff;
               const errUpY   = errPx(ser, p.y, p.errorYUp   ?? p.errorY ?? 0,  1);
               const errDownY = errPx(ser, p.y, p.errorYDown ?? p.errorY ?? 0, -1);
               const capW = Math.min(bw * 0.4, 6);
@@ -2341,7 +2418,7 @@ function buildSvg(g, o) {
     const layers = g.series.map(() => '');
     const s0 = s; s = '';
     for(let pi = 0; pi < nPts; pi++) {
-      let cumulative = yMin;
+      let cumulative = baseFor(g.series[0] || {});
       g.series.forEach((ser, si) => {
         const col = o.palette[si % o.palette.length];
         const p = ser.points[pi];
@@ -2351,7 +2428,7 @@ function buildSvg(g, o) {
         const bx = centreX - bw / 2;
         const by = cyFor(ser, cumulative + val);
         const bh = cyFor(ser, cumulative) - by;
-        s += `<rect x="${bx.toFixed(2)}" y="${by.toFixed(2)}" width="${bw.toFixed(2)}" height="${Math.max(0,bh).toFixed(2)}" fill="${col}" fill-opacity="0.9"/>`;
+        s += barRects(bx, bw, cumulative, cumulative + val, ser, `fill="${col}" fill-opacity="0.9"`);
         // Subtle separator line between segments
         if(si > 0 && bh > 1) {
           s += `<line x1="${bx.toFixed(2)}" y1="${by.toFixed(2)}" x2="${(bx+bw).toFixed(2)}" y2="${by.toFixed(2)}" stroke="${o.bgColor}" stroke-width="1.5"/>`;
@@ -2379,13 +2456,8 @@ function buildSvg(g, o) {
   if(o.showSignificance && g.significance?.length) {
     // x position of a group, offset to a specific bar/box when a series index is given
     const sigX = (xv, si) => {
-      const base = cats ? catX(xv) : cx(xv);
-      if(si == null || !g.series?.[si] || (gtype !== 'bar' && gtype !== 'box')) return base;
-      const slotW = cats ? pw / nCats : pw / Math.max(g.series[0]?.points?.length || 1, 1);
-      const bw = gtype === 'box'
-        ? Math.max(8, (slotW - slotW * 0.4) / nSeries - 4)
-        : Math.max(4, (slotW - slotW * 0.3) / nSeries - 2);
-      return base + (si - (nSeries - 1) / 2) * (bw + (gtype === 'box' ? 4 : 2));
+      if(si == null || !g.series?.[si] || (gtype !== 'bar' && gtype !== 'box')) return cats ? catX(xv) : cx(xv);
+      return groupGeom(xv, si, gtype === 'box').centre;
     };
     const tick = Math.max(4, o.fontSize * 0.45);
     s += `<g id="Significance">`;
@@ -2410,8 +2482,17 @@ function buildSvg(g, o) {
   // ── Axes ─────────────────────────────────────────────────────────────────
   if(o.showAxes) {
     s += `<g id="Axes">`;
-    s += `<line x1="${ml}" y1="${mt}" x2="${ml}" y2="${mt+ph}" stroke="${o.axisColor}" stroke-width="1.5" stroke-linecap="square"/>`;
-    s += `<line x1="${ml}" y1="${mt+ph}" x2="${ml+pw}" y2="${mt+ph}" stroke="${o.axisColor}" stroke-width="1.5" stroke-linecap="square"/>`;
+    ySegs.forEach(sg => {
+      s += `<line x1="${ml}" y1="${sg.y1.toFixed(2)}" x2="${ml}" y2="${sg.y0.toFixed(2)}" stroke="${o.axisColor}" stroke-width="1.5" stroke-linecap="square"/>`;
+    });
+    // Break marks: a pair of short diagonals across the axis at each gap
+    ySegs.slice(0, -1).forEach(sg => {
+      [sg.y1, sg.y1 - BREAK_GAP].forEach(y => {
+        s += `<line x1="${ml - 6}" y1="${(y + 3).toFixed(2)}" x2="${ml + 6}" y2="${(y - 3).toFixed(2)}" stroke="${o.axisColor}" stroke-width="1.5"/>`;
+      });
+    });
+    const xAxisY = (!yLog && yMin < 0 && yMax > 0) ? cy(0) : mt + ph;
+    s += `<line x1="${ml}" y1="${xAxisY.toFixed(2)}" x2="${ml+pw}" y2="${xAxisY.toFixed(2)}" stroke="${o.axisColor}" stroke-width="1.5" stroke-linecap="square"/>`;
 
     if(o.showLabels) {
       if(cats) {
@@ -2437,7 +2518,7 @@ function buildSvg(g, o) {
       }
 
       // Y ticks
-      const yTicks = (yLog ? (g.yAxis?.ticks || logTicks(yMin, yMax)) : (gtype === 'stacked-bar' ? linspace(yMin, yMax, 6) : (g.yAxis?.ticks || linspace(yMin, yMax, 6)))).filter(t => t != null && !isNaN(t) && t > 0 || !yLog);
+      const yTicks = yTickList;
       yTicks.forEach(t => {
         const y = cy(t);
         s += `<line x1="${ml-5}" y1="${y}" x2="${ml}" y2="${y}" stroke="${o.axisColor}" stroke-width="1"/>`;
