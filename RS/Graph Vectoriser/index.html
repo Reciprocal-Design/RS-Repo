@@ -1979,14 +1979,14 @@ CRITICAL RULES:
     };
 
     // Opus 5.5's safety classifiers occasionally decline harmless scientific
-    // figures (e.g. biology charts). "fallbacks: default" lets the API re-run a
-    // declined request on Anthropic's recommended fallback model server-side.
+    // figures (e.g. biology charts). The API re-runs a declined request
+    // server-side on these models, in order: Opus 5 (no bio classifier), then Opus 4.8.
     let data = await callClaude({
       model: 'claude-opus-5-5',
       max_tokens: 16000,                    // thinking is always on and counts toward this
       output_config: { effort: 'medium' },
-      fallbacks: 'default'
-    }, 'server-side-fallback-2026-07-01');
+      fallbacks: [{ model: 'claude-opus-5' }, { model: 'claude-opus-4-8' }]
+    }, 'server-side-fallback-2026-06-01');
     // Some refusal categories have no server-side fallback: retry once on Opus 4.8
     if(data.stop_reason === 'refusal') {
       setStatus('loading', 'Retrying analysis with Claude Opus 4.8…');
