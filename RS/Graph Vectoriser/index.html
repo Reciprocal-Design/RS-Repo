@@ -861,6 +861,13 @@
           <option value="cross">Cross</option>
         </select>
       </div>
+      <div class="control-row">
+        <span class="control-label">Legend position</span>
+        <select id="legendPosition" style="max-width:140px">
+          <option value="bottom">Bottom</option>
+          <option value="right">Right</option>
+        </select>
+      </div>
     </div>
 
     <!-- Colours -->
@@ -966,7 +973,7 @@ const swatchRow = document.getElementById('swatchRow');
 
 // ── Checkboxes & selects trigger regen ────────────────────────────────────
 ['showAxes','showGrid','showLabels','showLegend','showErrorBars','showDataPoints','showBestFit','showSignificance',
- 'graphType','lineStyle','markerShape','bgColor','axisColor','gridColor','fontFamily'].forEach(id => {
+ 'graphType','lineStyle','markerShape','legendPosition','bgColor','axisColor','gridColor','fontFamily'].forEach(id => {
   document.getElementById(id).addEventListener('change', () => { if(parsedGraph) regenerateSvg(); });
 });
 
@@ -1975,7 +1982,7 @@ CRITICAL RULES:
 10. SIGNIFICANCE / P-VALUES: Look carefully for statistical significance annotations: asterisks (*, **, ***, ****), "ns", "n.s.", hash/dagger symbols, and written p-values ("p < 0.05", "P = 0.003", "p=1.2e-4"). These usually sit above bars, boxes or points, often on a bracket: a horizontal line joining two groups, usually with short downward ticks at each end. Report every annotation in "significance" (use [] if there are none). Use type "bracket" for a line with end ticks, "line" for a plain horizontal line without ticks, and "text" for a label on its own above a single group. x1/x2 are the two groups the line joins (category indices for categorical x). For grouped bars or boxes, set series1/series2 to the series index of the specific bar each end sits on; otherwise null. "y" is the height of the horizontal line in y-axis data units (for type "text", the height of the bottom of the label). Copy the label text exactly. Set "pValue" only when a number is written.
 11. NEGATIVE VALUES: The y axis may extend below zero (e.g. % change, waterfall plots). Set yAxis.min to the true minimum (e.g. -100) and report bars or points below zero with negative y values. Bars grow from zero: a bar hanging down from the zero line has a negative value equal to where its bottom ends.
 12. AXIS BREAKS: If the y axis is split into separate segments with a jump in values (a gap in the axis line, // break marks, or two stacked axis sections such as 0–200 below and 800–1400 above), list each break in yAxis.breaks as {"from": top value of the lower segment, "to": bottom value of the upper segment} (when the axis simply switches to a coarser scale at one value, e.g. 0–600 in steps of 100 then up to 80000 in steps of 20000, use the same value for both: {"from": 600, "to": 600}), include the ticks of every segment in yAxis.ticks, set yAxis.max to the top of the highest segment, and ALWAYS estimate segmentHeights: the fraction of the axis height each segment occupies, bottom to top (e.g. [0.65, 0.35]). For bars that continue into the upper segment, report their true value read from the upper segment's scale. A bar that stops exactly at the top of the lower segment with nothing above it is reported at that value.
-13. WATERFALL PLOTS: Charts with one bar per subject, sorted by size, often coloured by group, are bar charts where every bar is its own category. Set "categories" to one label per bar, left to right (use the visible labels, or "" for each bar if the bars are unlabelled), make each colour group a series, and give each series points only at its own bars' category indices.`
+13. WATERFALL PLOTS: Charts with one bar per subject, sorted by size, often coloured by group, are bar charts where every bar is its own category. Set "categories" to one label per bar, left to right (use the visible labels, or "" for each bar if the bars are unlabelled), make each colour group a series, and give each series points only at its own bars' category indices. Count the bars of each colour group carefully before writing values (bars are often thin and closely packed); the number of categories must equal the total number of bars. Bars hanging below the zero line are easy to miss or under-read: count them separately and read each one's bottom end against the negative ticks. Bars that reach the top of a segment and stop there (e.g. many bars flat at 200) are each still separate bars.`
       + (vectorInfo ? VECTOR_PROMPT + vectorInfo.text : '');
 
     const content = [
@@ -2061,6 +2068,7 @@ function getStyleOpts() {
     showDataPoints: document.getElementById('showDataPoints').checked,
     showBestFit: document.getElementById('showBestFit').checked,
     showSignificance: document.getElementById('showSignificance').checked,
+    legendPosition: document.getElementById('legendPosition').value,
     graphType: document.getElementById('graphType').value,
     lineThickness: parseFloat(document.getElementById('lineThickness').value),
     lineStyle: document.getElementById('lineStyle').value,
@@ -2089,11 +2097,31 @@ function regenerateSvg() {
 function buildSvg(g, o) {
   const W = o.svgWidth || 700, H = o.svgHeight || 394;
   const hasDual = !!(g.dualAxis && g.yAxisRight?.min != null);
-  const ml = 72, mr = hasDual ? 72 : 36, mt = 50, mb = 60;
+  // Right-hand legend: names wrap onto lines of ~26 characters; the margin grows to fit
+  const legendRight = !!(o.showLegend && o.legendPosition === 'right' && g.series?.length);
+  const legLines = (g.series || []).map((ser, si) => {
+    const words = String(ser.name || 'Series ' + (si + 1)).split(/\s+/), lines = [''];
+    words.forEach(w => { const cur = lines[lines.length - 1]; if(cur && (cur + ' ' + w).length > 26) lines.push(w); else lines[lines.length - 1] = cur ? cur + ' ' + w : w; });
+    return lines;
+  });
+  const legRightW = legendRight ? 30 + Math.max(...legLines.flat().map(l => l.length)) * o.fontSize * 0.58 : 0;
+  // Y-axis title: skip a unit the label already contains; wrap onto two lines when too long
+  const yUnit = g.yAxis?.unit && !String(g.yAxis?.label || '').toLowerCase().includes(String(g.yAxis.unit).toLowerCase())
+    ? ` (${g.yAxis.unit})` : (g.yAxis?.scale === 'log' ? ' (log)' : '');
+  let yTitleLines = g.yAxis?.label ? [String(g.yAxis.label) + yUnit] : [];
+  if(yTitleLines.length && yTitleLines[0].length * o.fontSize * 0.6 > H - 130) {
+    const t = yTitleLines[0], cut = t.indexOf(' (') > 0 ? t.indexOf(' (') : t.lastIndexOf(' ', Math.floor(t.length / 2));
+    if(cut > 0) yTitleLines = [t.slice(0, cut), t.slice(cut + 1)];
+  }
+  // No x labels at all (e.g. unlabelled waterfall bars): less room needed below the plot
+  const catsBlank = !!(g.categories?.length && g.categories.every(l => !String(l ?? '').trim()));
+  const ml = 72 + (yTitleLines.length > 1 ? o.fontSize * 1.2 : 0), mt = 50;
+  const mb = (catsBlank && !g.xAxis?.label) ? 24 : 60;
+  const mr = (hasDual ? 72 : 36) + (legendRight ? legRightW + 12 : 0);
   // Legend items wrap onto extra rows when they don't fit the width
   const legItemW = (ser, si) => 28 + (ser.name || ('Series ' + (si + 1))).length * (o.fontSize * 0.58) + 10;
   let legRows = 0;
-  if(o.showLegend && g.series?.length > 0) {
+  if(o.showLegend && !legendRight && g.series?.length > 0) {
     let x = ml; legRows = 1;
     g.series.forEach((ser, si) => { const w = legItemW(ser, si); if(x + w > W - 8 && x > ml) { legRows++; x = ml; } x += w; });
   }
@@ -2104,7 +2132,12 @@ function buildSvg(g, o) {
   const gtype = o.graphType === 'auto' ? (g.graphType || 'line') : o.graphType;
 
   // Determine if categorical (bar chart with labels)
-  const cats = g.categories && g.categories.length > 0 ? g.categories : null;
+  let cats = g.categories && g.categories.length > 0 ? g.categories : null;
+  // Unlabelled bars (e.g. waterfall plots): drop trailing slots no series uses
+  if(cats && cats.every(l => !String(l ?? '').trim())) {
+    const used = Math.max(-1, ...(g.series || []).flatMap(ser => (ser.points || []).map((p, pi) => Math.round(p.x ?? pi))));
+    if(used >= 0) cats = cats.slice(0, used + 1);
+  }
   const nCats = cats ? cats.length : 0;
 
   const xMin = g.xAxis?.min ?? 0;
@@ -2512,6 +2545,7 @@ function buildSvg(g, o) {
         // Categorical x labels
         cats.forEach((label, i) => {
           const x = catX(i);
+          if(!String(label ?? '').trim()) return;   // unlabelled bars: no tick, no text
           s += `<line x1="${x}" y1="${mt+ph}" x2="${x}" y2="${mt+ph+5}" stroke="${o.axisColor}" stroke-width="1"/>`;
           // Rotate if long labels
           const rotate = label.length > 6;
@@ -2543,7 +2577,7 @@ function buildSvg(g, o) {
         s += `<text x="${ml+pw/2}" y="${H-8}" text-anchor="middle" fill="${o.axisColor}" font-size="${o.fontSize}" font-weight="600">${esc(g.xAxis.label)}${g.xAxis.unit?' ('+esc(g.xAxis.unit)+')':''}</text>`;
       }
       if(g.yAxis?.label) {
-        s += `<text x="${-(mt+ph/2)}" y="${14}" text-anchor="middle" fill="${o.axisColor}" font-size="${o.fontSize}" font-weight="600" transform="rotate(-90)">${esc(g.yAxis.label)}${g.yAxis.unit?' ('+esc(g.yAxis.unit)+')':(yLog?' (log)':'')}</text>`;
+        s += `<text x="${-(mt+ph/2)}" y="${14}" text-anchor="middle" fill="${o.axisColor}" font-size="${o.fontSize}" font-weight="600" transform="rotate(-90)">${yTitleLines.map((l, li) => `<tspan x="${-(mt+ph/2)}" dy="${li ? (o.fontSize * 1.15).toFixed(1) : 0}">${esc(l)}</tspan>`).join('')}</text>`;
       }
 
       // Right y-axis
@@ -2573,12 +2607,12 @@ function buildSvg(g, o) {
 
   // ── Legend ───────────────────────────────────────────────────────────────
   if(o.showLegend && g.series?.length > 0) {
-    let ly = mt + ph + mb - 14;
-    let lx = ml;
+    let ly = legendRight ? mt + 8 : mt + ph + mb - 14;
+    let lx = legendRight ? W - legRightW - 12 : ml;
     s += `<g id="Legend">`;
     g.series.forEach((ser, si) => {
       const col = o.palette[si % o.palette.length];
-      if(lx + legItemW(ser, si) > W - 8 && lx > ml) { lx = ml; ly += 18; }
+      if(!legendRight && lx + legItemW(ser, si) > W - 8 && lx > ml) { lx = ml; ly += 18; }
       if(gtype === 'box' || ser.seriesType === 'box') {
         // Legend swatch: small box with median line
         s += `<rect x="${lx}" y="${ly-5}" width="14" height="10" fill="${col}" fill-opacity="0.25" stroke="${col}" stroke-width="1.5" rx="1"/>`;
@@ -2592,8 +2626,14 @@ function buildSvg(g, o) {
         s += `<line x1="${lx}" y1="${ly}" x2="${lx+20}" y2="${ly}" stroke="${col}" stroke-width="${o.lineThickness}" stroke-dasharray="${legDash}"/>`;
         if(legStype !== 'bestfit') s += markerSvg(lx+10, ly, o.markerSize*0.8, o.markerShape, col);
       }
-      s += `<text x="${lx+24}" y="${ly+o.fontSize*0.35}" fill="${o.axisColor}" font-size="${o.fontSize*0.9}">${esc(ser.name || 'Series '+(si+1))}</text>`;
-      lx += legItemW(ser, si);
+      if(legendRight) {
+        const lh = o.fontSize * 1.1;
+        s += `<text x="${lx+24}" y="${ly+o.fontSize*0.35}" fill="${o.axisColor}" font-size="${o.fontSize*0.9}">${legLines[si].map((l, li) => `<tspan x="${lx+24}" dy="${li ? lh : 0}">${esc(l)}</tspan>`).join('')}</text>`;
+        ly += Math.max(22, legLines[si].length * lh + 10);
+      } else {
+        s += `<text x="${lx+24}" y="${ly+o.fontSize*0.35}" fill="${o.axisColor}" font-size="${o.fontSize*0.9}">${esc(ser.name || 'Series '+(si+1))}</text>`;
+        lx += legItemW(ser, si);
+      }
     });
     s += `</g>`;
   }
