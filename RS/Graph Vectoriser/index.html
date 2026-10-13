@@ -1978,17 +1978,13 @@ CRITICAL RULES:
 6. BOX AND WHISKER PLOTS: If the graph is a box plot, set graphType to "box" and seriesType to "box" for each series. Each box represents one category, so set "categories" as normal. For each point extract: "whiskerLow" (bottom whisker tip), "q1" (bottom of box), "median" (middle line), "q3" (top of box), "whiskerHigh" (top whisker tip), and "outliers" as an array of individual point values shown beyond the whiskers. Set "y" to the median value. Read all values carefully from the y-axis scale.
 7. UNEQUAL SERIES LENGTHS: Different series will often have different numbers of data points. NEVER invent or pad points to make series lengths match. Only report points you can actually see in the graph. It is completely valid and expected for one series to have 3 points and another to have 12.
 8. Be precise: read all values carefully against the axis scales.
-9. Extract ALL real data points. Do not fabricate any.
+9. Extract ALL real data points. Do not fabricate any. You can call the zoom tool to enlarge any part of the image: use it to count the bars in each group and to read thin, short or negative bars before you answer. When you are done, reply with only the JSON.
 10. SIGNIFICANCE / P-VALUES: Look carefully for statistical significance annotations: asterisks (*, **, ***, ****), "ns", "n.s.", hash/dagger symbols, and written p-values ("p < 0.05", "P = 0.003", "p=1.2e-4"). These usually sit above bars, boxes or points, often on a bracket: a horizontal line joining two groups, usually with short downward ticks at each end. Report every annotation in "significance" (use [] if there are none). Use type "bracket" for a line with end ticks, "line" for a plain horizontal line without ticks, and "text" for a label on its own above a single group. x1/x2 are the two groups the line joins (category indices for categorical x). For grouped bars or boxes, set series1/series2 to the series index of the specific bar each end sits on; otherwise null. "y" is the height of the horizontal line in y-axis data units (for type "text", the height of the bottom of the label). Copy the label text exactly. Set "pValue" only when a number is written.
 11. NEGATIVE VALUES: The y axis may extend below zero (e.g. % change, waterfall plots). Set yAxis.min to the true minimum (e.g. -100) and report bars or points below zero with negative y values. Bars grow from zero: a bar hanging down from the zero line has a negative value equal to where its bottom ends.
 12. AXIS BREAKS: If the y axis is split into separate segments with a jump in values (a gap in the axis line, // break marks, or two stacked axis sections such as 0–200 below and 800–1400 above), list each break in yAxis.breaks as {"from": top value of the lower segment, "to": bottom value of the upper segment} (when the axis simply switches to a coarser scale at one value, e.g. 0–600 in steps of 100 then up to 80000 in steps of 20000, use the same value for both: {"from": 600, "to": 600}), include the ticks of every segment in yAxis.ticks, set yAxis.max to the top of the highest segment, and ALWAYS estimate segmentHeights: the fraction of the axis height each segment occupies, bottom to top (e.g. [0.65, 0.35]). For bars that continue into the upper segment, report their true value read from the upper segment's scale. A bar that stops exactly at the top of the lower segment with nothing above it is reported at that value.
 13. WATERFALL PLOTS: Charts with one bar per subject, sorted by size, often coloured by group, are bar charts where every bar is its own category. Set "categories" to one label per bar, left to right (use the visible labels, or "" for each bar if the bars are unlabelled), make each colour group a series, and give each series points only at its own bars' category indices. Count the bars of each colour group carefully before writing values (bars are often thin and closely packed); the number of categories must equal the total number of bars. Bars hanging below the zero line are easy to miss or under-read: count them separately and read each one's bottom end against the negative ticks. Bars that reach the top of a segment and stop there (e.g. many bars flat at 200) are each still separate bars.`
       + (vectorInfo ? VECTOR_PROMPT + vectorInfo.text : '');
 
-    const content = [
-      { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-      { type: 'text', text: prompt }
-    ];
     const callClaude = async (body, beta) => {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -1999,7 +1995,7 @@ CRITICAL RULES:
           'anthropic-dangerous-direct-browser-access': 'true',
           ...(beta ? { 'anthropic-beta': beta } : {})
         },
-        body: JSON.stringify({ ...body, messages: [{ role: 'user', content }] })
+        body: JSON.stringify(body)
       });
       if(!response.ok) {
         const err = await response.json().catch(() => ({}));
@@ -2008,28 +2004,110 @@ CRITICAL RULES:
       return response.json();
     };
 
+    // Zoom tool: Claude can ask for an enlarged crop of the image, which helps it
+    // count thin bars and read short or negative ones accurately.
+    const ZOOM_TOOL = {
+      name: 'zoom',
+      description: 'Returns an enlarged crop of the graph image. Coordinates are fractions of the full image (0 = left/top edge, 1 = right/bottom edge). Use it to count thin or closely packed bars, read short or negative bars, and check values against tick marks.',
+      strict: true,
+      input_schema: {
+        type: 'object',
+        properties: {
+          left: { type: 'number', description: 'Left edge, 0-1' },
+          top: { type: 'number', description: 'Top edge, 0-1' },
+          right: { type: 'number', description: 'Right edge, 0-1' },
+          bottom: { type: 'number', description: 'Bottom edge, 0-1' }
+        },
+        required: ['left', 'top', 'right', 'bottom'],
+        additionalProperties: false
+      }
+    };
+    const sourceImg = await new Promise((res, rej) => {
+      const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('Could not read the image')); im.src = uploadedDataUrl;
+    });
+    const zoomCrop = ({left, top, right, bottom}) => {
+      const W = sourceImg.naturalWidth, H = sourceImg.naturalHeight, c01 = v => Math.min(1, Math.max(0, Number(v) || 0));
+      let [l, t, r, b] = [c01(left), c01(top), c01(right), c01(bottom)];
+      if(r - l < 0.02) { r = Math.min(1, l + 0.02); l = Math.max(0, r - 0.02); }
+      if(b - t < 0.02) { b = Math.min(1, t + 0.02); t = Math.max(0, b - 0.02); }
+      const sw = (r - l) * W, sh = (b - t) * H;
+      const k = Math.min(4, 1500 / Math.max(sw, sh));          // enlarge up to 4×, max 1500px
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(sw * k)); cv.height = Math.max(1, Math.round(sh * k));
+      const cx2 = cv.getContext('2d');
+      cx2.fillStyle = '#fff'; cx2.fillRect(0, 0, cv.width, cv.height);
+      cx2.drawImage(sourceImg, l * W, t * H, sw, sh, 0, 0, cv.width, cv.height);
+      return cv.toDataURL('image/png').split(',')[1];
+    };
+
+    // One conversation with Claude: answers zoom requests until it replies with the JSON
+    const converse = async (messages, model, opts = {}) => {
+      for(let turn = 0, zooms = 0; turn < 12; turn++) {
+        let data = await callClaude({
+          model, max_tokens: 16000, tools: [ZOOM_TOOL], messages,
+          output_config: { effort: model === 'claude-opus-4-8' ? 'high' : 'medium' },   // thinking is always on (Opus 5.5) and counts toward max_tokens
+          ...(opts.fallbacks ? { fallbacks: opts.fallbacks } : {})
+        }, opts.fallbacks ? 'server-side-fallback-2026-06-01' : null);
+        if(data.stop_reason === 'refusal') return { refused: true };
+        if(data.stop_reason === 'max_tokens')
+          throw new Error('The analysis ran out of room before finishing (graph too dense). Try cropping to a single chart.');
+        messages.push({ role: 'assistant', content: data.content });
+        const calls = data.content.filter(b => b.type === 'tool_use');
+        if(data.stop_reason !== 'tool_use' || !calls.length)
+          return { text: data.content.filter(b => b.type === 'text').map(b => b.text).join(''), messages };
+        zooms += calls.length;
+        setStatus('loading', `Analysing graph… (zoomed in ${zooms}×)`);
+        messages.push({ role: 'user', content: calls.map(c => ({
+          type: 'tool_result', tool_use_id: c.id,
+          content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: zoomCrop(c.input || {}) } }]
+        })) });
+      }
+      throw new Error('The analysis did not finish (too many zoom steps). Try again.');
+    };
+    const parseJson = text => {
+      const t = text.replace(/```json|```/g, '');
+      const a = t.indexOf('{'), b = t.lastIndexOf('}');
+      if(a < 0 || b < a) throw new Error('Claude did not return graph data. Try again.');
+      return JSON.parse(t.slice(a, b + 1));
+    };
+
     // Opus 5.5's safety classifiers occasionally decline harmless scientific
     // figures (e.g. biology charts). The API re-runs a declined request
     // server-side on these models, in order: Opus 5 (no bio classifier), then Opus 4.8.
-    let data = await callClaude({
-      model: 'claude-opus-5-5',
-      max_tokens: 16000,                    // thinking is always on and counts toward this
-      output_config: { effort: 'medium' },
-      fallbacks: [{ model: 'claude-opus-5' }, { model: 'claude-opus-4-8' }]
-    }, 'server-side-fallback-2026-06-01');
+    const firstMessage = () => [{ role: 'user', content: [
+      { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+      { type: 'text', text: prompt }
+    ] }];
+    let model = 'claude-opus-5-5';
+    let result = await converse(firstMessage(), model, { fallbacks: [{ model: 'claude-opus-5' }, { model: 'claude-opus-4-8' }] });
     // Some refusal categories have no server-side fallback: retry once on Opus 4.8
-    if(data.stop_reason === 'refusal') {
+    if(result.refused) {
       setStatus('loading', 'Retrying analysis with Claude Opus 4.8…');
-      data = await callClaude({ model: 'claude-opus-4-8', max_tokens: 16000, output_config: { effort: 'high' } });
+      model = 'claude-opus-4-8';
+      result = await converse(firstMessage(), model);
     }
-    if(data.stop_reason === 'refusal')
+    if(result.refused)
       throw new Error('Claude declined to analyse this image, even after retrying with a fallback model. Try cropping to just the chart.');
-    if(data.stop_reason === 'max_tokens')
-      throw new Error('The analysis ran out of room before finishing (graph too dense). Try cropping to a single chart.');
-    // Read text blocks only; the response may also contain thinking blocks
-    const raw = data.content.filter(b => b.type === 'text').map(b => b.text).join('');
-    const cleaned = raw.replace(/```json|```/g, '').trim();
-    parsedGraph = JSON.parse(cleaned);
+    let graph = parseJson(result.text);
+
+    // Completeness check: every category is a bar slot, so an empty slot means a bar was missed.
+    // Send Claude back to those positions once.
+    const missing = Array.isArray(graph.categories) && ['bar', 'stacked-bar'].includes(graph.graphType)
+      ? graph.categories.map((_, i) => i).filter(i => !(graph.series || []).some(ser => (ser.points || []).some(pt => Math.round(pt.x) === i && pt.y != null)))
+      : [];
+    if(missing.length && missing.length < graph.categories.length) {
+      setStatus('loading', `Re-checking ${missing.length} bar${missing.length > 1 ? 's' : ''} that came back empty…`);
+      result.messages.push({ role: 'user', content: [{ type: 'text', text:
+        `Your JSON has ${graph.categories.length} categories, but category indices ${missing.join(', ')} have no point in any series. ` +
+        `Every category is a bar. Zoom in on those positions (count the bars of each colour group from the left), read each missing bar's value — ` +
+        `including short bars just above or below zero and negative bars — and, if the category count itself was wrong, fix it. ` +
+        `Then reply with the complete corrected JSON only, in the same format.` }] });
+      try {
+        const again = await converse(result.messages, model);
+        if(!again.refused) graph = parseJson(again.text);
+      } catch(e) { console.warn('Re-check failed; keeping the first result', e); }
+    }
+    parsedGraph = graph;
     const refined = refineWithVectors(parsedGraph, vectorInfo);
     parsedGraph.significance = normaliseSignificance(parsedGraph.significance);
 
