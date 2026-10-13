@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 import { makePathway } from '../core/defaults';
-import { mapCellAt, mapCells } from '../core/cellMap';
+import { heroCellOf, mapCellAt, mapCells, middleCellId, soloActive } from '../core/cellMap';
+import { defaultCellMap } from '../core/defaults';
 import { withStructureOf } from '../core/layers';
 import { onBodyImage } from '../core/bodyImage';
-import { MODULES, moduleScene, shareScene } from '../core/modules';
+import { MODULES, moduleScene, shareScene, withHero, withoutTissueMap, withTissueMap, type TissueUpload } from '../core/modules';
 import { hash, randomSeed } from '../core/rng';
 import type { CellMap, LayerSpec, Pathway, Scene, Vec2 } from '../core/types';
 
@@ -40,8 +41,19 @@ interface AppState {
   setTime: (t: number) => void;
   setPlaying: (playing: boolean) => void;
   setCellMap: (update: (m: CellMap) => CellMap) => void;
-  /** Click on the map: toggle that cell's pathways, or with `reroll`, give it a new layout. */
-  clickMapCell: (p: Vec2, reroll: boolean) => void;
+  /**
+   * Click on the map. On an uploaded tissue map with a selected cell, a click
+   * selects the cell under it (in every view); with `toggle` (Alt) it adds or
+   * removes that cell's pathways instead. On other maps a click toggles the
+   * pathways. `reroll` (Shift) gives the cell a new layout.
+   */
+  clickMapCell: (p: Vec2, reroll: boolean, toggle?: boolean) => void;
+  /** Use an uploaded tissue map in every view that shows cells, its middle cell selected. */
+  setTissueMap: (map: TissueUpload) => void;
+  /** Select a cell of the uploaded tissue map, in every view. */
+  setHeroCell: (id: string) => void;
+  /** Drop the uploaded tissue map: each view goes back to its own cell or generated tissue. */
+  clearTissueMap: () => void;
 }
 
 /** State with the current tab's scene replaced. */
@@ -124,10 +136,33 @@ export const useApp = create<AppState>((set) => ({
   setTime: (time) => set({ time }),
   setPlaying: (playing) => set({ playing }),
   setCellMap: (update) => set((st) => put(st, { ...st.scene, cellMap: update(st.scene.cellMap) })),
-  clickMapCell: (p, reroll) =>
+  setTissueMap: (map) =>
     set((st) => {
+      const probe = { ...st.scene, cellMap: { ...defaultCellMap(), viewBox: map.viewBox, cells: map.cells } };
+      const hero = middleCellId(probe) ?? map.cells[0]?.id ?? '';
+      const tabs = st.tabs.map((s) => withTissueMap(s, map, hero));
+      return { tabs, scene: tabs[st.active] };
+    }),
+  setHeroCell: (id) =>
+    set((st) => {
+      const tabs = st.tabs.map((s) => withHero(s, id));
+      return { tabs, scene: tabs[st.active] };
+    }),
+  clearTissueMap: () =>
+    set((st) => {
+      const tabs = st.tabs.map((s) => (heroCellOf(s.cellMap) ? withoutTissueMap(s) : s));
+      return { tabs, scene: tabs[st.active] };
+    }),
+  clickMapCell: (p, reroll, toggle) =>
+    set((st) => {
+      // A solo view shows one cell: nothing to pick or switch off.
+      if (soloActive(st.scene)) return {};
       const hit = mapCellAt(st.scene, p);
       if (!hit) return {};
+      if (heroCellOf(st.scene.cellMap) && !reroll && !toggle) {
+        const tabs = st.tabs.map((s) => withHero(s, hit.id));
+        return { tabs, scene: tabs[st.active] };
+      }
       // A tissue's cells are generated; storing them keeps each one's on/off and seed.
       const cells = mapCells(st.scene).map((c) =>
         c.id !== hit.id ? c : reroll ? { ...c, enabled: true, seed: randomSeed() } : { ...c, enabled: !c.enabled },

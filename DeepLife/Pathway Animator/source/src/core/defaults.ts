@@ -15,6 +15,9 @@ export function defaultCellMap(): CellMap {
     startShare: 1,
     variation: 0.4,
     around: false,
+    heroId: '',
+    solo: false,
+    centerHero: false,
   };
 }
 
@@ -22,7 +25,7 @@ export function defaultCellMap(): CellMap {
 export function defaultModule(kind: ModuleKind = 'custom'): ModuleSettings {
   return {
     kind,
-    directOnly: kind === 'targetId' || kind === 'combination',
+    directOnly: kind === 'targetId',
     markTargets: kind === 'targetId' || kind === 'combination' || kind === 'toxicity',
     targetColor: '#FFFFFF',
     focusDeg: 1,
@@ -31,7 +34,7 @@ export function defaultModule(kind: ModuleKind = 'custom'): ModuleSettings {
     toxicDegs: 1,
     toxicColor: '#FF2B45',
     warning: true,
-    warningAngle: 45,
+    warningSize: 1,
     organ: 'heart',
     sectionLength: 3,
     bodyGlow: 0.5,
@@ -44,6 +47,8 @@ export function defaultModule(kind: ModuleKind = 'custom'): ModuleSettings {
     netScale: 1,
     netX: 0,
     netY: 0,
+    tissue2Color: '#FF2EA6',
+    crossLinks: 4,
   };
 }
 

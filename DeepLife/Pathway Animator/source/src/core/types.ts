@@ -100,7 +100,7 @@ export interface Scene {
  * The client's views of one pathway, one per tab. Each module changes how the
  * same network is shown; 'custom' shows it unchanged.
  */
-export type ModuleKind = 'targetId' | 'moa' | 'combination' | 'toxicity' | 'tissue' | 'custom' | 'body' | 'journey';
+export type ModuleKind = 'targetId' | 'moa' | 'combination' | 'toxicity' | 'tissue' | 'crossTissue' | 'custom' | 'body' | 'journey';
 
 /** Organs of the body view (core/body.ts). */
 export type OrganId = 'brain' | 'lungs' | 'heart' | 'liver' | 'stomach' | 'kidneys' | 'intestines' | 'bladder';
@@ -124,8 +124,8 @@ export interface ModuleSettings {
   toxicColor: string;
   /** Target toxicity: a warning badge on the membrane as the cell turns. */
   warning: boolean;
-  /** Where the badge sits on the membrane: degrees, 0 = top, clockwise. */
-  warningAngle: number;
+  /** How big the badge is, in the middle of the cell (1 = a fifth of the canvas's short side). */
+  warningSize: number;
   /** Body and journey: the organ the signal starts from (and the journey zooms out of). */
   organ: OrganId;
   /** Journey: seconds per section (cell, cell → tissue, tissue, tissue → body, body). */
@@ -146,6 +146,9 @@ export interface ModuleSettings {
   netScale: number;
   netX: number;
   netY: number;
+  /** Cross-tissue communication: the second tissue's colour, and how many connections join the two. */
+  tissue2Color: string;
+  crossLinks: number;
 }
 
 /** One cell of an imported map. Coordinates are flat x,y pairs in the map's own units. */
@@ -177,6 +180,17 @@ export interface CellMap {
    * cell's pathways on/off and seed by id. `detailScale` sizes the centre cell.
    */
   around: boolean;
+  /**
+   * The selected cell of an imported map ('' for none): the single cell of
+   * the other views. It runs the scene's own pathways and starts the signal.
+   */
+  heroId: string;
+  /** Show only the selected cell, filling the canvas like the single cell. */
+  solo: boolean;
+  /** Keep the selected cell in the middle of the canvas, the rest of the map round it. */
+  centerHero: boolean;
+  /** Derived, never saved: the part of the canvas the map is fitted into (the whole canvas when absent). */
+  frame?: { x: number; y: number; w: number; h: number };
 }
 
 // ---- Derived geometry (regenerated from the Scene, never stored) ----
@@ -198,6 +212,8 @@ export interface NodeGeom {
   lateral: number;
   /** Off the traced route (MOA elucidation): drawn faint, never signalled. */
   dim?: boolean;
+  /** Hidden until the signal reaches it, then pops up (the route MOA elucidation uncovers). */
+  reveal?: boolean;
   /** A DEG that makes the cell toxic when it fires (target toxicity). */
   toxic?: boolean;
 }
@@ -223,6 +239,10 @@ export interface EdgeGeom {
   dim?: boolean;
   /** Layer hops this edge stands for (a direct receptor → DEG edge spans several); scales its travel time. */
   hops?: number;
+  /** Hidden until the signal travels it (the route MOA elucidation uncovers). */
+  reveal?: boolean;
+  /** Line width, as a multiple of the usual (connections between tissues are drawn heavier). */
+  weight?: number;
 }
 
 export interface ReceptorGeom {
@@ -254,6 +274,8 @@ export interface CellGeom {
   noNucleus?: boolean;
   /** The single cell itself, in a tissue (the cell the journey starts on). */
   hero?: boolean;
+  /** This cell's membrane glow colour, when not the scene's (a second tissue). */
+  glow?: string;
 }
 
 export interface SceneGeom {

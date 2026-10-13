@@ -1,5 +1,5 @@
 import { BACKGROUND_PRESETS, CANVAS_PRESETS, DEFAULT_GRADIENT } from '../core/defaults';
-import { mapActive } from '../core/cellMap';
+import { mapActive, soloActive } from '../core/cellMap';
 import { buildGeometry } from '../core/geometry';
 import type { ReceptorStyle, Scene } from '../core/types';
 import { ColorAlphaField, ColorField, NumberInput, Section, Select, Slider, Toggle } from './controls';
@@ -7,6 +7,7 @@ import { AnimationSection } from './AnimationSection';
 import { CellMapSection } from './CellMapSection';
 import { ExportSection } from './ExportSection';
 import { ModuleSection } from './ModuleSection';
+import { TissueMapSection } from './TissueMapSection';
 import { OutlineControls } from './OutlineControls';
 import { CrosstalkSection, PathwaysSection } from './PathwaysSection';
 import { useApp } from './store';
@@ -17,6 +18,7 @@ export function Panel() {
   const regenerateAll = useApp((s) => s.regenerateAll);
   const warnings = buildGeometry(scene).warnings;
   const onMap = mapActive(scene);
+  const solo = soloActive(scene);
 
   const patch = <K extends 'canvas' | 'cell' | 'nucleus' | 'style'>(key: K) =>
     (v: Partial<Scene[K]>) => setScene((s) => ({ ...s, [key]: { ...s[key], ...v } }));
@@ -96,15 +98,13 @@ export function Panel() {
         </div>
       </Section>
 
-      <CellMapSection />
+      <TissueMapSection />
+      {/* A solo view is one cell of the shared map: the map's own settings belong to the tissue views. */}
+      {!solo && <CellMapSection />}
 
       <Section title="Cell membrane" aside={<Toggle label="Show" checked={c.visible} onChange={(visible) => cell({ visible })} />}>
-        {!onMap && (
-          <>
-            <Slider label="Size" value={c.radius} min={0.25} max={0.5} onChange={(radius) => cell({ radius })} />
-            <Slider label="Wobble" value={c.wobble} min={0} max={1} onChange={(wobble) => cell({ wobble })} />
-          </>
-        )}
+        {(!onMap || solo) && <Slider label="Size" value={c.radius} min={0.25} max={0.5} onChange={(radius) => cell({ radius })} />}
+        {!onMap && <Slider label="Wobble" value={c.wobble} min={0} max={1} onChange={(wobble) => cell({ wobble })} />}
         <Slider label="Stroke width" value={c.strokeWidth} min={0.25} max={5} step={0.05} unit=" px" onChange={(strokeWidth) => cell({ strokeWidth })} />
         <OutlineControls look={c} onChange={cell} />
         <ColorAlphaField label={c.outlineStyle === 'glow' ? 'Receptor colour' : 'Colour'} value={c.color} onChange={(color) => cell({ color })} />

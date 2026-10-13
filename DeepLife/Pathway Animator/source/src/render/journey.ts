@@ -1,5 +1,5 @@
 import { organCenter } from '../core/body';
-import { mapExtent, middleCellId } from '../core/cellMap';
+import { heroCellOf, mapExtent, middleCellId } from '../core/cellMap';
 import { buildGeometry } from '../core/geometry';
 import { polygonArea } from '../core/polygon';
 import { cycleTime } from '../core/timeline';
@@ -46,8 +46,9 @@ export function journeyScenes(scene: Scene) {
     const cm = scene.cellMap;
     const { width, height } = scene.canvas;
     const canvas = isPortrait(scene) ? { ...scene.canvas, width: height, height: width } : scene.canvas;
-    const mid = cm.around ? undefined : middleCellId({ ...scene, canvas });
-    const cellMap = mid ? { ...cm, cells: cm.cells.map((c) => (c.id === mid ? { ...c, hero: true, enabled: true } : c)) } : cm;
+    // The selected cell, or failing that the one nearest the middle of the map.
+    const mid = cm.around ? undefined : heroCellOf(cm)?.id ?? middleCellId({ ...scene, canvas });
+    const cellMap = mid ? { ...cm, heroId: mid, solo: false, centerHero: false } : cm;
     hit = {
       tissue: { ...scene, canvas, cellMap, module: { ...scene.module, kind: 'tissue' } },
       body: { ...scene, module: { ...scene.module, kind: 'body' } },

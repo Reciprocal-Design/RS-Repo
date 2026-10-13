@@ -1,7 +1,9 @@
+import { arcLengthLut } from './bezier';
+import { suggestedDetailScale } from './cellMap';
 import { makeEdge } from './connect';
 import { defaultCellMap, defaultModule, defaultScene, makePathway } from './defaults';
 import { hash, rngFor } from './rng';
-import type { CellMap, EdgeGeom, ModuleKind, NodeGeom, ReceptorGeom, Scene, SceneGeom } from './types';
+import type { Bezier, CellMap, EdgeGeom, ModuleKind, NodeGeom, ReceptorGeom, Scene, SceneGeom } from './types';
 
 /** A tissue built round the single cell: the same cell at the centre, neighbours relaying its signal on. */
 export function tissueMap(): CellMap {
@@ -23,12 +25,12 @@ export const MODULES: ModuleInfo[] = [
   {
     kind: 'moa',
     label: 'MOA elucidation',
-    blurb: 'How the receptor reaches a DEG: the route and the proteins along it, with the rest of the network dimmed.',
+    blurb: 'Working back from a DEG to the receptor: the signal uncovers the route as it goes, each protein popping up as it is reached. The rest of the network stays dimmed.',
   },
   {
     kind: 'combination',
     label: 'Target combination',
-    blurb: 'Several receptors targeted at once, unevenly spaced round the cell, acting together on an interconnected set of DEGs. Each pathway is one target.',
+    blurb: 'Several receptors targeted at once, unevenly spaced round the cell, their pathways interconnected on the way to the DEGs. Each pathway is one target.',
   },
   { kind: 'toxicity', label: 'Target toxicity', blurb: 'When the signal reaches a toxic DEG, the cell turns red.' },
   {
@@ -36,7 +38,11 @@ export const MODULES: ModuleInfo[] = [
     label: 'Tissue-level target ID',
     blurb: 'Indication extension: the same cell at the centre of a tissue, its signal passing on into neighbouring cells.',
   },
-  { kind: 'custom', label: 'Module 6', blurb: 'Not defined yet. Works as the standard animator for now.' },
+  {
+    kind: 'crossTissue',
+    label: 'Cross-tissue communication',
+    blurb: 'Two tissues side by side, the second in its own colour, with connections between them: the signal starts in the selected cell, spreads through its tissue and crosses into the other.',
+  },
   {
     kind: 'body',
     label: 'Body',
@@ -49,7 +55,58 @@ export const MODULES: ModuleInfo[] = [
   },
 ];
 
-export const moduleInfo = (kind: ModuleKind) => MODULES.find((m) => m.kind === kind) ?? MODULES[MODULES.length - 1];
+export const moduleInfo = (kind: ModuleKind): ModuleInfo =>
+  MODULES.find((m) => m.kind === kind) ?? { kind, label: 'Pathway', blurb: 'The standard animator.' };
+
+/** The views that show one cell on its own (and, with an uploaded map, only its selected cell). */
+export const SINGLE_CELL: ModuleKind[] = ['targetId', 'moa', 'combination', 'toxicity'];
+
+/** The tissue two tissues are made from when no map is uploaded: more, smaller cells, and relays that reach across. */
+const crossTissueMap = (): CellMap => ({ ...tissueMap(), detailScale: 0.3, relayHops: 8 });
+
+/** An uploaded tissue map, as the views share it. */
+export type TissueUpload = Pick<CellMap, 'name' | 'viewBox' | 'cells'>;
+
+/**
+ * Put an uploaded tissue map, and the cell selected in it, into a view:
+ * the single-cell views show only that cell (as the single cell); the
+ * tissue view shows the whole map with that cell in the middle; the
+ * cross-tissue view and the journey use the whole map. In all of them the
+ * selected cell runs the scene's own pathways and starts the signal, and
+ * the other cells wait for it to reach them.
+ */
+export function withTissueMap(scene: Scene, map: TissueUpload, heroId: string): Scene {
+  const kind = scene.module.kind;
+  const base: CellMap = { ...defaultCellMap(), enabled: true, name: map.name, viewBox: map.viewBox, cells: map.cells, heroId };
+  if (SINGLE_CELL.includes(kind)) return { ...scene, cellMap: { ...base, solo: true, detailScale: 1 } };
+  const fit = (s: Scene) => suggestedDetailScale(s, map);
+  if (kind === 'tissue') return { ...scene, cellMap: { ...base, centerHero: true, startShare: 0, detailScale: fit(scene) } };
+  if (kind === 'journey') return { ...scene, cellMap: { ...base, startShare: 0, detailScale: fit(scene) } };
+  if (kind === 'crossTissue') {
+    // Each tissue has (a little under) half the canvas, fitted by its cells.
+    const { width: W, height: H } = scene.canvas;
+    const framed = { ...base, frame: { x: 0, y: 0, w: 0.46 * W, h: H } };
+    return { ...scene, cellMap: { ...base, startShare: 0, relayHops: 8, detailScale: suggestedDetailScale(scene, framed) } };
+  }
+  return scene;
+}
+
+/** Select another cell of the uploaded map. */
+export function withHero(scene: Scene, heroId: string): Scene {
+  const cm = scene.cellMap;
+  if (cm.around || !cm.cells.some((c) => c.id === heroId)) return scene;
+  return { ...scene, cellMap: { ...cm, heroId } };
+}
+
+/** Back to each view's own cell or generated tissue. */
+export function withoutTissueMap(scene: Scene): Scene {
+  const kind = scene.module.kind;
+  if (SINGLE_CELL.includes(kind)) return { ...scene, cellMap: defaultCellMap() };
+  if (kind === 'tissue') return { ...scene, cellMap: tissueMap() };
+  if (kind === 'journey') return { ...scene, cellMap: { ...tissueMap(), detailScale: 0.4 } };
+  if (kind === 'crossTissue') return { ...scene, cellMap: crossTissueMap() };
+  return scene;
+}
 
 /**
  * A module's starting scene. Every module starts from the same seed, so the
@@ -69,6 +126,7 @@ export function moduleScene(kind: ModuleKind, seed = 1234): Scene {
   }
   if (kind === 'toxicity') s.animation = { ...s.animation, holdAtEnd: 2.5 };
   if (kind === 'tissue') s.cellMap = tissueMap();
+  if (kind === 'crossTissue') s.cellMap = crossTissueMap();
   if (kind === 'journey') {
     // The tissue the cell zooms out into; motion that never stops, for a scroll sequence.
     s.cellMap = { ...tissueMap(), detailScale: 0.4 };
@@ -136,6 +194,7 @@ export function applyModule(scene: Scene, g: SceneGeom): SceneGeom {
 
   let nodes = g.nodes;
   let edges = g.edges;
+  let pathways = g.pathways;
   const degs = degsByPathway(nodes);
 
   if (direct) {
@@ -181,9 +240,11 @@ export function applyModule(scene: Scene, g: SceneGeom): SceneGeom {
     // they show other ways the signal can arrive.
     const route = new Set<string>();
     const routeEdges = new Set<string>();
+    const startOf = new Map<string, string>(); // pathway → the DEG the trace starts from
     const routes = Math.max(1, Math.min(3, Math.round(m.routes)));
     for (const [pid, list] of degs) {
       const target = list[Math.min(m.focusDeg, list.length) - 1];
+      startOf.set(pid, target.id);
       const rng = rngFor(scene.seed, 'route', pid, m.focusDeg);
       for (let r = 0; r < routes; r++) {
         let id = target.id;
@@ -200,8 +261,23 @@ export function applyModule(scene: Scene, g: SceneGeom): SceneGeom {
         }
       }
     }
-    nodes = nodes.map((n) => (route.has(n.id) || !n.active ? n : { ...n, dim: true }));
-    edges = edges.map((e) => (routeEdges.has(e.id) ? e : { ...e, dim: true }));
+    // Elucidation runs backwards: the signal starts at the DEG and travels
+    // the route in reverse to the receptor. The route is not there to begin
+    // with: its edges are drawn as the signal passes, and each node pops up
+    // when it is reached (the DEG itself is known from the start).
+    const starts = new Set(startOf.values());
+    nodes = nodes.map((n) =>
+      !n.active ? n : !route.has(n.id) ? { ...n, dim: true } : starts.has(n.id) ? n : { ...n, reveal: true });
+    edges = edges.map((e) => {
+      if (!routeEdges.has(e.id)) return { ...e, dim: true };
+      const bezier = [...e.bezier].reverse() as Bezier;
+      const lut = arcLengthLut(bezier);
+      return {
+        ...e, from: e.to, to: e.from, bezier, lut, length: lut[lut.length - 1],
+        depthFrom: e.depthTo, depthTo: e.depthFrom, reveal: true,
+      };
+    });
+    pathways = pathways.map((p) => (startOf.has(p.id) ? { ...p, start: startOf.get(p.id) } : p));
   }
 
   if (toxic) {
@@ -221,5 +297,5 @@ export function applyModule(scene: Scene, g: SceneGeom): SceneGeom {
     receptors = receptors.map((r) => (own(r) ? { ...r, target: true } : r));
   }
 
-  return { ...g, nodes, edges, receptors, nodeById: new Map(nodes.map((n) => [n.id, n])) };
+  return { ...g, nodes, edges, receptors, pathways, nodeById: new Map(nodes.map((n) => [n.id, n])) };
 }

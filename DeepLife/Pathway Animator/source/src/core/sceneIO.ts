@@ -73,9 +73,13 @@ function normalizeCellMap(raw: unknown): CellMap {
     });
   }
   const around = bool(raw.around, false);
+  const heroId = typeof raw.heroId === 'string' && cells.some((c) => c.id === raw.heroId) ? raw.heroId : '';
   return {
     enabled: bool(m.enabled, false) && (cells.length > 0 || around),
     around,
+    heroId,
+    solo: bool(raw.solo, false) && !!heroId,
+    centerHero: bool(raw.centerHero, false),
     name: typeof m.name === 'string' ? m.name : '',
     viewBox: { x: num(vb.x, 0), y: num(vb.y, 0), width: vb.width, height: vb.height },
     cells,
@@ -90,7 +94,7 @@ function normalizeCellMap(raw: unknown): CellMap {
   };
 }
 
-const MODULE_KINDS: ModuleKind[] = ['targetId', 'moa', 'combination', 'toxicity', 'tissue', 'custom', 'body', 'journey'];
+const MODULE_KINDS: ModuleKind[] = ['targetId', 'moa', 'combination', 'toxicity', 'tissue', 'crossTissue', 'custom', 'body', 'journey'];
 const ORGAN_IDS: OrganId[] = ['brain', 'lungs', 'heart', 'liver', 'stomach', 'kidneys', 'intestines', 'bladder'];
 
 /** Scenes saved before modules existed show their pathway unchanged ('custom'). */
@@ -105,7 +109,7 @@ function normalizeModule(raw: unknown): ModuleSettings {
     routes: Math.round(num(m.routes, base.routes, 1, 3)),
     dimOpacity: num(m.dimOpacity, base.dimOpacity, 0, 1),
     toxicDegs: Math.round(num(m.toxicDegs, base.toxicDegs, 0, 10)),
-    warningAngle: num(m.warningAngle, base.warningAngle, -360, 360),
+    warningSize: num(m.warningSize, base.warningSize, 0.2, 3),
     organ: ORGAN_IDS.includes(m.organ) ? m.organ : base.organ,
     sectionLength: num(m.sectionLength, base.sectionLength, 0.5, 30),
     bodyGlow: num(m.bodyGlow, base.bodyGlow, 0, 1),
@@ -116,6 +120,7 @@ function normalizeModule(raw: unknown): ModuleSettings {
     netScale: num(m.netScale, 1, 0.3, 3),
     netX: num(m.netX, 0, -1, 1),
     netY: num(m.netY, 0, -1, 1),
+    crossLinks: Math.round(num(m.crossLinks, base.crossLinks, 0, 12)),
   };
 }
 

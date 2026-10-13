@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { mapActive } from '../core/cellMap';
+import { heroCellOf, mapActive, soloActive } from '../core/cellMap';
 import { render } from '../render/render';
 import { useApp } from './store';
 
@@ -39,18 +39,23 @@ export function Preview() {
     render(ctx, scene, time);
   }, [scene, time, cssW, cssH, W, H]);
 
-  const onMap = mapActive(scene);
+  // Cells can be clicked on a map, but not in a solo view (one cell) or the two-tissue view.
+  const onMap = mapActive(scene) && !soloActive(scene) && scene.module.kind !== 'crossTissue';
+  const picking = onMap && !!heroCellOf(scene.cellMap);
   return (
     <div className="preview" ref={wrapRef}>
       <canvas
         ref={canvasRef}
         style={{ width: cssW, height: cssH, cursor: onMap ? 'pointer' : undefined }}
-        title={onMap ? 'Click a cell to add or remove its pathways; Shift-click to re-roll it' : undefined}
+        title={
+          picking ? 'Click a cell to select it; Alt-click to add or remove its pathways; Shift-click to re-roll it'
+            : onMap ? 'Click a cell to add or remove its pathways; Shift-click to re-roll it' : undefined
+        }
         onClick={(e) => {
           if (!onMap || !cssW) return;
           const r = e.currentTarget.getBoundingClientRect();
           const p = { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
-          clickMapCell(p, e.shiftKey);
+          clickMapCell(p, e.shiftKey, e.altKey);
         }}
       />
     </div>
