@@ -26,20 +26,33 @@ the same pathway; "Use this look and pathway in all tabs" copies the current tab
 animation to the others (each keeps its module settings, pathway count, start delays and cell map). The modules are
 a preset scene plus a pure transform of the geometry (`src/core/modules.ts`):
 
+**One tissue map for every cell view.** "Tissue map → Upload SVG tissue map…" (on tabs 1–6 and the journey) takes
+one SVG of the tissue and applies it everywhere; click a cell in the thumbnail (or in the preview on tab 5) to
+select it. Tabs 1–4 then show only the selected cell, as the single cell (its own shape, fitted to the canvas);
+tab 5 shows the whole map with that cell in the middle; tab 6 shows the map twice; the journey starts on it. The
+selected cell runs the scene's own pathways and starts the signal. "Remove the map" goes back to each view's own
+cell or generated tissue.
+
 1. **Target ID**: only the receptor and its active DEGs, joined directly; the receptor is ringed as the drug target.
-2. **MOA elucidation**: one to three routes from the receptor into a chosen DEG (one protein per layer) stay lit and
-   carry the signal; the rest of the network is dimmed.
-3. **Target combination**: several ringed receptors (one per pathway) fire together, each straight to its DEGs.
+2. **MOA elucidation**: works backwards. The signal starts at a chosen DEG and travels one to three routes (one
+   protein per layer) in reverse to the receptor, uncovering them as it goes: the route's edges are drawn as the
+   signal passes and each node pops up when it is reached. The rest of the network is dimmed.
+3. **Target combination**: several ringed receptors (one per pathway) fire together through their whole
+   pathways, the proteins in between included ("Receptor → DEG only" hides them).
 4. **Target toxicity**: when the signal reaches a toxic DEG (drawn red), the cell's membrane cross-fades to red,
    and back as the loop closes.
 5. **Tissue-level target ID** (indication extension): the same cell at the centre (an exact copy of the single
    cell, scaled by "Centre cell size"), with neighbouring cells generated round it to the canvas edges
    (`src/core/tissue.ts`). Only the centre cell starts on its own; links run outward from it, so its signal relays
    on through the tissue. The tissue follows the centre cell when the seed, shape or canvas changes.
-   Target toxicity also shows a warning badge on the membrane as the cell turns (position adjustable).
+   Target toxicity also shows a large warning badge in the middle of the cell as it turns (size adjustable).
    Target combination spaces its receptors unevenly (spacing variation up to 2) and, with crosstalk on,
    interconnects them: each receptor also reaches a few of the other targets' DEGs.
-6. **Module 6**: not defined yet; the standard animator.
+6. **Cross-tissue communication** (`src/core/crossTissue.ts`): the tissue twice, side by side, each fitted by what
+   its cells cover. The first, in the membrane colour, holds the selected cell and starts the signal; the second,
+   in its own colour (pink by default) and with its own networks, only answers. A chosen number of heavier
+   connections join the nearest cells across the gap, so the signal spreads through one tissue and crosses into
+   the other.
 7. **Body**: organ-level connectivity (`src/core/body.ts`). An anatomical front-view outline drawn like the
    membrane in an X-ray look: a dark core, a wide glow reaching in from a bright rim ("Body glow"), and soft
    highlights along the anatomy (collarbones, chest, ribs, hips, shoulders, knees) that model the form. Organs are

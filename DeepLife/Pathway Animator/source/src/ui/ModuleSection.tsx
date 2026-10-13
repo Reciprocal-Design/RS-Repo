@@ -123,13 +123,29 @@ export function ModuleSection() {
             onChange={(toxicDegs) => set({ toxicDegs })} />
           <ColorField label="Toxicity colour" value={m.toxicColor} onChange={(toxicColor) => set({ toxicColor })} />
           <p className="hint">The cell turns this colour when the signal reaches a toxic DEG, and back as the loop ends.</p>
-          <Toggle label="Warning symbol on the membrane" checked={m.warning} onChange={(warning) => set({ warning })} />
+          <Toggle label="Warning symbol in the middle of the cell" checked={m.warning} onChange={(warning) => set({ warning })} />
           {m.warning && (
-            <Slider label="Warning position" value={m.warningAngle} min={-180} max={180} step={1} unit="°"
-              onChange={(warningAngle) => set({ warningAngle })} />
+            <Slider label="Warning size" value={m.warningSize} min={0.3} max={2.5} onChange={(warningSize) => set({ warningSize })} />
           )}
           {targets}
         </>
+      )}
+
+      {m.kind === 'crossTissue' && (
+        <>
+          <ColorField label="Second tissue colour" value={m.tissue2Color} onChange={(tissue2Color) => set({ tissue2Color })} />
+          <Slider label="Connections between the tissues" value={m.crossLinks} min={0} max={12} step={1}
+            onChange={(crossLinks) => set({ crossLinks })} />
+          <p className="hint">
+            The first tissue takes the cell membrane colour. Cell size, links inside each tissue and how far a signal
+            relays are under Cell map.
+          </p>
+        </>
+      )}
+
+      {m.kind === 'tissue' && !scene.cellMap.around && scene.cellMap.heroId && (
+        <Toggle label="Keep the selected cell in the middle" checked={scene.cellMap.centerHero}
+          onChange={(centerHero) => setScene((s) => ({ ...s, cellMap: { ...s.cellMap, centerHero } }))} />
       )}
 
       {m.kind === 'tissue' && (

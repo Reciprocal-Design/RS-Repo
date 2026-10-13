@@ -13,7 +13,7 @@ describe('modules', () => {
   it('starts every tab from the same pathway', () => {
     const scenes = MODULES.map((m) => moduleScene(m.kind, 7));
     for (const s of scenes) expect(s.pathways[0].seed).toBe(scenes[0].pathways[0].seed);
-    expect(scenes.map((s) => s.module.kind)).toEqual(['targetId', 'moa', 'combination', 'toxicity', 'tissue', 'custom', 'body', 'journey']);
+    expect(scenes.map((s) => s.module.kind)).toEqual(['targetId', 'moa', 'combination', 'toxicity', 'tissue', 'crossTissue', 'body', 'journey']);
   });
 
   it('custom leaves the pathway unchanged', () => {
@@ -64,6 +64,46 @@ describe('modules', () => {
     expect(g.edges.filter((e) => !e.dim).length).toBe(last);
   });
 
+  it('MOA runs backwards from the DEG, uncovering the route as it goes', () => {
+    const s = moduleScene('moa', 7);
+    const g = buildGeometry(s);
+    const last = lastLayer(s);
+    const deg = g.nodes.filter((n) => n.layer === last && n.active).sort((a, b) => a.lateral - b.lateral)[0];
+    const receptor = g.nodes.find((n) => n.layer === 0)!;
+    const sched = buildSchedule(s);
+    // The signal starts at the DEG and reaches the receptor last.
+    expect(sched.fire.get(deg.id)).toBe(0);
+    const route = g.nodes.filter((n) => n.active && !n.dim);
+    expect(Math.max(...route.map((n) => sched.fire.get(n.id)!))).toBe(sched.fire.get(receptor.id));
+    for (const e of g.edges.filter((x) => !x.dim)) {
+      expect(g.nodeById.get(e.from)!.layer).toBe(g.nodeById.get(e.to)!.layer + 1);
+      expect(e.reveal).toBe(true);
+    }
+    // The DEG is there from the start; the rest of the route is not.
+    expect(deg.reveal).toBeFalsy();
+    expect(route.filter((n) => n.reveal).length).toBe(last);
+    const ids = (t: number) => new Set(buildDisplayList(s, t).prims.map((p) => p.id));
+    const mid = route.find((n) => n.layer === 2)!;
+    const edge = g.edges.find((e) => e.to === mid.id && !e.dim)!;
+    const start = ids(0.01);
+    expect(start.has(deg.id)).toBe(true);
+    expect(start.has(mid.id)).toBe(false);
+    expect(start.has(`${receptor.id}-diamond`)).toBe(false);
+    expect(start.has(edge.id)).toBe(false); // no resting edge on the route
+    const t = sched.fire.get(mid.id)! + 0.6;
+    const later = ids(t);
+    expect(later.has(mid.id)).toBe(true);
+    expect(later.has(`${edge.id}-lit`)).toBe(true);
+    // It pops: larger than its resting size just after it appears.
+    const r = (time: number) => {
+      const p = buildDisplayList(s, time).prims.find((q) => q.id === mid.id)!;
+      return p.kind === 'circle' ? p.r : 0;
+    };
+    expect(r(sched.fire.get(mid.id)! + 0.2)).toBeGreaterThan(r(sched.fire.get(mid.id)! + 2));
+    // A still export without the signal shows the whole route.
+    expect(new Set(buildDisplayList(s, 0, { signal: false }).prims.map((p) => p.id)).has(mid.id)).toBe(true);
+  });
+
   it('MOA can trace more than one route', () => {
     const s = moduleScene('moa', 7);
     s.module = { ...s.module, routes: 3 };
@@ -80,6 +120,11 @@ describe('modules', () => {
   it('target combination marks every pathway receptor and starts them together', () => {
     const s = moduleScene('combination', 7);
     const g = buildGeometry(s);
+    // The whole of each pathway is shown, the proteins between receptor and DEGs included.
+    expect(s.module.directOnly).toBe(false);
+    for (const pid of ['p1', 'p2', 'p3']) {
+      expect(g.nodes.some((n) => n.pathwayId === pid && n.layer > 0 && n.layer < lastLayer(s))).toBe(true);
+    }
     expect(g.receptors.filter((r) => r.target).length).toBe(3);
     expect(g.pathways.every((p) => p.startDelay === 0)).toBe(true);
   });
@@ -153,7 +198,7 @@ describe('modules', () => {
     expect(buildGeometry(off).edges.some((e) => e.crosstalk)).toBe(false);
   });
 
-  it('toxicity shows a warning on the membrane once the cell turns', () => {
+  it('toxicity shows a large warning in the middle of the cell once it turns', () => {
     const s = moduleScene('toxicity', 7);
     const g = buildGeometry(s);
     const sched = buildSchedule(s);
@@ -161,10 +206,13 @@ describe('modules', () => {
     expect(buildDisplayList(s, 0).prims.some((p) => p.kind === 'warning')).toBe(false);
     const w = buildDisplayList(s, fired + 1.5).prims.find((p) => p.kind === 'warning')!;
     expect(w).toBeTruthy();
-    // On the membrane, at 45° (upper right).
-    const c = g.cells[0].cell;
-    const th = Math.atan2(w.kind === 'warning' ? w.c.y - c.center.y : 0, w.kind === 'warning' ? w.c.x - c.center.x : 0);
-    expect(th).toBeCloseTo(-Math.PI / 4, 5);
+    // In the middle of the cell, a fifth of the canvas's short side tall; the size setting scales it.
+    if (w.kind !== 'warning') throw new Error('not a warning');
+    expect(w.c).toEqual(g.cells[0].cell.center);
+    expect(w.size).toBeCloseTo(0.2 * 1080, 0);
+    const big = { ...s, module: { ...s.module, warningSize: 2 } };
+    const w2 = buildDisplayList(big, fired + 1.5).prims.find((p) => p.kind === 'warning')!;
+    expect(w2.kind === 'warning' && w2.size).toBeCloseTo(0.4 * 1080, 0);
     expect(displayListToSvg(buildDisplayList(s, fired + 1.5))).toContain('id="warning"');
     const off = { ...s, module: { ...s.module, warning: false } };
     expect(buildDisplayList(off, fired + 1.5).prims.some((p) => p.kind === 'warning')).toBe(false);

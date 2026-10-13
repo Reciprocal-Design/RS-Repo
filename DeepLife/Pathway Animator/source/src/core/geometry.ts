@@ -1,5 +1,6 @@
 import { buildBodyGeometry } from './body';
 import { buildMapGeometry, mapActive } from './cellMap';
+import { buildCrossTissueGeometry } from './crossTissue';
 import { connectCrosstalk, connectPathway } from './connect';
 import { cellFrame, decorativeReceptors, layoutPathway } from './layout';
 import { applyModule } from './modules';
@@ -18,10 +19,14 @@ export function buildGeometry(scene: Scene): SceneGeom {
   if (hit) return hit;
   const geom = scene.module.kind === 'body'
     ? buildBodyGeometry(scene)
-    : applyModule(scene, (mapActive(scene) && buildMapGeometry(scene)) || buildCellGeometry(scene));
+    : applyModule(scene, (mapActive(scene) && buildTissue(scene)) || buildCellGeometry(scene));
   cache.set(scene, geom);
   return geom;
 }
+
+/** A map's geometry: the tissue, or two of them side by side (cross-tissue communication). */
+const buildTissue = (scene: Scene) =>
+  scene.module.kind === 'crossTissue' ? buildCrossTissueGeometry(scene) : buildMapGeometry(scene);
 
 function buildCellGeometry(scene: Scene): SceneGeom {
   const frame = cellFrame(scene);

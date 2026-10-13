@@ -222,18 +222,25 @@ export interface CellLinks {
 export function connectCellLinks(
   scene: Scene,
   cells: LinkCell[],
-  /** `reach`: how far apart touching cells may be (× the smaller radius); `origin`: links run away from this point. */
-  { reach = 0.15, origin }: { reach?: number; origin?: Vec2 } = {},
+  /**
+   * `reach`: how far apart touching cells may be (× the smaller radius);
+   * `origin`: links run away from this point. `pairs` links exactly those
+   * cells (`idA|idB`), however far apart, `amount` links each, with relay
+   * receptor ids marked by `tag` (connections between two tissues).
+   */
+  { reach = 0.15, origin, pairs, amount: fixed, tag = '' }: { reach?: number; origin?: Vec2; pairs?: Set<string>; amount?: number; tag?: string } = {},
 ): CellLinks {
   const out: CellLinks = { edges: [], nodes: [], receptors: [] };
-  const { enabled, amount } = scene.cellMap.links;
-  if (!enabled || amount <= 0) return out;
+  const { enabled } = scene.cellMap.links;
+  const amount = fixed ?? scene.cellMap.links.amount;
+  if ((!enabled && !pairs) || amount <= 0) return out;
   const usedSources = new Set<string>();
   const relays = new Map<string, { node: NodeGeom; rec: ReceptorGeom }[]>(); // per cell
   for (let i = 0; i < cells.length; i++) {
     for (let j = i + 1; j < cells.length; j++) {
       const A = cells[i], B = cells[j];
-      if (!A.layouts.length || !B.layouts.length || !touching(A, B, reach)) continue;
+      if (!A.layouts.length || !B.layouts.length) continue;
+      if (pairs ? !(pairs.has(`${A.id}|${B.id}`) || pairs.has(`${B.id}|${A.id}`)) : !touching(A, B, reach)) continue;
       const rng = rngFor(scene.seed, 'cell-link', A.seed, B.seed);
       const count = Math.floor(amount) + (rng() < amount - Math.floor(amount) ? 1 : 0);
       for (let k = 0; k < count; k++) {
@@ -253,14 +260,14 @@ export function connectCellLinks(
           }
           return { q: best, d: bd };
         };
-        const cands = from.map((a) => ({ a, ...near(a) })).filter((c) => c.d < 1.2 * src.R);
+        const cands = from.map((a) => ({ a, ...near(a) })).filter((c) => pairs || c.d < 1.2 * src.R);
         if (!cands.length) continue;
         const dMin = Math.min(...cands.map((c) => c.d));
         const pick = weightedPick(rng, cands.map((c) => Math.exp(-3 * (c.d / dMin - 1))), 1)[0];
         if (pick === undefined) continue;
         const { a, q } = cands[pick];
         usedSources.add(a.id);
-        const relay = relayAt(scene, dst, q, relays, out);
+        const relay = relayAt(scene, dst, q, relays, out, tag);
         // A reused source may land on a receptor it already feeds: one link is enough.
         if (relay && !out.edges.some((e) => e.link && e.from === a.id && e.to === relay.id)) {
           out.edges.push(makeLinkEdge(scene, a, relay, rng));
@@ -274,7 +281,7 @@ export function connectCellLinks(
 /** The relay receptor on `cell`'s membrane at (or near) point q, made on first use. */
 function relayAt(
   scene: Scene, cell: LinkCell, q: Vec2,
-  relays: Map<string, { node: NodeGeom; rec: ReceptorGeom }[]>, out: CellLinks,
+  relays: Map<string, { node: NodeGeom; rec: ReceptorGeom }[]>, out: CellLinks, tag = '',
 ): NodeGeom | null {
   const f = cell.frame;
   const list = relays.get(cell.id) ?? [];
@@ -299,7 +306,7 @@ function relayAt(
   near.sort((x, y) => fed(x.l.receptor.pathwayId!) - fed(y.l.receptor.pathwayId!) || x.d - y.d);
   const { l, nodes } = near[0];
   const pathwayId = l.receptor.pathwayId!;
-  const id = `${pathwayId}-R${idx}`;
+  const id = `${pathwayId}-R${tag}${idx}`;
   const rec: ReceptorGeom = { ...rec0, id: `receptor-${id}`, pathwayId, nodeId: id };
   const N = f.nucleus.center;
   const node: NodeGeom = {

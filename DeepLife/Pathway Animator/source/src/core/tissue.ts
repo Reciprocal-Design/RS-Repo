@@ -34,9 +34,11 @@ export function tissueCells(scene: Scene): TissueCell[] {
   const hit = cache.get(scene);
   if (hit) return hit;
 
-  const { width: W, height: H } = scene.canvas;
-  const S = Math.min(W, H);
-  const center = { x: W / 2, y: H / 2 };
+  // The tissue fills the canvas, or the part of it the map is given (`frame`).
+  const f = scene.cellMap.frame ?? { x: 0, y: 0, w: scene.canvas.width, h: scene.canvas.height };
+  const X = f.x, Y = f.y, W = f.w, H = f.h;
+  const S = Math.min(scene.canvas.width, scene.canvas.height);
+  const center = { x: X + W / 2, y: Y + H / 2 };
   const R = scene.cell.radius * S * Math.max(0.05, scene.cellMap.detailScale);
   const stored = new Map(scene.cellMap.cells.map((c) => [c.id, c]));
 
@@ -74,15 +76,16 @@ export function tissueCells(scene: Scene): TissueCell[] {
   const rng = rngFor(scene.seed, 'tissue');
   const cands: { c: Vec2; r: number; d: number }[] = [];
   for (let i = 0; i < CANDIDATES; i++) {
-    const c = { x: range(rng, -R, W + R), y: range(rng, -R, H + R) };
+    const c = { x: X + range(rng, -R, W + R), y: Y + range(rng, -R, H + R) };
     cands.push({ c, r: R * range(rng, 0.68, 0.9), d: Math.hypot(c.x - center.x, c.y - center.y) });
   }
   cands.sort((a, b) => a.d - b.d);
   for (const q of cands) {
     if (out.length >= MAX_CELLS) break;
     const rr = q.r * bulge;
-    // Some of the cell must be on the canvas.
-    if (q.c.x + rr < 0 || q.c.x - rr > W || q.c.y + rr < 0 || q.c.y - rr > H) continue;
+    // Some of the cell must be on the canvas; all of it, when the tissue has its own part of the canvas.
+    if (q.c.x + rr < X || q.c.x - rr > X + W || q.c.y + rr < Y || q.c.y - rr > Y + H) continue;
+    if (scene.cellMap.frame && (q.c.x - rr < X || q.c.x + rr > X + W || q.c.y - rr < Y || q.c.y + rr > Y + H)) continue;
     if (!placed.every((p) => Math.hypot(p.c.x - q.c.x, p.c.y - q.c.y) >= p.r + rr + gap)) continue;
     placed.push({ c: q.c, r: rr });
     const i = out.length;

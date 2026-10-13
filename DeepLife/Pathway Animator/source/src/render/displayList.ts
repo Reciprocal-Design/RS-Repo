@@ -77,6 +77,8 @@ const TRAIL_SEGMENTS = 12;
 /** Seconds a pathway takes to light up from grey (grey idle mode). */
 const RISE = 0.3;
 const GLOW_LAYERS = 26;
+/** Seconds an uncovered node takes to pop up (MOA elucidation). */
+const POP = 0.4;
 /** Seconds the cell takes to turn red once a toxic DEG fires. */
 const TINT_RISE = 0.8;
 
@@ -275,7 +277,9 @@ export function buildDisplayList(
       prims.push(...outlinePrims('membrane', c.cell.points, look, os, prefix, 2.3));
       continue;
     }
-    if (scene.cell.visible && !toxicity) prims.push(...outlinePrims('membrane', c.cell.points, scene.cell, os, prefix));
+    // A second tissue takes its own glow colour.
+    const look = c.glow ? { ...scene.cell, glowColor: c.glow } : scene.cell;
+    if (scene.cell.visible && !toxicity) prims.push(...outlinePrims('membrane', c.cell.points, look, os, prefix));
     if (scene.nucleus.visible && !c.noNucleus) prims.push(...outlinePrims('nucleus', c.nucleus.points, scene.nucleus, os, prefix));
   }
   // Organs (body view), in the nucleus style.
@@ -339,8 +343,10 @@ export function buildDisplayList(
   const dimA = Math.max(0, Math.min(1, scene.module.dimOpacity));
 
   for (const e of g.edges) {
+    // A route being uncovered is drawn only as the signal travels it.
+    if (e.reveal && signal) continue;
     prims.push({
-      kind: 'bezier', id: e.id, group: e.crosstalk ? 'crosstalk' : 'edges', p: e.bezier, width: st.edgeWidth * s,
+      kind: 'bezier', id: e.id, group: e.crosstalk ? 'crosstalk' : 'edges', p: e.bezier, width: st.edgeWidth * s * (e.weight ?? 1),
       ...(e.dim
         ? { from: greyCss, to: greyCss, opacity: e.opacity * dimA }
         : grey
@@ -392,7 +398,10 @@ export function buildDisplayList(
       const x = since(tau, et.start, period);
       // Continuous or grey idle: how lit the edge still is, x seconds after its
       // comet left (otherwise lit edges stay lit until the loop's closing fade).
-      const lit = period || grey ? Math.max(0, Math.min(1, (et.duration + litHold + FADE_OUT - x) / FADE_OUT)) : 1;
+      // An uncovered edge stays until the loop closes (or, in continuous mode, until just before it runs again).
+      const lit = et.edge.reveal
+        ? period ? Math.max(0, Math.min(1, (period - x) / FADE_OUT)) : 1
+        : period || grey ? Math.max(0, Math.min(1, (et.duration + litHold + FADE_OUT - x) / FADE_OUT)) : 1;
       return { et, q: x / et.duration, lit, id: et.wave ? `${et.edge.id}-w${et.wave}` : et.edge.id };
     });
 
@@ -405,7 +414,7 @@ export function buildDisplayList(
       const part = bezierHead(e.bezier, tt);
       prims.push({
         kind: 'bezier', id: `${id}-lit`, group: e.crosstalk ? 'crosstalk' : 'edges', p: part,
-        width: st.edgeWidth * 1.25 * s, from: color(e.depthFrom),
+        width: st.edgeWidth * 1.25 * s * (e.weight ?? 1), from: color(e.depthFrom),
         to: color(e.depthFrom + (e.depthTo - e.depthFrom) * frac),
         opacity: Math.max(0, Math.min(1, an.litEdgeOpacity)) * fade * lit,
       });
@@ -511,6 +520,19 @@ export function buildDisplayList(
   }
   const grow = (id: string) => 1 + (Math.max(1, an.nodePulseScale) - 1) * (pulse.get(id) ?? 0);
 
+  // Nodes being uncovered (MOA elucidation): hidden until the signal reaches
+  // them, then they pop up (a quick overshoot) and stay until the loop closes.
+  const shown = (n: { id: string; reveal?: boolean }): { a: number; k: number } => {
+    if (!n.reveal || !signal) return { a: 1, k: 1 };
+    const f = schedule.fire.get(n.id);
+    if (f === undefined) return { a: 0, k: 1 };
+    const x = since(tau, f, period);
+    if (x < 0) return { a: 0, k: 1 };
+    const u = Math.min(1, x / POP);
+    const back = 1 + 2.70158 * (u - 1) ** 3 + 1.70158 * (u - 1) ** 2; // ease-out-back
+    return { a: Math.min(1, x / (POP * 0.4)) * (period ? Math.max(0, Math.min(1, (period - x) / FADE_OUT)) : fade), k: Math.max(0, back) };
+  };
+
   // Halos first so edges and dots from neighbouring nodes are never hidden by them.
   const active = g.nodes.filter((n) => n.active);
   const halo = rgbaString(parseColor(st.haloColor));
@@ -518,10 +540,11 @@ export function buildDisplayList(
     const isReceptor = n.layer === 0;
     if (isReceptor && st.receptorStyle === 'capsule') continue;
     if (n.dim) continue;
-    const a = on(n);
+    const v = shown(n);
+    const a = on(n) * v.a;
     if (a <= 0) continue;
     prims.push({
-      kind: 'circle', id: `${n.id}-halo`, group: 'nodes-active', c: n, r: st.haloRadius * s * grow(n.id), fill: halo,
+      kind: 'circle', id: `${n.id}-halo`, group: 'nodes-active', c: n, r: st.haloRadius * s * grow(n.id) * v.k, fill: halo,
       ...(a < 1 ? { opacity: a } : {}),
     });
   }
@@ -530,19 +553,23 @@ export function buildDisplayList(
       if (st.receptorStyle === 'capsule') continue;
       const rec = g.receptors.find((r) => r.nodeId === n.id) ?? g.receptors.find((r) => r.pathwayId === n.pathwayId)!;
       const a = on(n);
+      const v = shown(n);
+      if (v.a <= 0) continue;
       prims.push({
         kind: 'diamond', id: `${n.id}-diamond`, group: 'nodes-active', c: n,
-        r: st.activeNodeRadius * 1.6 * s * grow(n.id), angle: rec.angle, fill: nodeFill(a),
-        ...(a < 1 ? { opacity: idle + (1 - idle) * a } : {}),
+        r: st.activeNodeRadius * 1.6 * s * grow(n.id) * v.k, angle: rec.angle, fill: nodeFill(a),
+        ...(a < 1 || v.a < 1 ? { opacity: (a < 1 ? idle + (1 - idle) * a : 1) * v.a } : {}),
       });
     } else if (n.dim) {
       prims.push({ kind: 'circle', id: n.id, group: 'nodes-active', c: n, r: st.activeNodeRadius * s, fill: greyCss, opacity: dimA });
     } else {
       const a = on(n);
+      const v = shown(n);
+      if (v.a <= 0) continue;
       prims.push({
-        kind: 'circle', id: n.id, group: 'nodes-active', c: n, r: st.activeNodeRadius * s * grow(n.id) * (n.toxic ? 1.25 : 1),
+        kind: 'circle', id: n.id, group: 'nodes-active', c: n, r: st.activeNodeRadius * s * grow(n.id) * (n.toxic ? 1.25 : 1) * v.k,
         fill: n.toxic ? toxicFill : nodeFill(a),
-        ...(a < 1 ? { opacity: idle + (1 - idle) * a } : {}),
+        ...(a < 1 || v.a < 1 ? { opacity: (a < 1 ? idle + (1 - idle) * a : 1) * v.a } : {}),
       });
     }
   }
@@ -554,13 +581,11 @@ export function buildDisplayList(
     prims.push({ kind: 'ring', id: `${n.id}-inner`, group: 'nodes-inactive', c: n, r: r * 0.5, stroke: st.inactiveNodeColor, width: w });
   }
 
-  // Target toxicity: a warning badge on the membrane, popping in as the cell turns.
+  // Target toxicity: a large warning badge in the middle of the cell, popping in as the cell turns.
   if (toxicity && scene.module.warning && tint > 0) {
-    const cell = g.cells[0].cell;
-    const th = ((scene.module.warningAngle - 90) * Math.PI) / 180;
-    const c = { x: cell.center.x + Math.cos(th) * cell.radiusAt(th), y: cell.center.y + Math.sin(th) * cell.radiusAt(th) };
+    const c = (g.cells.find((x) => x.hero) ?? g.cells[0]).cell.center;
     const pop = 0.7 + 0.3 * Math.min(1, tint * 1.4);
-    const size = 46 * s * pop;
+    const size = 0.2 * Math.min(scene.canvas.width, scene.canvas.height) * Math.max(0.2, scene.module.warningSize) * pop;
     prims.push({ kind: 'glow', id: 'warning-glow', group: 'signal', blend: 'lighter', c, r: size * 1.6, color: withAlpha(toxicRgb, 0.55), opacity: tint });
     prims.push({ kind: 'warning', id: 'warning', group: 'signal', c, size, fill: toxicFill, mark: '#FFFFFF', opacity: tint });
   }
