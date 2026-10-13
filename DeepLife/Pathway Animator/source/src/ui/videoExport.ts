@@ -13,6 +13,8 @@ export interface VideoOptions {
   loops: number;
   quality: VideoQuality;
   format: VideoFormat;
+  /** WebM only: leave the background out, with an alpha channel (VP9 with alpha). MP4 has no transparency. */
+  transparent?: boolean;
 }
 
 /** Does this browser have the video encoder at all (WebCodecs)? */
@@ -29,6 +31,7 @@ const FORMATS = {
  * browser's own encoder: H.264 in MP4, or VP9 in WebM. When the browser has no
  * H.264 encoder (some Firefox and Linux builds), MP4 falls back to WebM. The
  * muxer is loaded only when needed. Resolves with the format actually saved.
+ * A transparent WebM is encoded with an alpha channel and never falls back.
  */
 export async function exportVideo(
   scene: Scene,
@@ -46,7 +49,9 @@ export async function exportVideo(
 
   const mb = await import('mediabunny');
   const quality = { medium: mb.QUALITY_MEDIUM, high: mb.QUALITY_HIGH, veryHigh: mb.QUALITY_VERY_HIGH }[opts.quality];
-  const can = (f: VideoFormat) => mb.canEncodeVideo(FORMATS[f].codec, { width, height, quality, frameRate: opts.fps });
+  const transparent = !!opts.transparent && opts.format === 'webm';
+  const can = (f: VideoFormat) =>
+    mb.canEncodeVideo(FORMATS[f].codec, { width, height, quality, frameRate: opts.fps, ...(transparent ? { alpha: 'keep' as const } : {}) });
   const order: VideoFormat[] = opts.format === 'mp4' ? ['mp4', 'webm'] : ['webm'];
   let format: VideoFormat | null = null;
   for (const f of order) {
@@ -56,7 +61,11 @@ export async function exportVideo(
     }
   }
   if (!format) {
-    throw new Error(`This browser cannot encode ${width} × ${height} at ${opts.fps} fps as ${FORMATS[opts.format].label}. Try a smaller size or frame rate.`);
+    throw new Error(
+      transparent
+        ? `This browser cannot encode a transparent WebM at ${width} × ${height}, ${opts.fps} fps. Try Chrome or Edge, a smaller size, or a transparent PNG sequence.`
+        : `This browser cannot encode ${width} × ${height} at ${opts.fps} fps as ${FORMATS[opts.format].label}. Try a smaller size or frame rate.`,
+    );
   }
   const fmt = FORMATS[format];
 
@@ -68,7 +77,9 @@ export async function exportVideo(
     format: format === 'mp4' ? new mb.Mp4OutputFormat({ fastStart: 'in-memory' }) : new mb.WebMOutputFormat(),
     target: new mb.BufferTarget(),
   });
-  const source = new mb.CanvasSource(canvas, { codec: fmt.codec, bitrate: quality, keyFrameInterval: 2 });
+  const source = new mb.CanvasSource(canvas, {
+    codec: fmt.codec, bitrate: quality, keyFrameInterval: 2, ...(transparent ? { alpha: 'keep' as const } : {}),
+  });
   output.addVideoTrack(source, { frameRate: opts.fps });
   await output.start();
 
@@ -76,7 +87,7 @@ export async function exportVideo(
     for (let i = 0; i < plan.frames; i++) {
       if (signal.aborted) throw new DOMException('Export cancelled.', 'AbortError');
       ctx.setTransform(kx, 0, 0, ky, 0, 0);
-      render(ctx, scene, plan.timeAt(i));
+      render(ctx, scene, plan.timeAt(i), { transparent });
       await source.add(i / opts.fps, 1 / opts.fps);
       onProgress(i + 1, plan.frames);
       // Let the page repaint the progress bar now and then.

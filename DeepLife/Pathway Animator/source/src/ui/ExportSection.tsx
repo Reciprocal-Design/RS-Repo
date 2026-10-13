@@ -19,6 +19,8 @@ function VideoExport({ busy, setBusy, setMessage }: { busy: boolean; setBusy: (b
   const [loopCount, setLoopCount] = useState(1);
   const [quality, setQuality] = useState<VideoQuality>('high');
   const [format, setFormat] = useState<VideoFormat>('mp4');
+  const [transparent, setTransparent] = useState(false);
+  const alpha = transparent && format === 'webm';
   const [progress, setProgress] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -37,7 +39,7 @@ function VideoExport({ busy, setBusy, setMessage }: { busy: boolean; setBusy: (b
     setMessage(null);
     setProgress(0);
     try {
-      const saved = await exportVideo(scene, { scale, fps, loops: looping ? loopCount : 1, quality, format }, (d, n) => setProgress(d / n), ac.signal);
+      const saved = await exportVideo(scene, { scale, fps, loops: looping ? loopCount : 1, quality, format, transparent: alpha }, (d, n) => setProgress(d / n), ac.signal);
       setMessage({
         text: saved === format ? 'Video saved.' : 'Saved as WebM: this browser cannot encode MP4 (H.264). Chrome, Edge and Safari can.',
       });
@@ -63,10 +65,21 @@ function VideoExport({ busy, setBusy, setMessage }: { busy: boolean; setBusy: (b
             value={format}
             options={[
               { value: 'mp4', label: 'MP4 (H.264): plays everywhere, After Effects, Premiere' },
-              { value: 'webm', label: 'WebM (VP9): web, smaller files' },
+              { value: 'webm', label: 'WebM (VP9): web, smaller files, can be transparent' },
             ]}
             onChange={setFormat}
           />
+          {format === 'webm' && (
+            <>
+              <Toggle label="Transparent background" checked={transparent} onChange={setTransparent} />
+              {transparent && (
+                <p className="hint">
+                  Saved with an alpha channel: it plays transparent on web pages in Chrome, Edge and Firefox. Safari shows
+                  WebM without transparency; for Safari or editing software, use a transparent PNG sequence.
+                </p>
+              )}
+            </>
+          )}
           <div className="seg">
             {[0.5, 1, 2].map((k) => (
               <button key={k} className={`chip ${scale === k ? 'on' : ''}`} onClick={() => setScale(k)}>
@@ -98,7 +111,8 @@ function VideoExport({ busy, setBusy, setMessage }: { busy: boolean; setBusy: (b
           />
           <p className={`hint ${sizeError ? 'error' : ''}`}>
             {sizeError ??
-              `${width} × ${height} px, ${plan.frames} frames, ${(plan.frames / fps).toFixed(2)} s${looping ? ', loops seamlessly' : ''}. The background is included (no transparency).`}
+              `${width} × ${height} px, ${plan.frames} frames, ${(plan.frames / fps).toFixed(2)} s${looping ? ', loops seamlessly' : ''}. ${
+                alpha ? 'Transparent background.' : format === 'webm' ? 'The background is included.' : 'The background is included (MP4 has no transparency: choose WebM for that).'}`}
           </p>
           {progress === null ? (
             <button className="btn wide" disabled={busy || !!sizeError} onClick={start}>
