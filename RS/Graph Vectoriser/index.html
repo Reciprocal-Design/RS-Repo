@@ -824,6 +824,10 @@
         <input type="checkbox" id="showBestFit" checked>
         <label for="showBestFit">Line of best fit</label>
       </div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="showSignificance" checked>
+        <label for="showSignificance">Significance (p-values)</label>
+      </div>
     </div>
 
     <!-- Line style -->
@@ -961,7 +965,7 @@ const swatchRow = document.getElementById('swatchRow');
 });
 
 // ── Checkboxes & selects trigger regen ────────────────────────────────────
-['showAxes','showGrid','showLabels','showLegend','showErrorBars','showDataPoints','showBestFit',
+['showAxes','showGrid','showLabels','showLegend','showErrorBars','showDataPoints','showBestFit','showSignificance',
  'graphType','lineStyle','markerShape','bgColor','axisColor','gridColor','fontFamily'].forEach(id => {
   document.getElementById(id).addEventListener('change', () => { if(parsedGraph) regenerateSvg(); });
 });
@@ -1601,11 +1605,13 @@ In addition to the fields above, add a top-level "vectorMap" object:
   "x": {"scale": "linear|log", "p1": [pixelX, value], "p2": [pixelX, value]} or null if the x axis is categorical,
   "y": {"scale": "linear|log", "p1": [pixelY, value], "p2": [pixelY, value]},
   "yRight": same shape as "y", or null,
-  "series": [{"index": 0, "refs": ["M1"]}, ...]
+  "series": [{"index": 0, "refs": ["M1"]}, ...],
+  "significance": [{"index": 0, "ref": "L7"}, ...]
 }
 - p1/p2 calibrate an axis: choose two well-separated tick values; use the pixel position of the tick mark or gridline from LINES when present, otherwise the tick label's centre.
 - "index" is the position of the series in your "series" array. "refs" are the ids that draw that series' data: a marker group (M#) for scatter points, a line (L#) for a connected line or best-fit line, or bar rects (R#) for bars. Exclude legend swatches, error bars and gridlines. To take only some points of a marker group, use index ranges, e.g. "M1[0-10,12]".
 - Leave a series out of "series" if you can't identify its primitives.
+- "significance" links each entry in your "significance" array (by position) to the LINES id that draws its bracket or line. Leave out entries with no line.
 - Still fill "points" with your best values, including error bars. Compute error bars from the LINES coordinates and the axis calibration. The app recomputes point positions from vectorMap.
 
 `;
@@ -1690,6 +1696,12 @@ function refineWithVectors(g, info) {
       return {...base, x, y};
     });
     refined++;
+  });
+  // Significance brackets: the horizontal bar of the bracket is its highest point
+  (vm.significance || []).forEach(link => {
+    const sig = g.significance?.[link?.index], it = refItems(link?.ref, info.index);
+    if (!sig || !it || it.type !== 'line' || !it.items.length) return;
+    sig.y = (sig.yAxis === 'right' ? myR : myL)(Math.min(...it.items.map(p => p[1])));
   });
   return refined;
 }
@@ -1914,6 +1926,19 @@ async function analyseGraph() {
       ]
     }
   ],
+  "significance": [
+    {
+      "label": "annotation text exactly as shown, e.g. '*', '***', 'ns', 'p = 0.003', 'P<0.0001'",
+      "pValue": numeric_p_value_if_written_or_null,
+      "type": "bracket|line|text",
+      "x1": left_end_x_as_category_index_or_data_value,
+      "x2": right_end_x_same_units (equal to x1 for type text),
+      "series1": series_index_of_the_bar_or_box_the_left_end_sits_on_or_null,
+      "series2": series_index_for_the_right_end_or_null,
+      "y": height_of_the_horizontal_line_or_label_base_in_y_data_units,
+      "yAxis": "left or right"
+    }
+  ],
   "notes": "any other notable features"
 }
 
@@ -1926,7 +1951,8 @@ CRITICAL RULES:
 6. BOX AND WHISKER PLOTS: If the graph is a box plot, set graphType to "box" and seriesType to "box" for each series. Each box represents one category, so set "categories" as normal. For each point extract: "whiskerLow" (bottom whisker tip), "q1" (bottom of box), "median" (middle line), "q3" (top of box), "whiskerHigh" (top whisker tip), and "outliers" as an array of individual point values shown beyond the whiskers. Set "y" to the median value. Read all values carefully from the y-axis scale.
 7. UNEQUAL SERIES LENGTHS: Different series will often have different numbers of data points. NEVER invent or pad points to make series lengths match. Only report points you can actually see in the graph. It is completely valid and expected for one series to have 3 points and another to have 12.
 8. Be precise: read all values carefully against the axis scales.
-9. Extract ALL real data points. Do not fabricate any.`
+9. Extract ALL real data points. Do not fabricate any.
+10. SIGNIFICANCE / P-VALUES: Look carefully for statistical significance annotations: asterisks (*, **, ***, ****), "ns", "n.s.", hash/dagger symbols, and written p-values ("p < 0.05", "P = 0.003", "p=1.2e-4"). These usually sit above bars, boxes or points, often on a bracket: a horizontal line joining two groups, usually with short downward ticks at each end. Report every annotation in "significance" (use [] if there are none). Use type "bracket" for a line with end ticks, "line" for a plain horizontal line without ticks, and "text" for a label on its own above a single group. x1/x2 are the two groups the line joins (category indices for categorical x). For grouped bars or boxes, set series1/series2 to the series index of the specific bar each end sits on; otherwise null. "y" is the height of the horizontal line in y-axis data units (for type "text", the height of the bottom of the label). Copy the label text exactly. Set "pValue" only when a number is written.`
       + (vectorInfo ? VECTOR_PROMPT + vectorInfo.text : '');
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1960,6 +1986,7 @@ CRITICAL RULES:
     const cleaned = raw.replace(/```json|```/g, '').trim();
     parsedGraph = JSON.parse(cleaned);
     const refined = refineWithVectors(parsedGraph, vectorInfo);
+    parsedGraph.significance = normaliseSignificance(parsedGraph.significance);
 
     // Map detected colours to palette slots
     if(parsedGraph.series) {
@@ -1971,7 +1998,7 @@ CRITICAL RULES:
       buildSwatches();
     }
 
-    setStatus('success', `Extracted ${parsedGraph.series?.reduce((n,s)=>n+s.points.length,0)||0} data points across ${parsedGraph.series?.length||0} series${refined ? ` (${refined} refined from exact vector geometry)` : ''}`);
+    setStatus('success', `Extracted ${parsedGraph.series?.reduce((n,s)=>n+s.points.length,0)||0} data points across ${parsedGraph.series?.length||0} series${parsedGraph.significance.length ? `, ${parsedGraph.significance.length} significance mark${parsedGraph.significance.length > 1 ? 's' : ''}` : ''}${refined ? ` (${refined} refined from exact vector geometry)` : ''}`);
     regenerateSvg();
     populateDataTable();
     showOutput();
@@ -1995,6 +2022,7 @@ function getStyleOpts() {
     showErrorBars: document.getElementById('showErrorBars').checked,
     showDataPoints: document.getElementById('showDataPoints').checked,
     showBestFit: document.getElementById('showBestFit').checked,
+    showSignificance: document.getElementById('showSignificance').checked,
     graphType: document.getElementById('graphType').value,
     lineThickness: parseFloat(document.getElementById('lineThickness').value),
     lineStyle: document.getElementById('lineStyle').value,
@@ -2117,11 +2145,11 @@ function buildSvg(g, o) {
   const dash = dashMap[o.lineStyle] || 'none';
 
   let s = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${o.fontFamily}" font-size="${o.fontSize}">`;
-  s += `<rect width="${W}" height="${H}" fill="${o.bgColor}" rx="4"/>`;
-  s += `<defs><clipPath id="plot"><rect x="${ml}" y="${mt}" width="${pw}" height="${ph}"/></clipPath></defs>`;
+  s += `<rect id="Background" width="${W}" height="${H}" fill="${o.bgColor}" rx="4"/>`;
 
   // ── Grid ────────────────────────────────────────────────────────────────
   if(o.showGrid) {
+    s += `<g id="Grid">`;
     if(cats || gtype === 'box') {
       // Vertical grid between categories
       for(let i = 1; i < nCats; i++) {
@@ -2142,6 +2170,7 @@ function buildSvg(g, o) {
       if(y >= mt - 1 && y <= mt + ph + 1)
         s += `<line x1="${ml}" y1="${y}" x2="${ml+pw}" y2="${y}" stroke="${o.gridColor}" stroke-width="1"/>`;
     });
+    s += `</g>`;
   }
 
   // ── Series ──────────────────────────────────────────────────────────────
@@ -2149,8 +2178,10 @@ function buildSvg(g, o) {
 
   if(g.series) {
     g.series.forEach((ser, si) => {
+      if(gtype === 'stacked-bar') return;  // drawn in the stacked pass below
       const col = o.palette[si % o.palette.length];
       const pts = ser.points || [];
+      s += `<g id="${layerId(ser.name || 'Series ' + (si + 1))}">`;
 
       if(gtype === 'box' || ser.seriesType === 'box') {
         // Box & whisker rendering
@@ -2176,15 +2207,15 @@ function buildSvg(g, o) {
           const strokeW = Math.max(1, o.lineThickness * 0.9);
 
           // IQR box
-          s += `<rect x="${bxLeft}" y="${yQ3.toFixed(2)}" width="${bw.toFixed(2)}" height="${(yQ1 - yQ3).toFixed(2)}" fill="${col}" fill-opacity="0.25" stroke="${col}" stroke-width="${strokeW}" clip-path="url(#plot)"/>`;
+          s += `<rect x="${bxLeft}" y="${yQ3.toFixed(2)}" width="${bw.toFixed(2)}" height="${(yQ1 - yQ3).toFixed(2)}" fill="${col}" fill-opacity="0.25" stroke="${col}" stroke-width="${strokeW}"/>`;
           // Median line
-          s += `<line x1="${bxLeft}" y1="${yMed.toFixed(2)}" x2="${bxRight}" y2="${yMed.toFixed(2)}" stroke="${col}" stroke-width="${(strokeW * 2).toFixed(2)}" clip-path="url(#plot)"/>`;
+          s += `<line x1="${bxLeft}" y1="${yMed.toFixed(2)}" x2="${bxRight}" y2="${yMed.toFixed(2)}" stroke="${col}" stroke-width="${(strokeW * 2).toFixed(2)}"/>`;
           // Whisker stems
-          s += `<line x1="${px.toFixed(2)}" y1="${yQ1.toFixed(2)}" x2="${px.toFixed(2)}" y2="${yWL.toFixed(2)}" stroke="${col}" stroke-width="${strokeW}" stroke-dasharray="3,2" clip-path="url(#plot)"/>`;
-          s += `<line x1="${px.toFixed(2)}" y1="${yQ3.toFixed(2)}" x2="${px.toFixed(2)}" y2="${yWH.toFixed(2)}" stroke="${col}" stroke-width="${strokeW}" stroke-dasharray="3,2" clip-path="url(#plot)"/>`;
+          s += `<line x1="${px.toFixed(2)}" y1="${yQ1.toFixed(2)}" x2="${px.toFixed(2)}" y2="${yWL.toFixed(2)}" stroke="${col}" stroke-width="${strokeW}" stroke-dasharray="3,2"/>`;
+          s += `<line x1="${px.toFixed(2)}" y1="${yQ3.toFixed(2)}" x2="${px.toFixed(2)}" y2="${yWH.toFixed(2)}" stroke="${col}" stroke-width="${strokeW}" stroke-dasharray="3,2"/>`;
           // Whisker caps
-          s += `<line x1="${(px-capW).toFixed(2)}" y1="${yWL.toFixed(2)}" x2="${(px+capW).toFixed(2)}" y2="${yWL.toFixed(2)}" stroke="${col}" stroke-width="${strokeW}" clip-path="url(#plot)"/>`;
-          s += `<line x1="${(px-capW).toFixed(2)}" y1="${yWH.toFixed(2)}" x2="${(px+capW).toFixed(2)}" y2="${yWH.toFixed(2)}" stroke="${col}" stroke-width="${strokeW}" clip-path="url(#plot)"/>`;
+          s += `<line x1="${(px-capW).toFixed(2)}" y1="${yWL.toFixed(2)}" x2="${(px+capW).toFixed(2)}" y2="${yWL.toFixed(2)}" stroke="${col}" stroke-width="${strokeW}"/>`;
+          s += `<line x1="${(px-capW).toFixed(2)}" y1="${yWH.toFixed(2)}" x2="${(px+capW).toFixed(2)}" y2="${yWH.toFixed(2)}" stroke="${col}" stroke-width="${strokeW}"/>`;
           // Outliers
           if(p.outliers?.length) {
             p.outliers.forEach(ov => {
@@ -2210,7 +2241,7 @@ function buildSvg(g, o) {
             const bx = centreX + groupOff - bw / 2;
             const by = cyFor(ser, p.y);
             const bh = cyFor(ser, yMinFor(ser)) - by;
-            s += `<rect x="${bx.toFixed(2)}" y="${by.toFixed(2)}" width="${bw.toFixed(2)}" height="${bh.toFixed(2)}" fill="${col}" fill-opacity="0.85" clip-path="url(#plot)"/>`;
+            s += `<rect x="${bx.toFixed(2)}" y="${by.toFixed(2)}" width="${bw.toFixed(2)}" height="${bh.toFixed(2)}" fill="${col}" fill-opacity="0.85"/>`;
 
             // Error bars on grouped bars
             if(o.showErrorBars && (p.errorYUp != null || p.errorYDown != null || p.errorY != null)) {
@@ -2218,7 +2249,7 @@ function buildSvg(g, o) {
               const errUpY   = errPx(ser, p.y, p.errorYUp   ?? p.errorY ?? 0,  1);
               const errDownY = errPx(ser, p.y, p.errorYDown ?? p.errorY ?? 0, -1);
               const capW = Math.min(bw * 0.4, 6);
-              s += `<g clip-path="url(#plot)" stroke="${col}" stroke-width="${Math.max(1, o.lineThickness * 0.8)}">`;
+              s += `<g stroke="${col}" stroke-width="${Math.max(1, o.lineThickness * 0.8)}">`;
               s += `<line x1="${px.toFixed(2)}" y1="${errUpY.toFixed(2)}" x2="${px.toFixed(2)}" y2="${errDownY.toFixed(2)}"/>`;
               if(errUpY   < by) s += `<line x1="${(px-capW).toFixed(2)}" y1="${errUpY.toFixed(2)}"   x2="${(px+capW).toFixed(2)}" y2="${errUpY.toFixed(2)}"/>`;
               if(errDownY > by) s += `<line x1="${(px-capW).toFixed(2)}" y1="${errDownY.toFixed(2)}" x2="${(px+capW).toFixed(2)}" y2="${errDownY.toFixed(2)}"/>`;
@@ -2242,9 +2273,9 @@ function buildSvg(g, o) {
           const pathD = pts.map((p,i) => `${i===0?'M':'L'}${cx(p.x).toFixed(2)},${cyFor(ser,p.y).toFixed(2)}`).join(' ');
           if(stype === 'area') {
             const aD = pathD + ` L${cx(pts[pts.length-1].x).toFixed(2)},${cyFor(ser,yMinFor(ser)).toFixed(2)} L${cx(pts[0].x).toFixed(2)},${cyFor(ser,yMinFor(ser)).toFixed(2)} Z`;
-            s += `<path d="${aD}" fill="${col}" fill-opacity="0.15" clip-path="url(#plot)"/>`;
+            s += `<path d="${aD}" fill="${col}" fill-opacity="0.15"/>`;
           }
-          s += `<path d="${pathD}" fill="none" stroke="${col}" stroke-width="${lineW}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${lineDash}" clip-path="url(#plot)"/>`;
+          s += `<path d="${pathD}" fill="none" stroke="${col}" stroke-width="${lineW}" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="${lineDash}"/>`;
         }
 
         // Error bars (line/scatter — not bestfit)
@@ -2255,7 +2286,7 @@ function buildSvg(g, o) {
             if(p.errorYUp != null || p.errorYDown != null || p.errorY != null) {
               const errUpY   = errPx(ser, p.y, p.errorYUp   ?? p.errorY ?? 0,  1);
               const errDownY = errPx(ser, p.y, p.errorYDown ?? p.errorY ?? 0, -1);
-              s += `<g clip-path="url(#plot)" stroke="${col}" stroke-width="${Math.max(1, o.lineThickness * 0.75)}">`;
+              s += `<g stroke="${col}" stroke-width="${Math.max(1, o.lineThickness * 0.75)}">`;
               s += `<line x1="${px.toFixed(2)}" y1="${errUpY.toFixed(2)}" x2="${px.toFixed(2)}" y2="${errDownY.toFixed(2)}"/>`;
               if(errUpY   < py) s += `<line x1="${(px-capW).toFixed(2)}" y1="${errUpY.toFixed(2)}"   x2="${(px+capW).toFixed(2)}" y2="${errUpY.toFixed(2)}"/>`;
               if(errDownY > py) s += `<line x1="${(px-capW).toFixed(2)}" y1="${errDownY.toFixed(2)}" x2="${(px+capW).toFixed(2)}" y2="${errDownY.toFixed(2)}"/>`;
@@ -2263,7 +2294,7 @@ function buildSvg(g, o) {
             }
             if(p.errorX != null) {
               const ex = (p.errorX / (xMax - xMin)) * pw;
-              s += `<g clip-path="url(#plot)" stroke="${col}" stroke-width="${Math.max(1, o.lineThickness * 0.75)}">`;
+              s += `<g stroke="${col}" stroke-width="${Math.max(1, o.lineThickness * 0.75)}">`;
               s += `<line x1="${(px-ex).toFixed(2)}" y1="${py.toFixed(2)}" x2="${(px+ex).toFixed(2)}" y2="${py.toFixed(2)}"/>`;
               s += `<line x1="${(px-ex).toFixed(2)}" y1="${(py-capW).toFixed(2)}" x2="${(px-ex).toFixed(2)}" y2="${(py+capW).toFixed(2)}"/>`;
               s += `<line x1="${(px+ex).toFixed(2)}" y1="${(py-capW).toFixed(2)}" x2="${(px+ex).toFixed(2)}" y2="${(py+capW).toFixed(2)}"/>`;
@@ -2279,6 +2310,7 @@ function buildSvg(g, o) {
           });
         }
       }
+      s += `</g>`;
     });
   }
 
@@ -2289,8 +2321,10 @@ function buildSvg(g, o) {
     const groupPad = slotW * 0.15;
     const bw = Math.max(6, slotW - groupPad * 2);
 
-    // Build cumulative stack per category index
+    // Build cumulative stack per category index; output is collected per series
     const nPts = g.series[0]?.points?.length || 0;
+    const layers = g.series.map(() => '');
+    const s0 = s; s = '';
     for(let pi = 0; pi < nPts; pi++) {
       let cumulative = yMin;
       g.series.forEach((ser, si) => {
@@ -2302,10 +2336,10 @@ function buildSvg(g, o) {
         const bx = centreX - bw / 2;
         const by = cyFor(ser, cumulative + val);
         const bh = cyFor(ser, cumulative) - by;
-        s += `<rect x="${bx.toFixed(2)}" y="${by.toFixed(2)}" width="${bw.toFixed(2)}" height="${Math.max(0,bh).toFixed(2)}" fill="${col}" fill-opacity="0.9" clip-path="url(#plot)"/>`;
+        s += `<rect x="${bx.toFixed(2)}" y="${by.toFixed(2)}" width="${bw.toFixed(2)}" height="${Math.max(0,bh).toFixed(2)}" fill="${col}" fill-opacity="0.9"/>`;
         // Subtle separator line between segments
         if(si > 0 && bh > 1) {
-          s += `<line x1="${bx.toFixed(2)}" y1="${by.toFixed(2)}" x2="${(bx+bw).toFixed(2)}" y2="${by.toFixed(2)}" stroke="${o.bgColor}" stroke-width="1.5" clip-path="url(#plot)"/>`;
+          s += `<line x1="${bx.toFixed(2)}" y1="${by.toFixed(2)}" x2="${(bx+bw).toFixed(2)}" y2="${by.toFixed(2)}" stroke="${o.bgColor}" stroke-width="1.5"/>`;
         }
         // Error bars on top segment only (last series)
         if(o.showErrorBars && (p.errorYUp != null || p.errorYDown != null || p.errorY != null) && si === g.series.length - 1) {
@@ -2313,19 +2347,54 @@ function buildSvg(g, o) {
           const errUpY   = errPx(ser, p.y, p.errorYUp   ?? p.errorY ?? 0,  1);
           const errDownY = errPx(ser, p.y, p.errorYDown ?? p.errorY ?? 0, -1);
           const capW = Math.min(bw * 0.3, 6);
-          s += `<g clip-path="url(#plot)" stroke="${col}" stroke-width="${Math.max(1, o.lineThickness * 0.8)}">`;
+          s += `<g stroke="${col}" stroke-width="${Math.max(1, o.lineThickness * 0.8)}">`;
           s += `<line x1="${px.toFixed(2)}" y1="${errUpY.toFixed(2)}" x2="${px.toFixed(2)}" y2="${errDownY.toFixed(2)}"/>`;
           if(errUpY   < by) s += `<line x1="${(px-capW).toFixed(2)}" y1="${errUpY.toFixed(2)}"   x2="${(px+capW).toFixed(2)}" y2="${errUpY.toFixed(2)}"/>`;
           if(errDownY > by) s += `<line x1="${(px-capW).toFixed(2)}" y1="${errDownY.toFixed(2)}" x2="${(px+capW).toFixed(2)}" y2="${errDownY.toFixed(2)}"/>`;
           s += `</g>`;
         }
         cumulative += val;
+        layers[si] += s; s = '';
       });
     }
+    s = s0 + layers.map((l, si) => `<g id="${layerId(g.series[si].name || 'Series ' + (si + 1))}">${l}</g>`).join('');
+  }
+
+  // ── Significance (p-values, brackets) ───────────────────────────────────
+  if(o.showSignificance && g.significance?.length) {
+    // x position of a group, offset to a specific bar/box when a series index is given
+    const sigX = (xv, si) => {
+      const base = cats ? catX(xv) : cx(xv);
+      if(si == null || !g.series?.[si] || (gtype !== 'bar' && gtype !== 'box')) return base;
+      const slotW = cats ? pw / nCats : pw / Math.max(g.series[0]?.points?.length || 1, 1);
+      const bw = gtype === 'box'
+        ? Math.max(8, (slotW - slotW * 0.4) / nSeries - 4)
+        : Math.max(4, (slotW - slotW * 0.3) / nSeries - 2);
+      return base + (si - (nSeries - 1) / 2) * (bw + (gtype === 'box' ? 4 : 2));
+    };
+    const tick = Math.max(4, o.fontSize * 0.45);
+    s += `<g id="Significance">`;
+    g.significance.forEach((m, mi) => {
+      const x1 = sigX(m.x1, m.series1), x2 = sigX(m.x2 ?? m.x1, m.series2 ?? m.series1);
+      const y = cyFor({yAxis: m.yAxis}, m.y);
+      if(![x1, x2, y].every(Number.isFinite)) return;
+      const label = m.label || (m.pValue != null ? `p = ${m.pValue}` : '');
+      const stars = /^[*\u2217#†‡]+$/.test(label);
+      s += `<g id="${layerId(`p-value ${mi + 1}: ${label}`)}">`;
+      if(m.type === 'bracket')
+        s += `<path d="M${x1.toFixed(2)},${(y + tick).toFixed(2)} V${y.toFixed(2)} H${x2.toFixed(2)} V${(y + tick).toFixed(2)}" fill="none" stroke="${o.axisColor}" stroke-width="1.2" stroke-linejoin="miter"/>`;
+      else if(m.type === 'line')
+        s += `<line x1="${x1.toFixed(2)}" y1="${y.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y.toFixed(2)}" stroke="${o.axisColor}" stroke-width="1.2"/>`;
+      if(label)
+        s += `<text x="${((x1 + x2) / 2).toFixed(2)}" y="${(y - (m.type === 'text' ? 2 : 4) + (stars ? o.fontSize * 0.3 : 0)).toFixed(2)}" text-anchor="middle" fill="${o.axisColor}" font-size="${(o.fontSize * (stars ? 1.25 : 0.85)).toFixed(1)}"${stars ? ' font-weight="700"' : ''}>${esc(label)}</text>`;
+      s += `</g>`;
+    });
+    s += `</g>`;
   }
 
   // ── Axes ─────────────────────────────────────────────────────────────────
   if(o.showAxes) {
+    s += `<g id="Axes">`;
     s += `<line x1="${ml}" y1="${mt}" x2="${ml}" y2="${mt+ph}" stroke="${o.axisColor}" stroke-width="1.5" stroke-linecap="square"/>`;
     s += `<line x1="${ml}" y1="${mt+ph}" x2="${ml+pw}" y2="${mt+ph}" stroke="${o.axisColor}" stroke-width="1.5" stroke-linecap="square"/>`;
 
@@ -2385,17 +2454,19 @@ function buildSvg(g, o) {
         }
       }
     }
+    s += `</g>`;
   }
 
   // ── Title ────────────────────────────────────────────────────────────────
   if(g.title && o.showLabels) {
-    s += `<text x="${ml+pw/2}" y="${mt-16}" text-anchor="middle" fill="${o.axisColor}" font-size="${o.fontSize*1.3}" font-weight="700">${esc(g.title)}</text>`;
+    s += `<text id="Title" x="${ml+pw/2}" y="${mt-16}" text-anchor="middle" fill="${o.axisColor}" font-size="${o.fontSize*1.3}" font-weight="700">${esc(g.title)}</text>`;
   }
 
   // ── Legend ───────────────────────────────────────────────────────────────
   if(o.showLegend && g.series?.length > 0) {
     const ly = mt + ph + mb - 14;
     let lx = ml;
+    s += `<g id="Legend">`;
     g.series.forEach((ser, si) => {
       const col = o.palette[si % o.palette.length];
       if(gtype === 'box' || ser.seriesType === 'box') {
@@ -2414,20 +2485,49 @@ function buildSvg(g, o) {
       s += `<text x="${lx+24}" y="${ly+o.fontSize*0.35}" fill="${o.axisColor}" font-size="${o.fontSize*0.9}">${esc(ser.name || 'Series '+(si+1))}</text>`;
       lx += 28 + (ser.name||('Series '+(si+1))).length * (o.fontSize * 0.58) + 10;
     });
+    s += `</g>`;
   }
 
   s += '</svg>';
   return s;
 }
 
+// Cleans the model's significance list: drops unusable entries, fills pValue
+// from a written "p = …" label, and defaults the type.
+function normaliseSignificance(list) {
+  if(!Array.isArray(list)) return [];
+  return list.filter(m => m && Number.isFinite(Number(m.y)) && m.x1 != null).map(m => {
+    const label = String(m.label ?? '').trim();
+    let pValue = m.pValue != null && Number.isFinite(Number(m.pValue)) ? Number(m.pValue) : null;
+    const pm = label.match(/p\s*[=<>≤≥]\s*([\d.]+(?:\s*[eE]\s*[-+−]?\d+|\s*[×x]\s*10\^?[-−]?\d+)?)/i);
+    if(pValue == null && pm) {
+      const t = pm[1].replace(/\s/g, '').replace('−', '-').replace(/[×x]10\^?/, 'e');
+      if(Number.isFinite(parseFloat(t))) pValue = parseFloat(t);
+    }
+    return {
+      label, pValue,
+      type: ['bracket', 'line', 'text'].includes(m.type) ? m.type : (Number(m.x1) === Number(m.x2 ?? m.x1) ? 'text' : 'bracket'),
+      x1: Number(m.x1), x2: Number(m.x2 ?? m.x1),
+      series1: Number.isInteger(m.series1) ? m.series1 : null,
+      series2: Number.isInteger(m.series2) ? m.series2 : null,
+      y: Number(m.y), yAxis: m.yAxis === 'right' ? 'right' : 'left'
+    };
+  });
+}
+
+// Layer name for Figma/Illustrator: ids must be unique-ish and XML-safe
+function layerId(name) {
+  return esc(String(name).replace(/\s+/g, ' ').trim()).replace(/'/g, '&#39;') || 'Layer';
+}
+
 function markerSvg(x, y, r, shape, col) {
   const filled = `fill="${col}"`;
   switch(shape) {
-    case 'square': return `<rect x="${x-r}" y="${y-r}" width="${r*2}" height="${r*2}" ${filled} clip-path="url(#plot)"/>`;
-    case 'triangle': return `<polygon points="${x},${y-r*1.2} ${x-r},${y+r*0.8} ${x+r},${y+r*0.8}" ${filled} clip-path="url(#plot)"/>`;
-    case 'diamond': return `<polygon points="${x},${y-r*1.3} ${x+r},${y} ${x},${y+r*1.3} ${x-r},${y}" ${filled} clip-path="url(#plot)"/>`;
-    case 'cross': return `<g stroke="${col}" stroke-width="${Math.max(1.5,r/2)}" stroke-linecap="round" clip-path="url(#plot)"><line x1="${x-r}" y1="${y-r}" x2="${x+r}" y2="${y+r}"/><line x1="${x+r}" y1="${y-r}" x2="${x-r}" y2="${y+r}"/></g>`;
-    default: return `<circle cx="${x}" cy="${y}" r="${r}" ${filled} clip-path="url(#plot)"/>`;
+    case 'square': return `<rect x="${x-r}" y="${y-r}" width="${r*2}" height="${r*2}" ${filled}/>`;
+    case 'triangle': return `<polygon points="${x},${y-r*1.2} ${x-r},${y+r*0.8} ${x+r},${y+r*0.8}" ${filled}/>`;
+    case 'diamond': return `<polygon points="${x},${y-r*1.3} ${x+r},${y} ${x},${y+r*1.3} ${x-r},${y}" ${filled}/>`;
+    case 'cross': return `<g stroke="${col}" stroke-width="${Math.max(1.5,r/2)}" stroke-linecap="round"><line x1="${x-r}" y1="${y-r}" x2="${x+r}" y2="${y+r}"/><line x1="${x+r}" y1="${y-r}" x2="${x-r}" y2="${y+r}"/></g>`;
+    default: return `<circle cx="${x}" cy="${y}" r="${r}" ${filled}/>`;
   }
 }
 
