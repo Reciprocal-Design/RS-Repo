@@ -1974,8 +1974,8 @@ CRITICAL RULES:
 9. Extract ALL real data points. Do not fabricate any.
 10. SIGNIFICANCE / P-VALUES: Look carefully for statistical significance annotations: asterisks (*, **, ***, ****), "ns", "n.s.", hash/dagger symbols, and written p-values ("p < 0.05", "P = 0.003", "p=1.2e-4"). These usually sit above bars, boxes or points, often on a bracket: a horizontal line joining two groups, usually with short downward ticks at each end. Report every annotation in "significance" (use [] if there are none). Use type "bracket" for a line with end ticks, "line" for a plain horizontal line without ticks, and "text" for a label on its own above a single group. x1/x2 are the two groups the line joins (category indices for categorical x). For grouped bars or boxes, set series1/series2 to the series index of the specific bar each end sits on; otherwise null. "y" is the height of the horizontal line in y-axis data units (for type "text", the height of the bottom of the label). Copy the label text exactly. Set "pValue" only when a number is written.
 11. NEGATIVE VALUES: The y axis may extend below zero (e.g. % change, waterfall plots). Set yAxis.min to the true minimum (e.g. -100) and report bars or points below zero with negative y values. Bars grow from zero: a bar hanging down from the zero line has a negative value equal to where its bottom ends.
-12. AXIS BREAKS: If the y axis is split into separate segments with a jump in values (a gap in the axis line, // break marks, or two stacked axis sections such as 0–200 below and 800–1400 above), list each break in yAxis.breaks as {"from": top value of the lower segment, "to": bottom value of the upper segment}, include the ticks of every segment in yAxis.ticks, set yAxis.max to the top of the highest segment, and estimate segmentHeights (e.g. [0.75, 0.25]). For bars that continue into the upper segment, report their true value read from the upper segment's scale. A bar that stops exactly at the top of the lower segment with nothing above it is reported at that value.
-13. WATERFALL PLOTS: Charts with one bar per subject, sorted by size, often coloured by group, are bar charts where every bar is its own category. Set "categories" to one label per bar, left to right (use the visible labels, or "1", "2", ... if none), make each colour group a series, and give each series points only at its own bars' category indices.`
+12. AXIS BREAKS: If the y axis is split into separate segments with a jump in values (a gap in the axis line, // break marks, or two stacked axis sections such as 0–200 below and 800–1400 above), list each break in yAxis.breaks as {"from": top value of the lower segment, "to": bottom value of the upper segment} (when the axis simply switches to a coarser scale at one value, e.g. 0–600 in steps of 100 then up to 80000 in steps of 20000, use the same value for both: {"from": 600, "to": 600}), include the ticks of every segment in yAxis.ticks, set yAxis.max to the top of the highest segment, and ALWAYS estimate segmentHeights: the fraction of the axis height each segment occupies, bottom to top (e.g. [0.65, 0.35]). For bars that continue into the upper segment, report their true value read from the upper segment's scale. A bar that stops exactly at the top of the lower segment with nothing above it is reported at that value.
+13. WATERFALL PLOTS: Charts with one bar per subject, sorted by size, often coloured by group, are bar charts where every bar is its own category. Set "categories" to one label per bar, left to right (use the visible labels, or "" for each bar if the bars are unlabelled), make each colour group a series, and give each series points only at its own bars' category indices.`
       + (vectorInfo ? VECTOR_PROMPT + vectorInfo.text : '');
 
     const content = [
@@ -2090,7 +2090,14 @@ function buildSvg(g, o) {
   const W = o.svgWidth || 700, H = o.svgHeight || 394;
   const hasDual = !!(g.dualAxis && g.yAxisRight?.min != null);
   const ml = 72, mr = hasDual ? 72 : 36, mt = 50, mb = 60;
-  const legH = (o.showLegend && g.series?.length > 0) ? 30 : 0;
+  // Legend items wrap onto extra rows when they don't fit the width
+  const legItemW = (ser, si) => 28 + (ser.name || ('Series ' + (si + 1))).length * (o.fontSize * 0.58) + 10;
+  let legRows = 0;
+  if(o.showLegend && g.series?.length > 0) {
+    let x = ml; legRows = 1;
+    g.series.forEach((ser, si) => { const w = legItemW(ser, si); if(x + w > W - 8 && x > ml) { legRows++; x = ml; } x += w; });
+  }
+  const legH = legRows ? 30 + (legRows - 1) * 18 : 0;
   const pw = W - ml - mr;
   const ph = H - mt - mb - legH;
 
@@ -2140,11 +2147,13 @@ function buildSvg(g, o) {
 
   // Left y axis breaks: the visible value ranges ("segments"), bottom to top,
   // each with its own pixel band; a small gap separates the bands.
-  const yBreaks = yLog ? [] : (Array.isArray(g.yAxis?.breaks) ? g.yAxis.breaks : [])
+  // A break can skip values (200 → 800) or just change scale at one value (to === from).
+  const yBreaks = yLog ? [] : (yAxisBreaks(g.yAxis) || [])
     .map(b => ({from: Number(b?.from), to: Number(b?.to)}))
-    .filter(b => Number.isFinite(b.from) && Number.isFinite(b.to) && b.to > b.from && b.from > yMin && b.to < yMax)
+    .filter(b => Number.isFinite(b.from) && Number.isFinite(b.to) && b.from > yMin && b.from < yMax)
+    .map(b => ({from: b.from, to: Math.min(Math.max(b.to, b.from), yMax)}))
     .sort((a, b) => a.from - b.from)
-    .filter((b, i, arr) => i === 0 || b.from >= arr[i - 1].to);
+    .filter((b, i, arr) => b.to < yMax && (i === 0 || b.from >= arr[i - 1].to));
   const BREAK_GAP = 12;
   const ySegs = [];
   {
@@ -2153,9 +2162,13 @@ function buildSvg(g, o) {
     ySegs.push({lo, hi: yMax});
     const avail = ph - BREAK_GAP * (ySegs.length - 1);
     const given = g.yAxis?.segmentHeights;
+    // Without estimates from the analysis, size segments by how many ticks they hold,
+    // favouring the bottom one (usually the main part of the chart)
+    const ticks = (g.yAxis?.ticks || []).map(Number).filter(Number.isFinite);
     let fr = Array.isArray(given) && given.length === ySegs.length && given.every(f => Number(f) > 0)
       ? given.map(Number)
-      : ySegs.map(sg => Math.max((sg.hi - sg.lo) / (yMax - yMin), ySegs.length > 1 ? 0.25 : 0));
+      : ySegs.length === 1 ? [1]
+      : ySegs.map((sg, i) => Math.max(1, ticks.filter(t => t >= sg.lo && t <= sg.hi).length) * (i === 0 ? 1.5 : 1));
     const tot = fr.reduce((a, b) => a + b, 0);
     let bottom = mt + ph;
     ySegs.forEach((sg, i) => { sg.y0 = bottom; sg.y1 = bottom - avail * fr[i] / tot; bottom = sg.y1 - BREAK_GAP; });
@@ -2560,11 +2573,12 @@ function buildSvg(g, o) {
 
   // ── Legend ───────────────────────────────────────────────────────────────
   if(o.showLegend && g.series?.length > 0) {
-    const ly = mt + ph + mb - 14;
+    let ly = mt + ph + mb - 14;
     let lx = ml;
     s += `<g id="Legend">`;
     g.series.forEach((ser, si) => {
       const col = o.palette[si % o.palette.length];
+      if(lx + legItemW(ser, si) > W - 8 && lx > ml) { lx = ml; ly += 18; }
       if(gtype === 'box' || ser.seriesType === 'box') {
         // Legend swatch: small box with median line
         s += `<rect x="${lx}" y="${ly-5}" width="14" height="10" fill="${col}" fill-opacity="0.25" stroke="${col}" stroke-width="1.5" rx="1"/>`;
@@ -2579,13 +2593,30 @@ function buildSvg(g, o) {
         if(legStype !== 'bestfit') s += markerSvg(lx+10, ly, o.markerSize*0.8, o.markerShape, col);
       }
       s += `<text x="${lx+24}" y="${ly+o.fontSize*0.35}" fill="${o.axisColor}" font-size="${o.fontSize*0.9}">${esc(ser.name || 'Series '+(si+1))}</text>`;
-      lx += 28 + (ser.name||('Series '+(si+1))).length * (o.fontSize * 0.58) + 10;
+      lx += legItemW(ser, si);
     });
     s += `</g>`;
   }
 
   s += '</svg>';
   return s;
+}
+
+// Y-axis breaks as reported, or inferred from the ticks when the spacing jumps
+// (e.g. -100, 0, …, 600, 20000, 40000: steps of 100 then 20000 → break at 600).
+function yAxisBreaks(ax) {
+  if (!ax || ax.scale === 'log') return [];
+  if (Array.isArray(ax.breaks) && ax.breaks.length) return ax.breaks;
+  const t = [...new Set((ax.ticks || []).map(Number).filter(Number.isFinite))].sort((a, b) => a - b);
+  const out = [];
+  for (let i = 1; i + 1 < t.length; i++) {
+    const before = t[i] - t[i - 1], after = t[i + 1] - t[i];
+    if (after > before * 3 && i >= 2) {
+      const step = i + 2 < t.length ? t[i + 2] - t[i + 1] : after;
+      out.push({from: t[i], to: Math.max(t[i], t[i + 1] - step)});
+    }
+  }
+  return out;
 }
 
 // Cleans the model's significance list: drops unusable entries, fills pValue
