@@ -89,7 +89,8 @@ any size) and encodes it with the browser's own WebCodecs encoder: MP4 (H.264) o
 the canvas size (up to 4096 px a side), 24–60 fps, 1–20 loops. Frame times are spread exactly across whole
 loops, so a looping or continuous scene exports as a seamlessly looping video. Where the browser has no
 H.264 encoder (some Firefox and Linux builds), MP4 falls back to WebM. The muxer (Mediabunny) is loaded
-only when a video is exported. No transparency: the background is included.
+only when a video is exported. WebM can be saved with a transparent background (VP9 with an alpha channel: it
+plays transparent in Chrome, Edge and Firefox; Safari ignores the alpha); MP4 always includes the background.
 
 ## Continuous motion
 
