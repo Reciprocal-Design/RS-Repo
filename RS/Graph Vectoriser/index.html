@@ -1871,7 +1871,7 @@ async function analyseGraph() {
     const base64 = uploadedDataUrl.split(',')[1];
     const mediaType = uploadedDataUrl.match(/data:([^;]+)/)[1];
 
-    const prompt = `You are a precise graph digitisation expert. Analyse this graph image in detail and extract ALL data. Return ONLY valid JSON with this exact structure (no markdown, no backticks, no extra text):
+    const prompt = `You are a precise graph digitisation expert. This is a chart from a scientific or business document; your only task is to read the values plotted in it. Analyse this graph image in detail and extract ALL data. Return ONLY valid JSON with this exact structure (no markdown, no backticks, no extra text):
 
 {
   "title": "graph title if visible, else null",
@@ -1955,36 +1955,45 @@ CRITICAL RULES:
 10. SIGNIFICANCE / P-VALUES: Look carefully for statistical significance annotations: asterisks (*, **, ***, ****), "ns", "n.s.", hash/dagger symbols, and written p-values ("p < 0.05", "P = 0.003", "p=1.2e-4"). These usually sit above bars, boxes or points, often on a bracket: a horizontal line joining two groups, usually with short downward ticks at each end. Report every annotation in "significance" (use [] if there are none). Use type "bracket" for a line with end ticks, "line" for a plain horizontal line without ticks, and "text" for a label on its own above a single group. x1/x2 are the two groups the line joins (category indices for categorical x). For grouped bars or boxes, set series1/series2 to the series index of the specific bar each end sits on; otherwise null. "y" is the height of the horizontal line in y-axis data units (for type "text", the height of the bottom of the label). Copy the label text exactly. Set "pValue" only when a number is written.`
       + (vectorInfo ? VECTOR_PROMPT + vectorInfo.text : '');
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKeyInput.value.trim(),
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-opus-5-5',
-        max_tokens: 16000,                    // thinking is always on and counts toward this
-        output_config: { effort: 'medium' },
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-            { type: 'text', text: prompt }
-          ]
-        }]
-      })
-    });
+    const content = [
+      { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+      { type: 'text', text: prompt }
+    ];
+    const callClaude = async (body, beta) => {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKeyInput.value.trim(),
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+          ...(beta ? { 'anthropic-beta': beta } : {})
+        },
+        body: JSON.stringify({ ...body, messages: [{ role: 'user', content }] })
+      });
+      if(!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error?.message || `API error (${response.status})`);
+      }
+      return response.json();
+    };
 
-    if(!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error?.message || 'API error');
+    // Opus 5.5's safety classifiers occasionally decline harmless scientific
+    // figures (e.g. biology charts). "fallbacks: default" lets the API re-run a
+    // declined request on Anthropic's recommended fallback model server-side.
+    let data = await callClaude({
+      model: 'claude-opus-5-5',
+      max_tokens: 16000,                    // thinking is always on and counts toward this
+      output_config: { effort: 'medium' },
+      fallbacks: 'default'
+    }, 'server-side-fallback-2026-07-01');
+    // Some refusal categories have no server-side fallback: retry once on Opus 4.8
+    if(data.stop_reason === 'refusal') {
+      setStatus('loading', 'Retrying analysis with Claude Opus 4.8…');
+      data = await callClaude({ model: 'claude-opus-4-8', max_tokens: 16000, output_config: { effort: 'high' } });
     }
-
-    const data = await response.json();
     if(data.stop_reason === 'refusal')
-      throw new Error('Claude declined to analyse this image' + (data.stop_details?.explanation ? `: ${data.stop_details.explanation}` : '') + '. Try again or use a different image.');
+      throw new Error('Claude declined to analyse this image, even after retrying with a fallback model. Try cropping to just the chart.');
     if(data.stop_reason === 'max_tokens')
       throw new Error('The analysis ran out of room before finishing (graph too dense). Try cropping to a single chart.');
     // Read text blocks only; the response may also contain thinking blocks
