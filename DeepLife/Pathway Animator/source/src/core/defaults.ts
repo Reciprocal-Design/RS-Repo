@@ -18,6 +18,7 @@ export function defaultCellMap(): CellMap {
     heroId: '',
     solo: false,
     centerHero: false,
+    rings: 0,
   };
 }
 

@@ -4,20 +4,22 @@ import { heroView, journeyScenes } from '../render/journey';
 import { SECOND_TISSUE } from './crossTissue';
 import { buildGeometry } from './geometry';
 import { moduleScene, withHero, withoutTissueMap, withTissueMap, type TissueUpload } from './modules';
+import { ORGANIC_NAME, organicTissue } from './organic';
+import { pointInPolygon } from './polygon';
 import { parseSceneJson, serializeScene } from './sceneIO';
 import { buildSchedule } from './timeline';
 import type { MapCell, ModuleKind } from './types';
 
-/** A 3 × 3 tissue of square cells, 96 wide on a 100 grid (near enough to touch), in a 300 × 300 map. */
-function grid(): TissueUpload {
+/** An n × n tissue of square cells, 96 wide on a 100 grid (near enough to touch). */
+function grid(n = 3): TissueUpload {
   const cells: MapCell[] = [];
-  for (let r = 0; r < 3; r++) {
-    for (let c = 0; c < 3; c++) {
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
       const x = c * 100 + 2, y = r * 100 + 2;
       cells.push({ id: `c${cells.length + 1}`, membrane: [x, y, x + 96, y, x + 96, y + 96, x, y + 96], nucleus: null, enabled: true, seed: cells.length + 1 });
     }
   }
-  return { name: 'grid.svg', viewBox: { x: 0, y: 0, width: 300, height: 300 }, cells };
+  return { name: 'grid.svg', viewBox: { x: 0, y: 0, width: n * 100, height: n * 100 }, cells };
 }
 const view = (kind: ModuleKind, hero = 'c5') => withTissueMap(moduleScene(kind, 7), grid(), hero);
 const bbox = (pts: { x: number; y: number }[]) => {
@@ -93,6 +95,80 @@ describe('a shared tissue map', () => {
     const g = buildGeometry(journeyScenes(s).tissue);
     expect(g.cells.find((c) => c.hero)!.id).toBe('c3');
     expect(heroView(s).center).toEqual(g.cells.find((c) => c.hero)!.cell.center);
+  });
+});
+
+describe('the tissue view zoomed in on the selected cell', () => {
+  const big = () => withTissueMap(moduleScene('tissue', 7), grid(9), 'c41'); // the middle of a 9 × 9 map
+
+  it('shows the selected cell and two cells beyond it along the short side', () => {
+    const s = big();
+    expect(s.cellMap.rings).toBe(2);
+    const g = buildGeometry(s);
+    const hero = g.cells.find((c) => c.hero)!;
+    expect(hero.cell.center.x).toBeCloseTo(s.canvas.width / 2, 0);
+    expect(hero.cell.center.y).toBeCloseTo(s.canvas.height / 2, 0);
+    // Cells are 100 apart in the map: on the canvas, two of them (and half the middle one) reach the edge.
+    const pitch = g.cells.find((c) => c.id === 'c42')!.cell.center.x - hero.cell.center.x;
+    expect((s.canvas.height / 2) / pitch).toBeGreaterThan(2.2);
+    expect((s.canvas.height / 2) / pitch).toBeLessThan(2.9);
+    // The cells three away are off the canvas, top and bottom.
+    const far = g.cells.find((c) => c.id === 'c5')!; // top row, same column
+    expect(Math.max(...far.cell.points.map((p) => p.y))).toBeLessThan(0);
+  });
+
+  it('zooms with the setting, and detail grows with the cells', () => {
+    const s = big();
+    const pitch = (rings: number) => {
+      const g = buildGeometry({ ...s, cellMap: { ...s.cellMap, rings } });
+      return { p: g.cells.find((c) => c.id === 'c42')!.cell.center.x - g.cells.find((c) => c.hero)!.cell.center.x, scale: g.scale };
+    };
+    expect(pitch(1).p).toBeGreaterThan(pitch(2).p);
+    expect(pitch(2).p).toBeGreaterThan(pitch(3).p);
+    // 0 shows the whole map, as does asking for more cells than there are.
+    expect(pitch(0).p).toBeCloseTo(1080 / 9, 0);
+    expect(pitch(8).p).toBeCloseTo(1080 / 9, 0);
+    expect(pitch(2).scale).toBeGreaterThan(pitch(0).scale);
+    expect(pitch(1).scale).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('the generated organic tissue', () => {
+  it('packs irregular cells wall to wall, each with a nucleus inside it', () => {
+    const map = organicTissue(7);
+    expect(map.cells.length).toBeGreaterThan(14);
+    expect(map.cells.length).toBeLessThan(32);
+    expect(organicTissue(7)).toEqual(map); // the same seed, the same tissue
+    expect(organicTissue(8).cells[0].membrane).not.toEqual(map.cells[0].membrane);
+    const poly = (a: number[]) => a.reduce<{ x: number; y: number }[]>((o, v, i) => (i % 2 ? o : [...o, { x: v, y: a[i + 1] }]), []);
+    const cells = map.cells.map((c) => ({ m: poly(c.membrane), n: poly(c.nucleus!) }));
+    for (const c of cells) {
+      expect(c.n.every((p) => pointInPolygon(p, c.m))).toBe(true);
+      // No cell's wall crosses into another's.
+      for (const o of cells) if (o !== c) expect(c.m.some((p) => pointInPolygon(p, o.m))).toBe(false);
+    }
+    // Close together: every cell has a neighbour within a twentieth of its own width.
+    for (const c of cells) {
+      const w = Math.max(...c.m.map((p) => p.x)) - Math.min(...c.m.map((p) => p.x));
+      const gap = Math.min(...cells.filter((o) => o !== c).flatMap((o) => o.m.flatMap((q) => c.m.map((p) => Math.hypot(p.x - q.x, p.y - q.y)))));
+      expect(gap).toBeLessThan(w / 20 + 12);
+    }
+  });
+
+  it('is what the cross-tissue view starts from, each side with its own cells', () => {
+    const s = moduleScene('crossTissue', 7);
+    expect(s.cellMap).toMatchObject({ name: ORGANIC_NAME, around: false });
+    expect(s.cellMap.heroId).not.toBe('');
+    const g = buildGeometry(s);
+    const first = g.cells.filter((c) => !c.id.startsWith(SECOND_TISSUE));
+    const second = g.cells.filter((c) => c.id.startsWith(SECOND_TISSUE));
+    expect(first.length).toBeGreaterThan(14);
+    expect(second.length).toBeGreaterThan(14);
+    // Neighbours are near enough to pass the signal on: links inside each tissue.
+    expect(g.edges.some((e) => e.link && !e.from.startsWith(SECOND_TISSUE) && !e.to.startsWith(SECOND_TISSUE))).toBe(true);
+    expect(g.edges.some((e) => e.link && e.from.startsWith(SECOND_TISSUE) && e.to.startsWith(SECOND_TISSUE))).toBe(true);
+    // Removing an uploaded map comes back to it.
+    expect(withoutTissueMap(view('crossTissue')).cellMap.name).toBe(ORGANIC_NAME);
   });
 });
 

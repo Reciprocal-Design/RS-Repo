@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { bodyImageInfo } from '../core/bodyImage';
 import { ORGANS } from '../core/body';
-import { degCount, MODULES, moduleInfo, tissueMap } from '../core/modules';
+import { degCount, MODULES, moduleInfo, tissueMap, withOrganicTissue } from '../core/modules';
+import { ORGANIC_NAME } from '../core/organic';
+import { randomSeed } from '../core/rng';
 import type { ModuleSettings, OrganId } from '../core/types';
 import { JOURNEY_SECTIONS, sectionLength } from '../render/journey';
 import { ColorField, Section, Select, Slider, Toggle } from './controls';
@@ -140,12 +142,27 @@ export function ModuleSection() {
             The first tissue takes the cell membrane colour. Cell size, links inside each tissue and how far a signal
             relays are under Cell map.
           </p>
+          {scene.cellMap.name === ORGANIC_NAME && (
+            <button className="btn wide" title="New cell shapes for the first tissue; Regenerate all re-rolls the second"
+              onClick={() => setScene((s) => withOrganicTissue(s, randomSeed()))}>
+              New tissue shapes
+            </button>
+          )}
         </>
       )}
 
       {m.kind === 'tissue' && !scene.cellMap.around && scene.cellMap.heroId && (
-        <Toggle label="Keep the selected cell in the middle" checked={scene.cellMap.centerHero}
-          onChange={(centerHero) => setScene((s) => ({ ...s, cellMap: { ...s.cellMap, centerHero } }))} />
+        <>
+          <Toggle label="Keep the selected cell in the middle" checked={scene.cellMap.centerHero}
+            onChange={(centerHero) => setScene((s) => ({ ...s, cellMap: { ...s.cellMap, centerHero } }))} />
+          {scene.cellMap.centerHero && (
+            <>
+              <Slider label="Cells shown beyond it" value={scene.cellMap.rings} min={0} max={6} step={1}
+                onChange={(rings) => setScene((s) => ({ ...s, cellMap: { ...s.cellMap, rings } }))} />
+              <p className="hint">How far the view reaches from the selected cell, along the canvas's short side. 0 shows the whole map.</p>
+            </>
+          )}
+        </>
       )}
 
       {m.kind === 'tissue' && (

@@ -80,6 +80,7 @@ function normalizeCellMap(raw: unknown): CellMap {
     heroId,
     solo: bool(raw.solo, false) && !!heroId,
     centerHero: bool(raw.centerHero, false),
+    rings: Math.round(num(raw.rings, 0, 0, 8)),
     name: typeof m.name === 'string' ? m.name : '',
     viewBox: { x: num(vb.x, 0), y: num(vb.y, 0), width: vb.width, height: vb.height },
     cells,

@@ -1,5 +1,6 @@
 import { buildMapGeometry } from './cellMap';
 import { connectCellLinks, type LinkCell } from './connect';
+import { ORGANIC_NAME, organicTissue } from './organic';
 import { hash } from './rng';
 import type { Scene, SceneGeom } from './types';
 
@@ -19,10 +20,13 @@ export function buildCrossTissueGeometry(scene: Scene): SceneGeom | null {
   const w = (W - gap) / 2;
   const cm = { ...scene.cellMap, solo: false, centerHero: false };
   const first: Scene = { ...scene, cellMap: { ...cm, frame: { x: 0, y: 0, w, h: H } } };
+  // A generated tissue is matched with another like it (its own cells); an
+  // uploaded map is shown twice.
+  const other = cm.name === ORGANIC_NAME && !cm.around ? organicTissue(hash(scene.seed, 'second-tissue')) : null;
   const second: Scene = {
     ...scene,
     seed: hash(scene.seed, 'second-tissue'),
-    cellMap: { ...cm, heroId: '', frame: { x: w + gap, y: 0, w, h: H } },
+    cellMap: { ...cm, ...(other ? { cells: other.cells, viewBox: other.viewBox } : {}), heroId: '', frame: { x: w + gap, y: 0, w, h: H } },
   };
 
   const cellsA: LinkCell[] = [], cellsB: LinkCell[] = [];
