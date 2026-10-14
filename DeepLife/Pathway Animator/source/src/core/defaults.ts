@@ -50,6 +50,7 @@ export function defaultModule(kind: ModuleKind = 'custom'): ModuleSettings {
     netY: 0,
     tissue2Color: '#FF2EA6',
     crossLinks: 4,
+    pinkCells: null,
     realVideo: '',
     realVideoName: '',
     videoScale: 1,

@@ -11,6 +11,7 @@ export function Preview() {
   const scene = useApp((s) => s.scene);
   const time = useApp((s) => s.time);
   const clickMapCell = useApp((s) => s.clickMapCell);
+  const togglePinkCell = useApp((s) => s.togglePinkCell);
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
@@ -77,20 +78,24 @@ export function Preview() {
   // Cells can be clicked on a map, but not in a solo view (one cell) or the two-tissue view.
   const onMap = mapActive(scene) && !soloActive(scene) && scene.module.kind !== 'crossTissue';
   const picking = onMap && !!heroCellOf(scene.cellMap);
+  // Cross-tissue: clicking a cell switches its colour.
+  const colouring = scene.module.kind === 'crossTissue';
   return (
     <div className="preview" ref={wrapRef}>
       <canvas
         ref={canvasRef}
-        style={{ width: cssW, height: cssH, cursor: onMap ? 'pointer' : undefined }}
+        style={{ width: cssW, height: cssH, cursor: onMap || colouring ? 'pointer' : undefined }}
         title={
-          picking ? 'Click a cell to select it; Alt-click to add or remove its pathways; Shift-click to re-roll it'
+          colouring ? 'Click a cell to switch it between purple and pink'
+            : picking ? 'Click a cell to select it; Alt-click to add or remove its pathways; Shift-click to re-roll it'
             : onMap ? 'Click a cell to add or remove its pathways; Shift-click to re-roll it' : undefined
         }
         onClick={(e) => {
-          if (!onMap || !cssW) return;
+          if (!(onMap || colouring) || !cssW) return;
           const r = e.currentTarget.getBoundingClientRect();
           const p = { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
-          clickMapCell(p, e.shiftKey, e.altKey);
+          if (colouring) togglePinkCell(p);
+          else clickMapCell(p, e.shiftKey, e.altKey);
         }}
       />
     </div>

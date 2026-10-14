@@ -203,6 +203,23 @@ describe('cross-tissue communication', () => {
     });
   }
 
+  it('draws in pink the cells picked (by default the whole second tissue), on either side', () => {
+    const s = moduleScene('crossTissue', 7);
+    const pinkOf = (x: typeof s) => buildGeometry(x).cells.filter((c) => c.glow === x.module.tissue2Color).map((c) => c.id);
+    const all = buildGeometry(s).cells.map((c) => c.id);
+    expect(pinkOf(s)).toEqual(all.filter((id) => id.startsWith(SECOND_TISSUE)));
+    const left = all.find((id) => !id.startsWith(SECOND_TISSUE))!, right = all.find((id) => id.startsWith(SECOND_TISSUE))!;
+    const picked = { ...s, module: { ...s.module, pinkCells: [left] } };
+    expect(pinkOf(picked)).toEqual([left]);
+    expect(buildGeometry(picked).cells.find((c) => c.id === right)!.glow).toBeUndefined();
+    expect(pinkOf({ ...s, module: { ...s.module, pinkCells: [] } })).toEqual([]);
+    // Only the colour changes: the same cells, networks and connections.
+    expect(buildGeometry(picked).edges.map((e) => e.id)).toEqual(buildGeometry(s).edges.map((e) => e.id));
+    // Saved and loaded.
+    expect(parseSceneJson(serializeScene(picked)).module.pinkCells).toEqual([left]);
+    expect(parseSceneJson(serializeScene(s)).module.pinkCells).toBeNull();
+  });
+
   it('has no connections when none are asked for', () => {
     const s = moduleScene('crossTissue', 7);
     const none = { ...s, module: { ...s.module, crossLinks: 0 } };

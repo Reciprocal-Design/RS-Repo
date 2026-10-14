@@ -56,7 +56,8 @@ cell or generated tissue.
    connections join the nearest cells across the gap, so the signal spreads through one tissue and crosses into
    the other. With no map uploaded, each tissue is generated (`src/core/organic.ts`): irregular cells packed wall
    to wall in a clump with an uneven edge (Voronoi cells of evenly scattered points, corners rounded), the two
-   sides with different cells. "New tissue shapes" re-rolls it.
+   sides with different cells. "New tissue shapes" re-rolls it. Click cells in the preview to switch them between
+   the membrane colour and the second colour, on either side ("Right tissue" puts the default back).
 7. **Body**: organ-level connectivity (`src/core/body.ts`). An anatomical front-view outline drawn like the
    membrane in an X-ray look: a dark core, a wide glow reaching in from a bright rim ("Body glow"), and soft
    highlights along the anatomy (collarbones, chest, ribs, hips, shoulders, knees) that model the form. Organs are

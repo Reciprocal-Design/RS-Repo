@@ -14,6 +14,12 @@ const GAP = 0.08;
 /** Id prefix of everything in the second tissue. */
 export const SECOND_TISSUE = 'b';
 
+/** The cells drawn in the second colour: those picked, or by default every cell of the second tissue. */
+export function pinkCellIds(scene: Scene, ids: string[]): Set<string> {
+  const picked = scene.module.pinkCells;
+  return new Set(picked ?? ids.filter((id) => id.startsWith(SECOND_TISSUE)));
+}
+
 export function buildCrossTissueGeometry(scene: Scene): SceneGeom | null {
   const { width: W, height: H } = scene.canvas;
   const gap = GAP * W;
@@ -34,7 +40,6 @@ export function buildCrossTissueGeometry(scene: Scene): SceneGeom | null {
   const b = buildMapGeometry(second, {
     prefix: SECOND_TISSUE,
     noStart: true,
-    glow: scene.module.tissue2Color,
     // Inside the second tissue, the signal spreads away from the side it arrives on.
     linkOrigin: { x: w + gap, y: H / 2 },
     collect: cellsB,
@@ -70,11 +75,14 @@ export function buildCrossTissueGeometry(scene: Scene): SceneGeom | null {
   // its cell) are drawn heavier and at full strength: they are the point of the view.
   const crossEdges = cross.edges.map((e) => (e.link ? { ...e, opacity: 1, weight: 2.2 } : e));
   const nodes = [...a.nodes, ...b.nodes, ...cross.nodes];
+  // Cells in the second colour: those picked, or (by default) the whole second tissue.
+  const pink = pinkCellIds(scene, [...a.cells, ...b.cells].map((c) => c.id));
+  const cells = [...a.cells, ...b.cells].map((c) => (pink.has(c.id) ? { ...c, glow: scene.module.tissue2Color } : c));
   return {
     scale: a.scale,
     cell: a.cell,
     nucleus: a.nucleus,
-    cells: [...a.cells, ...b.cells],
+    cells,
     pathways: [...a.pathways, ...b.pathways],
     receptors: [...a.receptors, ...b.receptors, ...cross.receptors],
     nodes,

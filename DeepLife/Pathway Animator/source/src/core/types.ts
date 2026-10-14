@@ -154,6 +154,11 @@ export interface ModuleSettings {
   /** Cross-tissue communication: the second tissue's colour, and how many connections join the two. */
   tissue2Color: string;
   crossLinks: number;
+  /**
+   * Cross-tissue: the cells drawn in the second colour, by id (the second
+   * tissue's ids start with `b`). null: the whole second tissue.
+   */
+  pinkCells: string[] | null;
   /** Virtual → real cell: the real cell video (an object URL for this session; never saved) and its file name. */
   realVideo: string;
   realVideoName: string;

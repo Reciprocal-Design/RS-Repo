@@ -122,6 +122,7 @@ function normalizeModule(raw: unknown): ModuleSettings {
     netX: num(m.netX, 0, -1, 1),
     netY: num(m.netY, 0, -1, 1),
     crossLinks: Math.round(num(m.crossLinks, base.crossLinks, 0, 12)),
+    pinkCells: isObj(raw) && Array.isArray(raw.pinkCells) ? raw.pinkCells.filter((x): x is string => typeof x === 'string') : null,
     // A video is only ever held for the session it was added in.
     realVideo: '',
     realVideoName: '',

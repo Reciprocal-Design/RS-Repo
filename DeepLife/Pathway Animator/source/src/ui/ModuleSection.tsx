@@ -141,6 +141,14 @@ export function ModuleSection() {
       {m.kind === 'crossTissue' && (
         <>
           <ColorField label="Second tissue colour" value={m.tissue2Color} onChange={(tissue2Color) => set({ tissue2Color })} />
+          <p className="hint">
+            Click cells in the preview to switch them between the membrane colour and this one, on either side.
+            {m.pinkCells ? ` ${m.pinkCells.length} cell${m.pinkCells.length === 1 ? '' : 's'} in this colour.` : ' Now: the whole right-hand tissue.'}
+          </p>
+          <div className="row">
+            <button className="btn small grow" onClick={() => set({ pinkCells: null })}>Right tissue</button>
+            <button className="btn small grow" onClick={() => set({ pinkCells: [] })}>None</button>
+          </div>
           <Slider label="Connections between the tissues" value={m.crossLinks} min={0} max={12} step={1}
             onChange={(crossLinks) => set({ crossLinks })} />
           <p className="hint">

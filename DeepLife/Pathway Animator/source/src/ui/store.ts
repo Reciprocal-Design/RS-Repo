@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import { makePathway } from '../core/defaults';
 import { heroCellOf, mapCellAt, mapCells, middleCellId, soloActive } from '../core/cellMap';
 import { defaultCellMap } from '../core/defaults';
+import { pinkCellIds } from '../core/crossTissue';
+import { buildGeometry } from '../core/geometry';
+import { pointInPolygon } from '../core/polygon';
 import { withStructureOf } from '../core/layers';
 import { onBodyImage } from '../core/bodyImage';
 import { MODULES, moduleScene, shareScene, withHero, withoutTissueMap, withTissueMap, type TissueUpload } from '../core/modules';
@@ -48,6 +51,8 @@ interface AppState {
    * pathways. `reroll` (Shift) gives the cell a new layout.
    */
   clickMapCell: (p: Vec2, reroll: boolean, toggle?: boolean) => void;
+  /** Cross-tissue: switch a cell (at a canvas point) between the first and the second colour. */
+  togglePinkCell: (p: Vec2) => void;
   /** Use an uploaded tissue map in every view that shows cells, its middle cell selected. */
   setTissueMap: (map: TissueUpload) => void;
   /** Select a cell of the uploaded tissue map, in every view. */
@@ -136,6 +141,16 @@ export const useApp = create<AppState>((set) => ({
   setTime: (time) => set({ time }),
   setPlaying: (playing) => set({ playing }),
   setCellMap: (update) => set((st) => put(st, { ...st.scene, cellMap: update(st.scene.cellMap) })),
+  togglePinkCell: (p) =>
+    set((st) => {
+      const g = buildGeometry(st.scene);
+      const hit = g.cells.find((c) => pointInPolygon(p, c.cell.points));
+      if (!hit) return {};
+      const pink = pinkCellIds(st.scene, g.cells.map((c) => c.id));
+      if (pink.has(hit.id)) pink.delete(hit.id);
+      else pink.add(hit.id);
+      return put(st, { ...st.scene, module: { ...st.scene.module, pinkCells: [...pink] } });
+    }),
   setTissueMap: (map) =>
     set((st) => {
       const probe = { ...st.scene, cellMap: { ...defaultCellMap(), viewBox: map.viewBox, cells: map.cells } };
