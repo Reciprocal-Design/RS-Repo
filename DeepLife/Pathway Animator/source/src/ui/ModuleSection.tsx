@@ -142,21 +142,19 @@ export function ModuleSection() {
         <>
           <ColorField label="Second tissue colour" value={m.tissue2Color} onChange={(tissue2Color) => set({ tissue2Color })} />
           <p className="hint">
-            Click cells in the preview to switch them between the membrane colour and this one, on either side.
-            {m.pinkCells ? ` ${m.pinkCells.length} cell${m.pinkCells.length === 1 ? '' : 's'} in this colour.` : ' Now: the whole right-hand tissue.'}
+            Click cells in the preview to switch them between the membrane colour and this one.
+            {m.pinkCells ? ` ${m.pinkCells.length} cell${m.pinkCells.length === 1 ? '' : 's'} in this colour.` : ' Now: the right-hand half of the map.'}
           </p>
           <div className="row">
-            <button className="btn small grow" onClick={() => set({ pinkCells: null })}>Right tissue</button>
+            <button className="btn small grow" onClick={() => set({ pinkCells: null })}>Right half</button>
             <button className="btn small grow" onClick={() => set({ pinkCells: [] })}>None</button>
           </div>
-          <Slider label="Connections between the tissues" value={m.crossLinks} min={0} max={12} step={1}
-            onChange={(crossLinks) => set({ crossLinks })} />
           <p className="hint">
-            The first tissue takes the cell membrane colour. Cell size, links inside each tissue and how far a signal
-            relays are under Cell map.
+            The other cells take the cell membrane colour. Links where the two tissues meet are drawn heavier. Cell
+            size, links per neighbour and how far a signal relays are under Cell map.
           </p>
           {scene.cellMap.name === ORGANIC_NAME && (
-            <button className="btn wide" title="New cell shapes for the first tissue; Regenerate all re-rolls the second"
+            <button className="btn wide" title="New cell shapes for the generated tissue"
               onClick={() => setScene((s) => withOrganicTissue(s, randomSeed()))}>
               New tissue shapes
             </button>

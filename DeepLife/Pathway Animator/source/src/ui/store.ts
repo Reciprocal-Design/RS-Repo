@@ -146,7 +146,7 @@ export const useApp = create<AppState>((set) => ({
       const g = buildGeometry(st.scene);
       const hit = g.cells.find((c) => pointInPolygon(p, c.cell.points));
       if (!hit) return {};
-      const pink = pinkCellIds(st.scene, g.cells.map((c) => c.id));
+      const pink = pinkCellIds(st.scene, g.cells);
       if (pink.has(hit.id)) pink.delete(hit.id);
       else pink.add(hit.id);
       return put(st, { ...st.scene, module: { ...st.scene.module, pinkCells: [...pink] } });

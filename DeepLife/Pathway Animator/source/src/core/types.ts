@@ -151,13 +151,11 @@ export interface ModuleSettings {
   netScale: number;
   netX: number;
   netY: number;
-  /** Cross-tissue communication: the second tissue's colour, and how many connections join the two. */
+  /** Cross-tissue communication: the second tissue's colour. */
   tissue2Color: string;
+  /** No longer used (the two tissues were once separate copies of the map, joined by this many connections). */
   crossLinks: number;
-  /**
-   * Cross-tissue: the cells drawn in the second colour, by id (the second
-   * tissue's ids start with `b`). null: the whole second tissue.
-   */
+  /** Cross-tissue: the cells of the map in the second colour, by id. null: the right-hand half. */
   pinkCells: string[] | null;
   /** Virtual → real cell: the real cell video (an object URL for this session; never saved) and its file name. */
   realVideo: string;

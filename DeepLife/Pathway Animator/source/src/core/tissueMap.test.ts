@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildDisplayList } from '../render/displayList';
 import { heroView, journeyScenes } from '../render/journey';
-import { SECOND_TISSUE } from './crossTissue';
 import { buildGeometry } from './geometry';
 import { moduleScene, withHero, withoutTissueMap, withTissueMap, type TissueUpload } from './modules';
 import { ORGANIC_NAME, organicTissue } from './organic';
@@ -155,75 +154,59 @@ describe('the generated organic tissue', () => {
     }
   });
 
-  it('is what the cross-tissue view starts from, each side with its own cells', () => {
+  it('is what the cross-tissue view starts from: one wide tissue', () => {
     const s = moduleScene('crossTissue', 7);
     expect(s.cellMap).toMatchObject({ name: ORGANIC_NAME, around: false });
     expect(s.cellMap.heroId).not.toBe('');
+    expect(s.cellMap.cells.length).toBeGreaterThan(28);
     const g = buildGeometry(s);
-    const first = g.cells.filter((c) => !c.id.startsWith(SECOND_TISSUE));
-    const second = g.cells.filter((c) => c.id.startsWith(SECOND_TISSUE));
-    expect(first.length).toBeGreaterThan(14);
-    expect(second.length).toBeGreaterThan(14);
-    // Neighbours are near enough to pass the signal on: links inside each tissue.
-    expect(g.edges.some((e) => e.link && !e.from.startsWith(SECOND_TISSUE) && !e.to.startsWith(SECOND_TISSUE))).toBe(true);
-    expect(g.edges.some((e) => e.link && e.from.startsWith(SECOND_TISSUE) && e.to.startsWith(SECOND_TISSUE))).toBe(true);
+    expect(g.cells.length).toBe(s.cellMap.cells.length); // the map once, not twice
+    // Neighbours are near enough to pass the signal on.
+    expect(g.edges.some((e) => e.link)).toBe(true);
     // Removing an uploaded map comes back to it.
     expect(withoutTissueMap(view('crossTissue')).cellMap.name).toBe(ORGANIC_NAME);
   });
 });
 
 describe('cross-tissue communication', () => {
-  for (const [name, make] of [['an uploaded map', () => view('crossTissue')], ['the generated tissue', () => moduleScene('crossTissue', 7)]] as const) {
-    it(`puts two tissues side by side and joins them (${name})`, () => {
+  const pinkOf = (x: ReturnType<typeof view>) => buildGeometry(x).cells.filter((c) => c.glow === x.module.tissue2Color).map((c) => c.id);
+
+  for (const [name, make] of [['an uploaded map', () => view('crossTissue', 'c4')], ['the generated tissue', () => moduleScene('crossTissue', 7)]] as const) {
+    it(`splits one map into two tissues by colour, the signal crossing where they meet (${name})`, () => {
       const s = make();
       const g = buildGeometry(s);
-      const first = g.cells.filter((c) => !c.id.startsWith(SECOND_TISSUE));
-      const second = g.cells.filter((c) => c.id.startsWith(SECOND_TISSUE));
-      expect(first.length).toBeGreaterThan(1);
-      expect(second.length).toBeGreaterThan(1);
-      // Left and right halves of the canvas, the second in its own colour.
-      const mid = s.canvas.width / 2;
-      expect(first.every((c) => c.cell.center.x < mid && !c.glow)).toBe(true);
-      expect(second.every((c) => c.cell.center.x > mid && c.glow === s.module.tissue2Color)).toBe(true);
-      // Every id is unique across the two.
-      expect(new Set(g.nodes.map((n) => n.id)).size).toBe(g.nodes.length);
-      expect(new Set(g.edges.map((e) => e.id)).size).toBe(g.edges.length);
-      // Connections run from the first tissue into the second, as many as asked for (or as cells allow).
-      const cross = g.edges.filter((e) => e.link && !e.from.startsWith(SECOND_TISSUE) && e.to.startsWith(SECOND_TISSUE));
-      expect(cross.length).toBeGreaterThan(0);
-      expect(cross.length).toBeLessThanOrEqual(s.module.crossLinks);
-      expect(g.edges.some((e) => e.link && e.from.startsWith(SECOND_TISSUE) && !e.to.startsWith(SECOND_TISSUE))).toBe(false);
-      // Only the first tissue starts; the signal reaches the second through the connections.
-      expect(g.pathways.filter((p) => !p.relayOnly).every((p) => !p.id.startsWith(SECOND_TISSUE))).toBe(true);
-      const fired = [...buildSchedule(s).fire.keys()];
-      expect(fired.some((id) => id.startsWith(SECOND_TISSUE))).toBe(true);
-      // The second tissue's membranes are drawn in its colour.
-      const prims = buildDisplayList(s, 0).prims;
-      expect(prims.some((p) => p.id.startsWith(SECOND_TISSUE) && p.id.includes('membrane'))).toBe(true);
+      // The map once: every cell of it, each id once.
+      expect(g.cells.length).toBe(s.cellMap.cells.length);
+      expect(new Set(g.cells.map((c) => c.id)).size).toBe(g.cells.length);
+      // By default the right-hand half is in the second colour, never the selected cell.
+      const pink = new Set(pinkOf(s));
+      const hero = g.cells.find((c) => c.hero)!;
+      expect(pink.has(hero.id)).toBe(false);
+      const xs = g.cells.map((c) => c.cell.center.x);
+      const mid = (Math.min(...xs) + Math.max(...xs)) / 2;
+      for (const c of g.cells) if (c !== hero) expect(pink.has(c.id)).toBe(c.cell.center.x > mid);
+      // The signal starts in the selected cell and reaches the other tissue.
+      expect(g.pathways.filter((p) => !p.relayOnly).map((p) => p.id)).toEqual(['p1']);
+      const cellOf = (id: string) => /^(c\d+)-/.exec(id)?.[1] ?? hero.id;
+      const fired = new Set([...buildSchedule(s).fire.keys()].map(cellOf));
+      expect([...pink].some((id) => fired.has(id))).toBe(true);
+      // Links crossing between the tissues are drawn heavier; those within one are not.
+      const crossing = g.edges.filter((e) => e.link && pink.has(cellOf(e.from)) !== pink.has(cellOf(e.to)));
+      expect(crossing.length).toBeGreaterThan(0);
+      expect(crossing.every((e) => e.weight === 2.2)).toBe(true);
+      expect(g.edges.filter((e) => e.link && pink.has(cellOf(e.from)) === pink.has(cellOf(e.to))).every((e) => !e.weight)).toBe(true);
     });
   }
 
-  it('draws in pink the cells picked (by default the whole second tissue), on either side', () => {
-    const s = moduleScene('crossTissue', 7);
-    const pinkOf = (x: typeof s) => buildGeometry(x).cells.filter((c) => c.glow === x.module.tissue2Color).map((c) => c.id);
-    const all = buildGeometry(s).cells.map((c) => c.id);
-    expect(pinkOf(s)).toEqual(all.filter((id) => id.startsWith(SECOND_TISSUE)));
-    const left = all.find((id) => !id.startsWith(SECOND_TISSUE))!, right = all.find((id) => id.startsWith(SECOND_TISSUE))!;
-    const picked = { ...s, module: { ...s.module, pinkCells: [left] } };
-    expect(pinkOf(picked)).toEqual([left]);
-    expect(buildGeometry(picked).cells.find((c) => c.id === right)!.glow).toBeUndefined();
+  it('draws in pink exactly the cells picked', () => {
+    const s = view('crossTissue', 'c4');
+    const picked = { ...s, module: { ...s.module, pinkCells: ['c1', 'c5'] } };
+    expect(pinkOf(picked).sort()).toEqual(['c1', 'c5']);
     expect(pinkOf({ ...s, module: { ...s.module, pinkCells: [] } })).toEqual([]);
-    // Only the colour changes: the same cells, networks and connections.
+    // Only colours and line weights change: the same cells, networks and links.
     expect(buildGeometry(picked).edges.map((e) => e.id)).toEqual(buildGeometry(s).edges.map((e) => e.id));
     // Saved and loaded.
-    expect(parseSceneJson(serializeScene(picked)).module.pinkCells).toEqual([left]);
+    expect(parseSceneJson(serializeScene(picked)).module.pinkCells).toEqual(['c1', 'c5']);
     expect(parseSceneJson(serializeScene(s)).module.pinkCells).toBeNull();
-  });
-
-  it('has no connections when none are asked for', () => {
-    const s = moduleScene('crossTissue', 7);
-    const none = { ...s, module: { ...s.module, crossLinks: 0 } };
-    const g = buildGeometry(none);
-    expect(g.edges.some((e) => e.link && !e.from.startsWith(SECOND_TISSUE) && e.to.startsWith(SECOND_TISSUE))).toBe(false);
   });
 });

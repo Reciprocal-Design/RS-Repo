@@ -42,7 +42,7 @@ export const MODULES: ModuleInfo[] = [
   {
     kind: 'crossTissue',
     label: 'Cross-tissue communication',
-    blurb: 'Two tissues side by side, the second in its own colour, with connections between them: the signal starts in the selected cell, spreads through its tissue and crosses into the other.',
+    blurb: 'One tissue map, its cells split between two tissues by colour (click cells to switch them): the signal starts in the selected cell, spreads through its tissue and crosses into the other where they meet.',
   },
   {
     kind: 'body',
@@ -88,10 +88,8 @@ export function withTissueMap(scene: Scene, map: TissueUpload, heroId: string): 
   if (kind === 'tissue') return { ...scene, cellMap: { ...base, centerHero: true, rings: 2, startShare: 0, relayHops: 4, detailScale: fit(scene) } };
   if (kind === 'journey') return { ...scene, cellMap: { ...base, startShare: 0, relayHops: 4, detailScale: fit(scene) } };
   if (kind === 'crossTissue') {
-    // Each tissue has (a little under) half the canvas, fitted by its cells.
-    const { width: W, height: H } = scene.canvas;
-    const framed = { ...base, frame: { x: 0, y: 0, w: 0.46 * W, h: H } };
-    return { ...scene, cellMap: { ...base, startShare: 0, relayHops: 8, detailScale: suggestedDetailScale(scene, framed) } };
+    // A new map: the default split (right half in the second colour) applies again.
+    return { ...scene, module: { ...scene.module, pinkCells: null }, cellMap: { ...base, startShare: 0, relayHops: 8, detailScale: fit(scene) } };
   }
   return scene;
 }
@@ -118,7 +116,8 @@ export function withoutTissueMap(scene: Scene): Scene {
  * one, its cells packed wall to wall, with its middle cell selected.
  */
 export function withOrganicTissue(scene: Scene, seed: number): Scene {
-  const map = organicTissue(seed);
+  // Wide enough to fill a landscape canvas, with room for two tissues.
+  const map = organicTissue(seed, 40, 1.75);
   const probe = { ...scene, cellMap: { ...defaultCellMap(), viewBox: map.viewBox, cells: map.cells } };
   return withTissueMap(scene, map, middleCellId(probe) ?? map.cells[0]?.id ?? '');
 }

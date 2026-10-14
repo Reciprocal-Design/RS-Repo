@@ -50,14 +50,13 @@ cell or generated tissue.
    Target toxicity also shows a large warning badge in the middle of the cell as it turns (size adjustable).
    Target combination spaces its receptors unevenly (spacing variation up to 2) and, with crosstalk on,
    interconnects them: each receptor also reaches a few of the other targets' DEGs.
-6. **Cross-tissue communication** (`src/core/crossTissue.ts`): the tissue twice, side by side, each fitted by what
-   its cells cover. The first, in the membrane colour, holds the selected cell and starts the signal; the second,
-   in its own colour (pink by default) and with its own networks, only answers. A chosen number of heavier
-   connections join the nearest cells across the gap, so the signal spreads through one tissue and crosses into
-   the other. With no map uploaded, each tissue is generated (`src/core/organic.ts`): irregular cells packed wall
-   to wall in a clump with an uneven edge (Voronoi cells of evenly scattered points, corners rounded), the two
-   sides with different cells. "New tissue shapes" re-rolls it. Click cells in the preview to switch them between
-   the membrane colour and the second colour, on either side ("Right tissue" puts the default back).
+6. **Cross-tissue communication** (`src/core/crossTissue.ts`): one tissue map, its cells split between two tissues
+   by colour. Click cells in the preview to switch them between the membrane colour and the second colour (pink by
+   default); by default the right-hand half of the map is in the second colour ("Right half" puts that back,
+   "None" clears it). The selected cell starts the signal; it spreads through its tissue and crosses into the other
+   where they meet, and the links that cross between the two are drawn heavier. With no map uploaded, the tissue is
+   generated (`src/core/organic.ts`): irregular cells packed wall to wall in a wide clump with an uneven edge
+   (Voronoi cells of evenly scattered points, corners rounded). "New tissue shapes" re-rolls it.
 7. **Body**: organ-level connectivity (`src/core/body.ts`). An anatomical front-view outline drawn like the
    membrane in an X-ray look: a dark core, a wide glow reaching in from a bright rim ("Body glow"), and soft
    highlights along the anatomy (collarbones, chest, ribs, hips, shoulders, knees) that model the form. Organs are

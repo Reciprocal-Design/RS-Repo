@@ -1,93 +1,35 @@
 import { buildMapGeometry } from './cellMap';
-import { connectCellLinks, type LinkCell } from './connect';
-import { ORGANIC_NAME, organicTissue } from './organic';
-import { hash } from './rng';
-import type { Scene, SceneGeom } from './types';
+import type { CellGeom, Scene, SceneGeom } from './types';
 
-// Cross-tissue communication: the tissue twice, side by side. The first (in
-// the scene's own colour) holds the selected cell, which starts the signal;
-// the second (in its own colour, with its own networks) only ever answers.
-// A few connections join cells of one to cells of the other across the gap.
+// Cross-tissue communication: one tissue map, its cells split between two
+// tissues by colour. The selected cell (in the membrane colour) starts the
+// signal; it spreads through its own tissue and crosses into the other (in
+// the second colour) wherever the two meet. The links that cross between
+// them are drawn heavier: they are the point of the view.
 
-/** Share of the canvas width left between the two tissues. */
-const GAP = 0.08;
-/** Id prefix of everything in the second tissue. */
-export const SECOND_TISSUE = 'b';
-
-/** The cells drawn in the second colour: those picked, or by default every cell of the second tissue. */
-export function pinkCellIds(scene: Scene, ids: string[]): Set<string> {
+/**
+ * The cells in the second colour: those picked (by clicking them), or by
+ * default every cell in the right-hand half of the map but the selected one.
+ */
+export function pinkCellIds(scene: Scene, cells: CellGeom[]): Set<string> {
   const picked = scene.module.pinkCells;
-  return new Set(picked ?? ids.filter((id) => id.startsWith(SECOND_TISSUE)));
+  if (picked) return new Set(picked);
+  const xs = cells.map((c) => c.cell.center.x);
+  const mid = (Math.min(...xs) + Math.max(...xs)) / 2;
+  return new Set(cells.filter((c) => !c.hero && c.cell.center.x > mid).map((c) => c.id));
 }
 
+/** The cell a node belongs to: ids of map cells start with the cell's id; the selected cell's pathways have none. */
+const cellOfNode = (id: string, hero: string) => /^(c\d+)-/.exec(id)?.[1] ?? hero;
+
 export function buildCrossTissueGeometry(scene: Scene): SceneGeom | null {
-  const { width: W, height: H } = scene.canvas;
-  const gap = GAP * W;
-  const w = (W - gap) / 2;
-  const cm = { ...scene.cellMap, solo: false, centerHero: false };
-  const first: Scene = { ...scene, cellMap: { ...cm, frame: { x: 0, y: 0, w, h: H } } };
-  // A generated tissue is matched with another like it (its own cells); an
-  // uploaded map is shown twice.
-  const other = cm.name === ORGANIC_NAME && !cm.around ? organicTissue(hash(scene.seed, 'second-tissue')) : null;
-  const second: Scene = {
-    ...scene,
-    seed: hash(scene.seed, 'second-tissue'),
-    cellMap: { ...cm, ...(other ? { cells: other.cells, viewBox: other.viewBox } : {}), heroId: '', frame: { x: w + gap, y: 0, w, h: H } },
-  };
-
-  const cellsA: LinkCell[] = [], cellsB: LinkCell[] = [];
-  const a = buildMapGeometry(first, { collect: cellsA });
-  const b = buildMapGeometry(second, {
-    prefix: SECOND_TISSUE,
-    noStart: true,
-    // Inside the second tissue, the signal spreads away from the side it arrives on.
-    linkOrigin: { x: w + gap, y: H / 2 },
-    collect: cellsB,
-  });
-  if (!a || !b) return a ?? b;
-
-  // Connections: the pairs of cells (one from each tissue) nearest each
-  // other across the gap, each cell used once.
-  const want = Math.max(0, Math.round(scene.module.crossLinks));
-  const cands: { key: string; a: string; b: string; d: number }[] = [];
-  for (const A of cellsA) {
-    if (!A.layouts.length) continue;
-    for (const B of cellsB) {
-      if (!B.layouts.length) continue;
-      const d = Math.hypot(A.frame.center.x - B.frame.center.x, A.frame.center.y - B.frame.center.y) - A.R - B.R;
-      cands.push({ key: `${A.id}|${B.id}`, a: A.id, b: B.id, d });
-    }
-  }
-  cands.sort((x, y) => x.d - y.d);
-  const used = new Set<string>();
-  const pairs = new Set<string>();
-  for (const c of cands) {
-    if (pairs.size >= want) break;
-    if (used.has(c.a) || used.has(c.b)) continue;
-    used.add(c.a);
-    used.add(c.b);
-    pairs.add(c.key);
-  }
-  // They run from the first tissue into the second.
-  const cross = connectCellLinks(scene, [...cellsA, ...cellsB], { pairs, amount: 1, tag: 'x', origin: { x: 0, y: H / 2 } });
-
-  // The connections themselves (not the short edges from a relay receptor into
-  // its cell) are drawn heavier and at full strength: they are the point of the view.
-  const crossEdges = cross.edges.map((e) => (e.link ? { ...e, opacity: 1, weight: 2.2 } : e));
-  const nodes = [...a.nodes, ...b.nodes, ...cross.nodes];
-  // Cells in the second colour: those picked, or (by default) the whole second tissue.
-  const pink = pinkCellIds(scene, [...a.cells, ...b.cells].map((c) => c.id));
-  const cells = [...a.cells, ...b.cells].map((c) => (pink.has(c.id) ? { ...c, glow: scene.module.tissue2Color } : c));
-  return {
-    scale: a.scale,
-    cell: a.cell,
-    nucleus: a.nucleus,
-    cells,
-    pathways: [...a.pathways, ...b.pathways],
-    receptors: [...a.receptors, ...b.receptors, ...cross.receptors],
-    nodes,
-    nodeById: new Map(nodes.map((n) => [n.id, n])),
-    edges: [...a.edges, ...b.edges, ...crossEdges],
-    warnings: [...new Set([...a.warnings, ...b.warnings])],
-  };
+  const g = buildMapGeometry({ ...scene, cellMap: { ...scene.cellMap, solo: false, centerHero: false, rings: 0 } });
+  if (!g) return null;
+  const pink = pinkCellIds(scene, g.cells);
+  const hero = g.cells.find((c) => c.hero)?.id ?? '';
+  const cells = g.cells.map((c) => (pink.has(c.id) ? { ...c, glow: scene.module.tissue2Color } : c));
+  // Links from a cell of one tissue into a cell of the other: heavier, at full strength.
+  const edges = g.edges.map((e) =>
+    e.link && pink.has(cellOfNode(e.from, hero)) !== pink.has(cellOfNode(e.to, hero)) ? { ...e, opacity: 1, weight: 2.2 } : e);
+  return { ...g, cells, edges };
 }
