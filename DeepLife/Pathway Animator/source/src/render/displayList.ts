@@ -213,9 +213,19 @@ const withAlpha = ([r, g, b]: RGBA, a: number) => rgbaString([r, g, b, a]);
  */
 export function buildDisplayList(
   scene: Scene, t = 0,
-  opts: { signal?: boolean; linkAlpha?: number; others?: { keep: string; alpha: number } } = {},
+  opts: {
+    signal?: boolean; linkAlpha?: number; others?: { keep: string; alpha: number };
+    /** How far discovery has got (0–1; the real-cell view): discovered nodes and edges appear as it passes them. */
+    discovered?: number;
+    /** Fades the cell's outlines (the virtual cell giving way to a real one). */
+    outlineAlpha?: number;
+  } = {},
 ): DisplayList {
   const g = buildGeometry(scene);
+  // Discovery: how far each discovered node or edge has appeared (0 hidden, 1 there).
+  const disc = Math.max(0, Math.min(1, opts.discovered ?? 1));
+  const span = Math.max(1e-6, g.discoverSpan ?? 1);
+  const shownBy = (at: number | undefined) => (at === undefined ? 1 : Math.max(0, Math.min(1, (disc - at) / span)));
   const s = g.scale;
   const st = scene.style;
   const an = scene.animation;
@@ -345,8 +355,15 @@ export function buildDisplayList(
   for (const e of g.edges) {
     // A route being uncovered is drawn only as the signal travels it.
     if (e.reveal && signal) continue;
+    // A discovered edge grows in from its start.
+    const grown = shownBy(e.discoverAt);
+    if (grown <= 0) continue;
+    const p = grown < 1 ? bezierHead(e.bezier, tAtDistance(e.lut, grown * e.length)) : e.bezier;
+    if (grown < 1) {
+      prims.push({ kind: 'glow', id: `${e.id}-tip`, group: 'edges', blend: 'lighter', c: p[3], r: st.haloRadius * s * 1.2, color: withAlpha(ramp(e.depthTo), 0.6) });
+    }
     prims.push({
-      kind: 'bezier', id: e.id, group: e.crosstalk ? 'crosstalk' : 'edges', p: e.bezier, width: st.edgeWidth * s * (e.weight ?? 1),
+      kind: 'bezier', id: e.id, group: e.crosstalk ? 'crosstalk' : 'edges', p, width: st.edgeWidth * s * (e.weight ?? 1),
       ...(e.dim
         ? { from: greyCss, to: greyCss, opacity: e.opacity * dimA }
         : grey
@@ -378,7 +395,7 @@ export function buildDisplayList(
     }
     for (const e of g.edges) {
       const a = act.get(e.pathwayId) ?? 0;
-      if (a <= 0 || e.dim) continue;
+      if (a <= 0 || e.dim || shownBy(e.discoverAt) < 1) continue;
       prims.push({
         kind: 'bezier', id: `${e.id}-on`, group: e.crosstalk ? 'crosstalk' : 'edges', p: e.bezier,
         width: st.edgeWidth * s, from: color(e.depthFrom), to: color(e.depthTo), opacity: e.opacity * a,
@@ -407,7 +424,7 @@ export function buildDisplayList(
 
     // Lit edges: the part a comet has passed stays brighter until the loop resets.
     for (const { et, q, lit, id } of along) {
-      if (q <= 0 || fade * lit <= 0) continue;
+      if (q <= 0 || fade * lit <= 0 || shownBy(et.edge.discoverAt) < 1) continue;
       const e = et.edge;
       const frac = ease(Math.min(1, q), an.easing);
       const tt = tAtDistance(e.lut, frac * e.length);
@@ -422,7 +439,7 @@ export function buildDisplayList(
 
     // Comets: a trail fading to transparent behind a bright head with a soft glow.
     for (const { et, q, id } of along) {
-      if (q <= 0 || q - trail >= 1) continue;
+      if (q <= 0 || q - trail >= 1 || shownBy(et.edge.discoverAt) < 1) continue;
       const e = et.edge;
       const head = ease(Math.min(1, q), an.easing);
       const tail = ease(Math.max(0, Math.min(1, q - trail)), an.easing);
@@ -505,7 +522,7 @@ export function buildDisplayList(
   const toxicFill = rgbaString([toxicRgb[0], toxicRgb[1], toxicRgb[2], 1]);
   if (signal) {
     for (const n of g.nodes) {
-      if (!n.active) continue;
+      if (!n.active || shownBy(n.discoverAt) < 1) continue;
       let e = 0;
       for (const p of schedule.pulses.get(n.id) ?? []) e = Math.max(e, p.strength * pulseEnvelope(since(tau, p.t, period)));
       if (e > 0) pulse.set(n.id, e);
@@ -522,7 +539,8 @@ export function buildDisplayList(
 
   // Nodes being uncovered (MOA elucidation): hidden until the signal reaches
   // them, then they pop up (a quick overshoot) and stay until the loop closes.
-  const shown = (n: { id: string; reveal?: boolean }): { a: number; k: number } => {
+  const shown = (n: { id: string; reveal?: boolean; discoverAt?: number }): { a: number; k: number } => {
+    if (n.discoverAt !== undefined) return popOf(n);
     if (!n.reveal || !signal) return { a: 1, k: 1 };
     const f = schedule.fire.get(n.id);
     if (f === undefined) return { a: 0, k: 1 };
@@ -533,8 +551,24 @@ export function buildDisplayList(
     return { a: Math.min(1, x / (POP * 0.4)) * (period ? Math.max(0, Math.min(1, (period - x) / FADE_OUT)) : fade), k: Math.max(0, back) };
   };
 
+  // A discovered node: a grey ring until discovery reaches it, then it pops
+  // up as an active node (a quick overshoot and a flash) as the ring fades.
+  for (const n of g.nodes) {
+    const u = shownBy(n.discoverAt);
+    if (n.discoverAt === undefined || u <= 0 || u >= 1) continue;
+    prims.push({
+      kind: 'glow', id: `${n.id}-found`, group: 'signal', blend: 'lighter', c: n,
+      r: st.haloRadius * s * (1.5 + 2.5 * u), color: withAlpha(ramp(n.depth), 0.8 * (1 - u)),
+    });
+  }
+  const popOf = (n: { discoverAt?: number }) => {
+    const u = shownBy(n.discoverAt);
+    if (u >= 1) return { a: 1, k: 1 };
+    return { a: Math.min(1, u * 2), k: Math.max(0, 1 + 2.70158 * (u - 1) ** 3 + 1.70158 * (u - 1) ** 2) };
+  };
+
   // Halos first so edges and dots from neighbouring nodes are never hidden by them.
-  const active = g.nodes.filter((n) => n.active);
+  const active = g.nodes.filter((n) => n.active && shownBy(n.discoverAt) > 0);
   const halo = rgbaString(parseColor(st.haloColor));
   for (const n of active) {
     const isReceptor = n.layer === 0;
@@ -574,11 +608,14 @@ export function buildDisplayList(
     }
   }
   for (const n of g.nodes) {
-    if (n.active || !st.showInactiveNodes) continue;
+    // Inactive, or discovered and not yet (or only now being) found.
+    const found = n.active ? shownBy(n.discoverAt) : 0;
+    if (found >= 1 || !st.showInactiveNodes) continue;
     const r = st.inactiveNodeRadius * s;
     const w = Math.max(0.75, 1 * s);
-    prims.push({ kind: 'ring', id: `${n.id}-outer`, group: 'nodes-inactive', c: n, r, stroke: st.inactiveNodeColor, width: w });
-    prims.push({ kind: 'ring', id: `${n.id}-inner`, group: 'nodes-inactive', c: n, r: r * 0.5, stroke: st.inactiveNodeColor, width: w });
+    const fadeRing = found > 0 ? { opacity: 1 - found } : {};
+    prims.push({ kind: 'ring', id: `${n.id}-outer`, group: 'nodes-inactive', c: n, r, stroke: st.inactiveNodeColor, width: w, ...fadeRing });
+    prims.push({ kind: 'ring', id: `${n.id}-inner`, group: 'nodes-inactive', c: n, r: r * 0.5, stroke: st.inactiveNodeColor, width: w, ...fadeRing });
   }
 
   // Target toxicity: a large warning badge in the middle of the cell, popping in as the cell turns.
@@ -594,7 +631,8 @@ export function buildDisplayList(
   let staticOut = staticCount;
   const linkAlpha = Math.max(0, Math.min(1, opts.linkAlpha ?? 1));
   const others = opts.others && opts.others.alpha < 1 ? { ...opts.others, alpha: Math.max(0, opts.others.alpha) } : null;
-  if (linkAlpha < 1 || others) {
+  const outlineAlpha = Math.max(0, Math.min(1, opts.outlineAlpha ?? 1));
+  if (linkAlpha < 1 || others || outlineAlpha < 1) {
     // Link edges and everything drawn along them have ids starting `link-`;
     // everything of a map cell (outlines, receptors, nodes, edges, signals)
     // carries its cell id (`c3-`), except the centre cell's pathways.
@@ -605,7 +643,7 @@ export function buildDisplayList(
     };
     out = [];
     prims.forEach((p, i) => {
-      const a = fadeOf(p.id);
+      const a = fadeOf(p.id) * (p.group === 'membrane' || p.group === 'nucleus' ? outlineAlpha : 1);
       if (a >= 1) out.push(p);
       else if (a > 0) out.push({ ...p, opacity: (p.opacity ?? 1) * a });
       if (i === staticCount - 1) staticOut = out.length;
@@ -620,7 +658,10 @@ export function buildDisplayList(
     prims: out,
     staticCount: staticOut,
     staticKey: g,
-    ...(linkAlpha < 1 || others ? { staticTag: `links-${linkAlpha.toFixed(3)}-${others ? `${others.keep}-${others.alpha.toFixed(3)}` : ''}` } : {}),
+    // The static layer differs with fades and discovery: its cached bitmap must too.
+    ...(linkAlpha < 1 || others || outlineAlpha < 1 || (g.discoverSpan !== undefined && disc < 1)
+      ? { staticTag: `links-${linkAlpha.toFixed(3)}-${others ? `${others.keep}-${others.alpha.toFixed(3)}` : ''}-o${outlineAlpha.toFixed(3)}-d${disc.toFixed(4)}` }
+      : {}),
     ...(underlays.length ? { underlays } : {}),
   };
 }

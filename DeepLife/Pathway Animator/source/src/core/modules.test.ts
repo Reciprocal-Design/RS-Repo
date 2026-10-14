@@ -13,7 +13,7 @@ describe('modules', () => {
   it('starts every tab from the same pathway', () => {
     const scenes = MODULES.map((m) => moduleScene(m.kind, 7));
     for (const s of scenes) expect(s.pathways[0].seed).toBe(scenes[0].pathways[0].seed);
-    expect(scenes.map((s) => s.module.kind)).toEqual(['targetId', 'moa', 'combination', 'toxicity', 'tissue', 'crossTissue', 'body', 'journey']);
+    expect(scenes.map((s) => s.module.kind)).toEqual(['targetId', 'moa', 'combination', 'toxicity', 'tissue', 'crossTissue', 'body', 'journey', 'realCell']);
   });
 
   it('custom leaves the pathway unchanged', () => {

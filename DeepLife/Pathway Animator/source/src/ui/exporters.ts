@@ -1,7 +1,7 @@
 import { exportFileName, parseSceneJson, serializeScene } from '../core/sceneIO';
 import type { Scene } from '../core/types';
 import { buildDisplayList } from '../render/displayList';
-import { render } from '../render/render';
+import { prepareFrame, render } from '../render/render';
 import { displayListToSvg } from '../render/svg';
 
 // Chrome's canvas limits: 16384px per side and about 268M pixels in total.
@@ -40,6 +40,7 @@ export async function exportPng(scene: Scene, t: number, mode: { scale: number }
   canvas.height = height;
   const ctx = canvas.getContext('2d')!;
   ctx.setTransform(k, 0, 0, k, 0, 0);
+  await prepareFrame(scene, t);
   render(ctx, scene, t, { transparent });
   const blob = await new Promise<Blob>((res, rej) =>
     canvas.toBlob((b) => (b ? res(b) : rej(new Error('PNG encoding failed.'))), 'image/png'),

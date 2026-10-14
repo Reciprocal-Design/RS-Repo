@@ -95,7 +95,7 @@ function normalizeCellMap(raw: unknown): CellMap {
   };
 }
 
-const MODULE_KINDS: ModuleKind[] = ['targetId', 'moa', 'combination', 'toxicity', 'tissue', 'crossTissue', 'custom', 'body', 'journey'];
+const MODULE_KINDS: ModuleKind[] = ['targetId', 'moa', 'combination', 'toxicity', 'tissue', 'crossTissue', 'custom', 'body', 'journey', 'realCell'];
 const ORGAN_IDS: OrganId[] = ['brain', 'lungs', 'heart', 'liver', 'stomach', 'kidneys', 'intestines', 'bladder'];
 
 /** Scenes saved before modules existed show their pathway unchanged ('custom'). */
@@ -122,6 +122,14 @@ function normalizeModule(raw: unknown): ModuleSettings {
     netX: num(m.netX, 0, -1, 1),
     netY: num(m.netY, 0, -1, 1),
     crossLinks: Math.round(num(m.crossLinks, base.crossLinks, 0, 12)),
+    // A video is only ever held for the session it was added in.
+    realVideo: '',
+    realVideoName: '',
+    videoScale: num(m.videoScale, 1, 0.2, 5),
+    videoX: num(m.videoX, 0, -1, 1),
+    videoY: num(m.videoY, 0, -1, 1),
+    videoBrightness: num(m.videoBrightness, base.videoBrightness, 0, 1),
+    newNodes: Math.round(num(m.newNodes, base.newNodes, 0, 5)),
   };
 }
 

@@ -79,6 +79,14 @@ cell or generated tissue.
    the landscape composition turned 90° and the body is fitted upright. Export it with Export → PNG sequence (frames `{name}_0001.png` onward, saved into a folder you pick in
    Chrome and Edge, or as one ZIP elsewhere); the panel lists how many frames each section takes.
 
+9. **Virtual → real cell** (`src/render/realCell.ts`, `src/core/discovery.ts`): the selected cell, in five sections
+   of equal length: the virtual cell; a real cell video ("Add a real cell video…") fading in under the network as the
+   virtual cell's outlines fade out; discovery, on the real cell: new edges grow in and new nodes pop up (inactive
+   nodes becoming active, "New nodes per layer", with the edges the pathway would give them; nothing else moves);
+   back to the virtual cell; the virtual cell with the new nodes and edges. Size, place and dim the video to line
+   the real cell up with the network. The video is held for the session only (never saved in the scene JSON);
+   every exported frame waits for the video to reach its exact frame, so PNG sequences and videos are frame-exact.
+
 Scene JSON saves the current tab, including its module settings; a file loads into the current tab and keeps the
 tab's module.
 

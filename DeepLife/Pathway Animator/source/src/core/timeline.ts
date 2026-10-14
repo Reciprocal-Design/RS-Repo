@@ -56,8 +56,9 @@ const cache = new WeakMap<Scene, Schedule>();
 export function buildSchedule(scene: Scene): Schedule {
   const hit = cache.get(scene);
   if (hit) return hit;
-  if (scene.module.kind === 'journey') {
-    // The journey runs its own timeline (render/journey.ts): five equal sections.
+  if (scene.module.kind === 'journey' || scene.module.kind === 'realCell') {
+    // The journey and the real-cell view run their own timelines
+    // (render/journey.ts, render/realCell.ts): five equal sections.
     const total = 5 * Math.max(0.5, scene.module.sectionLength);
     const empty: Schedule = { fire: new Map(), arrivals: new Map(), runs: new Map(), pulses: new Map(), edges: [], signalEnd: total, total, period: 0 };
     cache.set(scene, empty);

@@ -50,6 +50,13 @@ export function defaultModule(kind: ModuleKind = 'custom'): ModuleSettings {
     netY: 0,
     tissue2Color: '#FF2EA6',
     crossLinks: 4,
+    realVideo: '',
+    realVideoName: '',
+    videoScale: 1,
+    videoX: 0,
+    videoY: 0,
+    videoBrightness: 0.8,
+    newNodes: 1,
   };
 }
 

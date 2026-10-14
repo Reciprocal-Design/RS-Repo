@@ -1,7 +1,7 @@
 import { exportFileName } from '../core/sceneIO';
 import type { Scene } from '../core/types';
 import { planVideo } from '../core/video';
-import { render } from '../render/render';
+import { prepareFrame, render } from '../render/render';
 import { downloadBlob, pngSize, pngSizeError } from './exporters';
 
 export interface SequenceOptions {
@@ -53,6 +53,7 @@ export async function exportPngSequence(
   for (let i = 0; i < plan.frames; i++) {
     if (signal.aborted) throw new DOMException('Export cancelled.', 'AbortError');
     ctx.setTransform(k, 0, 0, k, 0, 0);
+    await prepareFrame(scene, plan.timeAt(i));
     render(ctx, scene, plan.timeAt(i), { transparent: opts.transparent });
     const blob = await new Promise<Blob>((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error('PNG encoding failed.'))), 'image/png'));
     const name = frameName(scene, i, digits);

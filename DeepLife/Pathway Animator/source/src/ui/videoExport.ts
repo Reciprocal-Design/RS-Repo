@@ -1,7 +1,7 @@
 import { exportFileName } from '../core/sceneIO';
 import type { Scene } from '../core/types';
 import { planVideo, videoSize, videoSizeError } from '../core/video';
-import { render } from '../render/render';
+import { prepareFrame, render } from '../render/render';
 import { downloadBlob } from './exporters';
 
 export type VideoQuality = 'medium' | 'high' | 'veryHigh';
@@ -87,6 +87,7 @@ export async function exportVideo(
     for (let i = 0; i < plan.frames; i++) {
       if (signal.aborted) throw new DOMException('Export cancelled.', 'AbortError');
       ctx.setTransform(kx, 0, 0, ky, 0, 0);
+      await prepareFrame(scene, plan.timeAt(i));
       render(ctx, scene, plan.timeAt(i), { transparent });
       await source.add(i / opts.fps, 1 / opts.fps);
       onProgress(i + 1, plan.frames);

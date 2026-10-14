@@ -6,6 +6,9 @@ import { ORGANIC_NAME } from '../core/organic';
 import { randomSeed } from '../core/rng';
 import type { ModuleSettings, OrganId } from '../core/types';
 import { JOURNEY_SECTIONS, sectionLength } from '../render/journey';
+import { REAL_CELL_SECTIONS } from '../render/realCell';
+import { realVideoInfo } from '../core/realVideo';
+import { loadRealVideo } from './realVideoLoader';
 import { ColorField, Section, Select, Slider, Toggle } from './controls';
 import { loadBodyImage, readImageFile } from './bodyImageLoader';
 import { useApp } from './store';
@@ -45,6 +48,8 @@ export function ModuleSection() {
   const setBodyImage = useApp((s) => s.setBodyImage);
   const [shared, setShared] = useState(false);
   const imageRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLInputElement>(null);
+  const [videoMsg, setVideoMsg] = useState<{ text: string; error?: boolean } | null>(null);
   const [imageMsg, setImageMsg] = useState<{ text: string; error?: boolean } | null>(null);
   const m = scene.module;
   const info = moduleInfo(m.kind);
@@ -239,6 +244,77 @@ export function ModuleSection() {
         <>
           {organ('Signal starts in')}
           <p className="hint">The drawn outline and organs take the cell membrane and nucleus styles; firing lines take the Style and Animation settings.</p>
+        </>
+      )}
+
+      {m.kind === 'realCell' && (
+        <>
+          <button className="btn wide" onClick={() => videoRef.current?.click()}>
+            {m.realVideo ? 'Replace the real cell video…' : 'Add a real cell video…'}
+          </button>
+          <input
+            ref={videoRef}
+            type="file"
+            accept="video/*"
+            data-role="real-video"
+            hidden
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (!file) return;
+              setVideoMsg(null);
+              try {
+                const src = await loadRealVideo(file);
+                set({ realVideo: src, realVideoName: file.name });
+                const info = realVideoInfo(src)!;
+                setVideoMsg({ text: `${file.name}: ${info.width} × ${info.height}, ${info.duration.toFixed(1)} s.` });
+              } catch (err) {
+                setVideoMsg({ text: (err as Error).message, error: true });
+              }
+            }}
+          />
+          {videoMsg && <p className={`hint ${videoMsg.error ? 'error' : 'ok'}`}>{videoMsg.text}</p>}
+          {m.realVideo && realVideoInfo(m.realVideo) ? (
+            <>
+              <p className="hint">
+                Line the real cell up with the virtual one: the network is drawn over the video as it is placed here. The
+                video is kept for this session only; add it again after reloading.
+              </p>
+              <Slider label="Video size" value={m.videoScale} min={0.3} max={4} onChange={(videoScale) => set({ videoScale })} />
+              <Slider label="Video X" value={m.videoX} min={-0.5} max={0.5} onChange={(videoX) => set({ videoX })} />
+              <Slider label="Video Y" value={m.videoY} min={-0.5} max={0.5} onChange={(videoY) => set({ videoY })} />
+              <Slider label="Video brightness" value={m.videoBrightness} min={0.1} max={1} onChange={(videoBrightness) => set({ videoBrightness })} />
+              <button className="btn small" onClick={() => { set({ realVideo: '', realVideoName: '' }); setVideoMsg(null); }}>
+                Remove the video
+              </button>
+            </>
+          ) : (
+            <p className="hint">
+              {m.realVideoName
+                ? `${m.realVideoName} was used here before: add it again (videos are kept for one session only).`
+                : 'A video of a real cell (MP4 or WebM). Until one is added, sections 2–4 show the network on its own.'}
+            </p>
+          )}
+          <Slider label="New nodes per layer" value={m.newNodes} min={0} max={4} step={1} onChange={(newNodes) => set({ newNodes })} />
+          <p className="hint">Inactive nodes the real cell reveals: they appear, with their edges, in section 3.</p>
+          <Slider label="Section length" value={sectionLength(scene)} min={0.5} max={10} step={0.5} unit=" s"
+            onChange={(sectionLength) => set({ sectionLength })} />
+          <div className="sections">
+            {REAL_CELL_SECTIONS.map((label, i) => {
+              const L = sectionLength(scene);
+              return (
+                <button key={label} className="btn small" title="Jump to this section"
+                  onClick={() => { setPlaying(false); setTime(i * L + 0.5 * L); }}>
+                  <em>{i + 1}</em> {label}
+                  <span>{(i * L).toFixed(1)}–{((i + 1) * L).toFixed(1)} s</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="hint">
+            Five sections of {sectionLength(scene)} s each ({Math.round(sectionLength(scene) * 30)} frames at 30 fps). Pick the
+            cell under Tissue map; export under Export (video, or a PNG sequence).
+          </p>
         </>
       )}
 

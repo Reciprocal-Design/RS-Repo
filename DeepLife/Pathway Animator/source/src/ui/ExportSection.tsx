@@ -25,7 +25,7 @@ function VideoExport({ busy, setBusy, setMessage }: { busy: boolean; setBusy: (b
   const abortRef = useRef<AbortController | null>(null);
 
   // The journey runs once, start to end.
-  const looping = loops(scene) && scene.module.kind !== 'journey';
+  const looping = loops(scene) && scene.module.kind !== 'journey' && scene.module.kind !== 'realCell';
   const { width, height } = videoSize(scene, scale);
   const sizeError = videoSizeError(width, height);
   const plan = planVideo(scene, fps, looping ? loopCount : 1);
@@ -144,7 +144,8 @@ function PngSequence({ busy, setBusy, setMessage }: { busy: boolean; setBusy: (b
   const [progress, setProgress] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const journey = scene.module.kind === 'journey';
+  // The journey and the real-cell view run once, start to end, in five equal sections.
+  const journey = scene.module.kind === 'journey' || scene.module.kind === 'realCell';
   const looping = loops(scene) && !journey;
   const loopsUsed = looping ? loopCount : 1;
   const plan = planVideo(scene, fps, loopsUsed);
@@ -300,8 +301,12 @@ export function ExportSection() {
       </button>
 
       <div className="subhead">SVG (vector, for Illustrator)</div>
-      {scene.module.kind === 'journey' ? (
-        <p className="hint">The journey blends two scenes, so it has no single vector frame: export SVGs from the Tissue-level or Body tabs.</p>
+      {scene.module.kind === 'journey' || scene.module.kind === 'realCell' ? (
+        <p className="hint">
+          {scene.module.kind === 'journey'
+            ? 'The journey blends two scenes, so it has no single vector frame: export SVGs from the Tissue-level or Body tabs.'
+            : 'This view blends a video with the network, so it has no vector frame: use PNG, a PNG sequence or video.'}
+        </p>
       ) : (
         <>
           <Toggle label="Include signal layer (comets, lit edges)" checked={svgSignal} onChange={setSvgSignal} />

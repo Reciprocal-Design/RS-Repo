@@ -1,5 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { heroCellOf, mapActive, soloActive } from '../core/cellMap';
+import { realVideoInfo } from '../core/realVideo';
+import { cycleTime } from '../core/timeline';
+import { realCellState, videoTimeAt } from '../render/realCell';
 import { render } from '../render/render';
 import { useApp } from './store';
 
@@ -11,6 +14,38 @@ export function Preview() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
+  const playing = useApp((s) => s.playing);
+  // Bumped when the real cell video lands on a new frame, so the canvas redraws with it.
+  const [videoFrame, setVideoFrame] = useState(0);
+
+  // The real-cell view: keep its video in step with the timeline. While
+  // playing, the video plays along (nudged back when it drifts); when paused
+  // or scrubbed, it seeks to the exact frame.
+  const realVideo = scene.module.kind === 'realCell' ? realVideoInfo(scene.module.realVideo) : undefined;
+  useEffect(() => {
+    if (!realVideo) return;
+    const v = realVideo.video;
+    const tau = cycleTime(scene, time);
+    const want = videoTimeAt(scene, tau, realVideo.duration);
+    const showing = realCellState(scene, tau).video > 0;
+    if (playing && showing) {
+      if (v.paused) v.play().catch(() => {});
+      if (Math.abs(v.currentTime - want) > 0.25) v.currentTime = want;
+    } else {
+      if (!v.paused) v.pause();
+      if (Math.abs(v.currentTime - want) > 0.04) v.currentTime = want;
+    }
+  }, [realVideo, scene, time, playing]);
+  useEffect(() => {
+    if (!realVideo) return;
+    const v = realVideo.video;
+    const bump = () => setVideoFrame((n) => n + 1);
+    v.addEventListener('seeked', bump);
+    return () => {
+      v.removeEventListener('seeked', bump);
+      v.pause();
+    };
+  }, [realVideo]);
 
   useLayoutEffect(() => {
     const el = wrapRef.current!;
@@ -37,7 +72,7 @@ export function Preview() {
     const ctx = canvas.getContext('2d')!;
     ctx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
     render(ctx, scene, time);
-  }, [scene, time, cssW, cssH, W, H]);
+  }, [scene, time, cssW, cssH, W, H, videoFrame]);
 
   // Cells can be clicked on a map, but not in a solo view (one cell) or the two-tissue view.
   const onMap = mapActive(scene) && !soloActive(scene) && scene.module.kind !== 'crossTissue';

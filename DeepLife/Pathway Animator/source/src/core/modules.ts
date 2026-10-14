@@ -54,13 +54,18 @@ export const MODULES: ModuleInfo[] = [
     label: 'Cell → tissue → body',
     blurb: 'The scroll sequence: the cell zooms out into the tissue, which fades into the body. Five sections of equal length; export it as a PNG sequence.',
   },
+  {
+    kind: 'realCell',
+    label: 'Virtual → real cell',
+    blurb: 'The virtual cell, then a real cell video under its network, where new edges and nodes are found, then back to the virtual cell with them. Five sections of equal length; export it as a video or PNG sequence.',
+  },
 ];
 
 export const moduleInfo = (kind: ModuleKind): ModuleInfo =>
   MODULES.find((m) => m.kind === kind) ?? { kind, label: 'Pathway', blurb: 'The standard animator.' };
 
 /** The views that show one cell on its own (and, with an uploaded map, only its selected cell). */
-export const SINGLE_CELL: ModuleKind[] = ['targetId', 'moa', 'combination', 'toxicity'];
+export const SINGLE_CELL: ModuleKind[] = ['targetId', 'moa', 'combination', 'toxicity', 'realCell'];
 
 
 /** An uploaded tissue map, as the views share it. */
@@ -135,6 +140,8 @@ export function moduleScene(kind: ModuleKind, seed = 1234): Scene {
     s.crosstalk = { enabled: true, amount: 0.5 };
   }
   if (kind === 'toxicity') s.animation = { ...s.animation, holdAtEnd: 2.5 };
+  // Motion that never stops, so the network keeps moving over the video.
+  if (kind === 'realCell') s.animation = { ...s.animation, continuous: true };
   if (kind === 'tissue') s.cellMap = tissueMap();
   if (kind === 'crossTissue') return withOrganicTissue(s, seed);
   if (kind === 'journey') {

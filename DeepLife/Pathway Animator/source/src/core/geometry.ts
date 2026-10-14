@@ -2,6 +2,7 @@ import { buildBodyGeometry } from './body';
 import { buildMapGeometry, mapActive } from './cellMap';
 import { buildCrossTissueGeometry } from './crossTissue';
 import { connectCrosstalk, connectPathway } from './connect';
+import { buildDiscoveryGeometry } from './discovery';
 import { cellFrame, decorativeReceptors, layoutPathway } from './layout';
 import { applyModule } from './modules';
 import type { NodeGeom, Scene, SceneGeom } from './types';
@@ -17,9 +18,13 @@ const cache = new WeakMap<Scene, SceneGeom>();
 export function buildGeometry(scene: Scene): SceneGeom {
   const hit = cache.get(scene);
   if (hit) return hit;
-  const geom = scene.module.kind === 'body'
+  const plain = (s: Scene) => applyModule(s, (mapActive(s) && buildTissue(s)) || buildCellGeometry(s));
+  const kind = scene.module.kind;
+  const geom = kind === 'body'
     ? buildBodyGeometry(scene)
-    : applyModule(scene, (mapActive(scene) && buildTissue(scene)) || buildCellGeometry(scene));
+    : kind === 'realCell' || kind === 'realCellNet'
+      ? buildDiscoveryGeometry(scene, plain)
+      : plain(scene);
   cache.set(scene, geom);
   return geom;
 }

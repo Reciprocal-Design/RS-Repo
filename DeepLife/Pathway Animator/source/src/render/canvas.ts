@@ -5,12 +5,16 @@ type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
 export interface CanvasDrawOptions {
   transparent?: boolean;
+  /** Draw over what is already on the canvas: no background, nothing cleared. */
+  overlay?: boolean;
 }
 
 /** Canvas 2D backend. Draws in scene coordinates; the caller sets any transform. */
 export function drawDisplayList(ctx: Ctx, list: DisplayList, opts: CanvasDrawOptions = {}): void {
   ctx.save();
-  if (opts.transparent) {
+  if (opts.overlay) {
+    // Drawn over the canvas as it is.
+  } else if (opts.transparent) {
     ctx.clearRect(0, 0, list.width, list.height);
   } else {
     ctx.fillStyle = list.background;

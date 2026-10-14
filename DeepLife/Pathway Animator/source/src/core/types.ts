@@ -101,7 +101,11 @@ export interface Scene {
  * The client's views of one pathway, one per tab. Each module changes how the
  * same network is shown; 'custom' shows it unchanged.
  */
-export type ModuleKind = 'targetId' | 'moa' | 'combination' | 'toxicity' | 'tissue' | 'crossTissue' | 'custom' | 'body' | 'journey';
+export type ModuleKind =
+  | 'targetId' | 'moa' | 'combination' | 'toxicity' | 'tissue' | 'crossTissue' | 'custom' | 'body' | 'journey'
+  | 'realCell'
+  /** Internal: the network of the real-cell view, with the nodes it discovers (render/realCell.ts). */
+  | 'realCellNet';
 
 /** Organs of the body view (core/body.ts). */
 export type OrganId = 'brain' | 'lungs' | 'heart' | 'liver' | 'stomach' | 'kidneys' | 'intestines' | 'bladder';
@@ -150,6 +154,16 @@ export interface ModuleSettings {
   /** Cross-tissue communication: the second tissue's colour, and how many connections join the two. */
   tissue2Color: string;
   crossLinks: number;
+  /** Virtual → real cell: the real cell video (an object URL for this session; never saved) and its file name. */
+  realVideo: string;
+  realVideoName: string;
+  /** The video's size (× covering the canvas), offset (shares of the canvas) and brightness (0–1). */
+  videoScale: number;
+  videoX: number;
+  videoY: number;
+  videoBrightness: number;
+  /** How many inactive nodes per layer the real cell reveals as new (discovered) nodes. */
+  newNodes: number;
 }
 
 /** One cell of an imported map. Coordinates are flat x,y pairs in the map's own units. */
@@ -220,6 +234,8 @@ export interface NodeGeom {
   dim?: boolean;
   /** Hidden until the signal reaches it, then pops up (the route MOA elucidation uncovers). */
   reveal?: boolean;
+  /** Discovered (the real-cell view): inactive until discovery reaches this point (0–1), then pops up. */
+  discoverAt?: number;
   /** A DEG that makes the cell toxic when it fires (target toxicity). */
   toxic?: boolean;
 }
@@ -249,6 +265,8 @@ export interface EdgeGeom {
   reveal?: boolean;
   /** Line width, as a multiple of the usual (connections between tissues are drawn heavier). */
   weight?: number;
+  /** Discovered (the real-cell view): absent until discovery reaches this point (0–1), then grows in. */
+  discoverAt?: number;
 }
 
 export interface ReceptorGeom {
@@ -302,6 +320,8 @@ export interface SceneGeom {
    * pixels in from the outline.
    */
   particles?: { x: number; y: number; r: number; tone: number; node: string; delay: number }[];
+  /** How much of discovery (0–1) each discovered node or edge takes to appear. */
+  discoverSpan?: number;
   mesh?: Float32Array;
   anatomy?: { b: Bezier; strength: number }[];
   bodyFill?: boolean;
