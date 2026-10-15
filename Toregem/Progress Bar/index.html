@@ -258,6 +258,12 @@
     </div>
 
     <div class="field">
+      <label class="cap" for="orient">Layout</label>
+      <select id="orient">
+        <option value="horizontal">Horizontal</option>
+        <option value="stacked">Vertical, stages stacked</option>
+      </select>
+
       <label class="cap" for="length">Line length <span class="val"><span id="lengthVal">1000</span>px</span></label>
       <input type="range" id="length" min="300" max="4000" step="20">
 
@@ -414,6 +420,7 @@
     stepMode: true,
     dimAhead: true,
     vertical: true,
+    orient: "horizontal",   /* "stacked": the line runs top to bottom, names stacked beside it */
     loop: true,
     transparent: true,
     format: "webm",
@@ -435,6 +442,7 @@
       if(saved.textSize >= 8 && saved.textSize <= 60) state.textSize = saved.textSize;
       if(saved.inTime >= 0.3 && saved.inTime <= 5) state.inTime = saved.inTime;
       if(saved.outTime >= 0.3 && saved.outTime <= 5) state.outTime = saved.outTime;
+      if(saved.orient === "horizontal" || saved.orient === "stacked") state.orient = saved.orient;
       if(saved.animStyle === "draw" || saved.animStyle === "fade") state.animStyle = saved.animStyle;
       if(HEX.test(saved.colorA)) state.colorA = saved.colorA;
       if(HEX.test(saved.colorB)) state.colorB = saved.colorB;
@@ -495,6 +503,8 @@
      nothing (the glow at the ends included) is ever cut off by the frame's edge.
      The preview then scales that frame down to fit the page. */
   function layout(){
+    var stacked = state.orient === "stacked";
+    var across = stacked || state.vertical;   /* names run away from the line, not along it */
     var r = state.size / 2;
     var depth = r * 0.55;
     var gr = glowRadius(r);
@@ -507,7 +517,7 @@
 
     var pad = Math.ceil(Math.max(
       r * 1.4 + 12,
-      state.vertical ? peak : longest / 2 + 12,
+      across ? peak : longest / 2 + 12,
       gr * 1.35 * 0.96
     ));
     var lw = state.lineWidth;
@@ -515,7 +525,7 @@
     var tickTop = lineY + 18.5 + lw / 2;   /* a thicker line pushes the ticks down */
     var labelTop = tickTop + 40;
     var h = Math.max(
-      state.vertical ? labelTop + depth + 8 + longest + 28 : labelTop + depth + 8 + peak + 30,
+      across ? labelTop + depth + 8 + longest + 28 : labelTop + depth + 8 + peak + 30,
       lineY + depth + gr * 0.96 + 4
     );
     var w = state.length + pad * 2;
@@ -525,22 +535,27 @@
       r: r, depth: depth, spread: r * 2.4, lw: lw,
       x0: pad, x1: w - pad,
       lineY: lineY, tickTop: tickTop, labelTop: labelTop,
-      labelSize: labelSize, h: Math.ceil(h)
+      labelSize: labelSize, h: Math.ceil(h), stacked: stacked
     };
+    /* the frame as it comes out: drawn sideways and turned upright when stacked */
+    geo.fw = stacked ? geo.h : geo.w;
+    geo.fh = stacked ? geo.w : geo.h;
 
     var avail = Math.max(200, stageBox.clientWidth - 2);
     shownAvail = stageBox.clientWidth;
-    var dispW = Math.min(geo.w, avail), dispH = geo.h * dispW / geo.w;
+    var dispW = Math.min(geo.fw, avail), dispH = geo.fh * dispW / geo.fw;
+    var maxH = Math.max(320, window.innerHeight * 0.75);   /* a tall stacked frame fits the window */
+    if(dispH > maxH){ dispW *= maxH / dispH; dispH = maxH; }
     var dpr = Math.max(2, window.devicePixelRatio || 1);
     canvas.style.width = dispW + "px";
     canvas.style.height = dispH + "px";
     canvas.width = Math.round(dispW * dpr);
     canvas.height = Math.round(dispH * dpr);
-    var k = canvas.width / geo.w;
+    var k = canvas.width / geo.fw;
     ctx.setTransform(k, 0, 0, k, 0, 0);
 
-    $("frameNote").textContent = "Frame " + geo.w + " × " + geo.h + " px" +
-      (dispW < geo.w ? ", previewed at " + Math.round(dispW / geo.w * 100) + "%" : "");
+    $("frameNote").textContent = "Frame " + geo.fw + " × " + geo.fh + " px" +
+      (dispW < geo.fw ? ", previewed at " + Math.round(dispW / geo.fw * 100) + "%" : "");
   }
 
   /* ---------- timeline ---------- */
@@ -601,8 +616,20 @@
 
   function easeOutBack(t){ var k = 1.70158; t -= 1; return 1 + (k + 1) * t * t * t + k * t * t; }
 
-  /* paints the frame at run time ms into context c, laid out by geometry G */
+  /* Paints the frame at run time ms into context c, laid out by geometry G. A stacked
+     frame is the same scene mirrored across its diagonal: along the line becomes down
+     the page and below the line becomes to its right; only the names are turned back
+     so they read normally. */
   function draw(c, G, ms, transparent){
+    if(!G.stacked) return paint(c, G, ms, transparent);
+    c.save();
+    c.transform(0, 1, 1, 0, 0, 0);
+    var idx = paint(c, G, ms, transparent);
+    c.restore();
+    return idx;
+  }
+
+  function paint(c, G, ms, transparent){
     var F = frameAt(ms);
     var p = F.p, show = F.show;
     var g = state.glow / 100;
@@ -793,7 +820,11 @@
       c.fillStyle = css(text, alpha);
       c.font = labelFont(size);
       c.translate(sx, y);
-      if(state.vertical){
+      if(G.stacked){
+        c.transform(0, 1, 1, 0, 0, 0);   /* undo the mirror for the text */
+        c.textAlign = "left";
+        c.textBaseline = "middle";
+      }else if(state.vertical){
         c.rotate(-Math.PI / 2);
         c.textAlign = "right";
         c.textBaseline = "middle";
@@ -1014,6 +1045,13 @@
   bindCheck("stepChk", "stepMode");
   bindCheck("dimChk", "dimAhead");
   bindCheck("vertChk", "vertical", layout);
+  function orientChanged(){
+    $("vertChk").disabled = state.orient === "stacked";   /* stacked names always read across */
+    layout();
+  }
+  $("orient").value = state.orient;
+  $("orient").addEventListener("change", function(e){ state.orient = e.target.value; orientChanged(); save(); });
+  orientChanged();
 
   $("colorA").addEventListener("input", function(e){ setGradient(e.target.value, state.colorB); });
   $("colorB").addEventListener("input", function(e){ setGradient(state.colorA, e.target.value); });
@@ -1067,13 +1105,13 @@
      so a video of whole runs loops seamlessly: the last frame flows into the first. */
   function videoPlan(){
     var G = geo;
-    var width = even(G.w * state.scale), height = even(G.h * state.scale);
+    var width = even(G.fw * state.scale), height = even(G.fh * state.scale);
     var run = phases().total / 1000;
     var span = run * state.runs;
     var frames = Math.max(1, Math.round(span * state.fps));
     return {
       G: G, width: width, height: height,
-      kx: width / G.w, ky: height / G.h,
+      kx: width / G.fw, ky: height / G.fh,
       run: run, span: span, frames: frames,
       transparent: state.transparent && FORMATS[state.format].alpha,
       maxSide: maxSide(),
