@@ -261,6 +261,9 @@
       <label class="cap" for="length">Line length <span class="val"><span id="lengthVal">1000</span>px</span></label>
       <input type="range" id="length" min="300" max="4000" step="20">
 
+      <label class="cap" for="lineWidth">Line width <span class="val"><span id="lineWidthVal">3</span>px</span></label>
+      <input type="range" id="lineWidth" min="1" max="24" step="0.5">
+
       <label class="cap" for="textSize">Text size <span class="val"><span id="textSizeVal">18</span>px</span></label>
       <input type="range" id="textSize" min="8" max="60" step="1">
       <p class="status" id="frameNote"></p>
@@ -397,6 +400,7 @@
     size: 60,
     glow: 60,
     length: 1000,
+    lineWidth: 3,
     textSize: 18,
     animIn: true,
     animOut: true,
@@ -427,6 +431,7 @@
       if(saved.size >= 20 && saved.size <= 140) state.size = saved.size;
       if(saved.glow >= 0 && saved.glow <= 100) state.glow = saved.glow;
       if(saved.length >= 300 && saved.length <= 4000) state.length = saved.length;
+      if(saved.lineWidth >= 1 && saved.lineWidth <= 24) state.lineWidth = saved.lineWidth;
       if(saved.textSize >= 8 && saved.textSize <= 60) state.textSize = saved.textSize;
       if(saved.inTime >= 0.3 && saved.inTime <= 5) state.inTime = saved.inTime;
       if(saved.outTime >= 0.3 && saved.outTime <= 5) state.outTime = saved.outTime;
@@ -505,8 +510,9 @@
       state.vertical ? peak : longest / 2 + 12,
       gr * 1.35 * 0.96
     ));
-    var lineY = Math.round(Math.max(r * 1.65 + 26, gr * 0.96 - depth + 4));
-    var tickTop = lineY + 20;
+    var lw = state.lineWidth;
+    var lineY = Math.round(Math.max(r * 1.65 + 24.5 + lw / 2, gr * 0.96 - depth + 4));
+    var tickTop = lineY + 18.5 + lw / 2;   /* a thicker line pushes the ticks down */
     var labelTop = tickTop + 40;
     var h = Math.max(
       state.vertical ? labelTop + depth + 8 + longest + 28 : labelTop + depth + 8 + peak + 30,
@@ -516,7 +522,7 @@
 
     geo = {
       w: w,
-      r: r, depth: depth, spread: r * 2.4,
+      r: r, depth: depth, spread: r * 2.4, lw: lw,
       x0: pad, x1: w - pad,
       lineY: lineY, tickTop: tickTop, labelTop: labelTop,
       labelSize: labelSize, h: Math.ceil(h)
@@ -737,14 +743,15 @@
          round caps show then, and nothing shows before the line has any length */
       c.beginPath();
       if(lineRight - lineLeft > 0.5){
-        var clipL = lineLeft <= x0 ? x0 - 4 : lineLeft, clipR = lineRight >= x1 ? x1 + 4 : lineRight;
+        var cap = G.lw / 2 + 2;
+        var clipL = lineLeft <= x0 ? x0 - cap : lineLeft, clipR = lineRight >= x1 ? x1 + cap : lineRight;
         c.rect(clipL, 0, clipR - clipL, G.h);
       }
       c.clip();
     }
     tracePath();
     c.strokeStyle = lg;
-    c.lineWidth = 3;
+    c.lineWidth = G.lw;
     c.lineJoin = "round";
     c.stroke();
 
@@ -803,7 +810,7 @@
 
     /* the circle, resting in its dent: shaded from its own colour, or from the
        background's when none is picked; its drop shadow always suits the background */
-    var ky = ly + depth - r - r * 0.2 - 2;
+    var ky = ly + depth - r - r * 0.2 - 0.5 - G.lw / 2;   /* resting on the line's top edge */
     if(circleS <= 0.001){ c.restore(); return activeIdx; }
     c.translate(kx, ky);
     c.scale(circleS, circleS);
@@ -1001,6 +1008,7 @@
   bindRange("size", "size", layout);
   bindRange("glow", "glow", layout);   /* the frame grows to hold a bigger glow */
   bindRange("length", "length", layout);
+  bindRange("lineWidth", "lineWidth", layout);
   bindRange("textSize", "textSize", layout);
   bindCheck("loopChk", "loop");
   bindCheck("stepChk", "stepMode");
