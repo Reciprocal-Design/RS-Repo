@@ -217,6 +217,13 @@
     min-height:1.3em;
   }
   .status.error{color:#e5484d}
+  .tabs{display:flex;gap:2px;border-bottom:1px solid var(--hair);margin-bottom:calc(-1 * clamp(10px,2vw,18px))}
+  .tabs button{
+    border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;
+    padding:10px 14px;margin-bottom:-1px;color:var(--ink-3);
+  }
+  .tabs button:hover:not(:disabled){color:var(--ink)}
+  .tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
   :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 </style>
 
@@ -229,7 +236,12 @@
     <div class="readout" id="readout" aria-live="polite">Stage 1 / 5</div>
   </header>
 
-  <div class="stage" id="stageBox">
+  <div class="tabs" role="tablist" aria-label="Layout">
+    <button type="button" role="tab" id="tab-horizontal" data-orient="horizontal" aria-controls="stageBox">Horizontal</button>
+    <button type="button" role="tab" id="tab-vertical" data-orient="vertical" aria-controls="stageBox">Vertical</button>
+  </div>
+
+  <div class="stage" id="stageBox" role="tabpanel">
     <canvas id="bar" role="img" aria-label="Tooth growth progress, stage 1"></canvas>
   </div>
 
@@ -258,12 +270,6 @@
     </div>
 
     <div class="field">
-      <label class="cap" for="orient">Layout</label>
-      <select id="orient">
-        <option value="horizontal">Horizontal</option>
-        <option value="stacked">Vertical, stages stacked</option>
-      </select>
-
       <label class="cap" for="length">Line length <span class="val"><span id="lengthVal">1000</span>px</span></label>
       <input type="range" id="length" min="300" max="4000" step="20">
 
@@ -420,7 +426,7 @@
     stepMode: true,
     dimAhead: true,
     vertical: true,
-    orient: "horizontal",   /* "stacked": the line runs top to bottom, names stacked beside it */
+    orient: "horizontal",   /* the tab: "vertical" runs the line bottom to top, names beside it */
     loop: true,
     transparent: true,
     format: "webm",
@@ -442,7 +448,7 @@
       if(saved.textSize >= 8 && saved.textSize <= 60) state.textSize = saved.textSize;
       if(saved.inTime >= 0.3 && saved.inTime <= 5) state.inTime = saved.inTime;
       if(saved.outTime >= 0.3 && saved.outTime <= 5) state.outTime = saved.outTime;
-      if(saved.orient === "horizontal" || saved.orient === "stacked") state.orient = saved.orient;
+      if(saved.orient === "horizontal" || saved.orient === "vertical") state.orient = saved.orient;
       if(saved.animStyle === "draw" || saved.animStyle === "fade") state.animStyle = saved.animStyle;
       if(HEX.test(saved.colorA)) state.colorA = saved.colorA;
       if(HEX.test(saved.colorB)) state.colorB = saved.colorB;
@@ -503,8 +509,8 @@
      nothing (the glow at the ends included) is ever cut off by the frame's edge.
      The preview then scales that frame down to fit the page. */
   function layout(){
-    var stacked = state.orient === "stacked";
-    var across = stacked || state.vertical;   /* names run away from the line, not along it */
+    var upright = state.orient === "vertical";
+    var across = upright || state.vertical;   /* names run away from the line, not along it */
     var r = state.size / 2;
     var depth = r * 0.55;
     var gr = glowRadius(r);
@@ -518,7 +524,8 @@
     var pad = Math.ceil(Math.max(
       r * 1.4 + 12,
       across ? peak : longest / 2 + 12,
-      gr * 1.35 * 0.96
+      gr * 1.35 * 0.96,
+      upright ? r * 2.2 + 6 : 0   /* the circle's shadow falls along a vertical line, past its start */
     ));
     var lw = state.lineWidth;
     var lineY = Math.round(Math.max(r * 1.65 + 24.5 + lw / 2, gr * 0.96 - depth + 4));
@@ -535,16 +542,16 @@
       r: r, depth: depth, spread: r * 2.4, lw: lw,
       x0: pad, x1: w - pad,
       lineY: lineY, tickTop: tickTop, labelTop: labelTop,
-      labelSize: labelSize, h: Math.ceil(h), stacked: stacked
+      labelSize: labelSize, h: Math.ceil(h), upright: upright
     };
-    /* the frame as it comes out: drawn sideways and turned upright when stacked */
-    geo.fw = stacked ? geo.h : geo.w;
-    geo.fh = stacked ? geo.w : geo.h;
+    /* the frame as it comes out: the vertical one is drawn lying down, then stood up */
+    geo.fw = upright ? geo.h : geo.w;
+    geo.fh = upright ? geo.w : geo.h;
 
     var avail = Math.max(200, stageBox.clientWidth - 2);
     shownAvail = stageBox.clientWidth;
     var dispW = Math.min(geo.fw, avail), dispH = geo.fh * dispW / geo.fw;
-    var maxH = Math.max(320, window.innerHeight * 0.75);   /* a tall stacked frame fits the window */
+    var maxH = Math.max(320, window.innerHeight * 0.75);   /* a tall vertical frame fits the window */
     if(dispH > maxH){ dispW *= maxH / dispH; dispH = maxH; }
     var dpr = Math.max(2, window.devicePixelRatio || 1);
     canvas.style.width = dispW + "px";
@@ -616,14 +623,14 @@
 
   function easeOutBack(t){ var k = 1.70158; t -= 1; return 1 + (k + 1) * t * t * t + k * t * t; }
 
-  /* Paints the frame at run time ms into context c, laid out by geometry G. A stacked
-     frame is the same scene mirrored across its diagonal: along the line becomes down
-     the page and below the line becomes to its right; only the names are turned back
-     so they read normally. */
+  /* Paints the frame at run time ms into context c, laid out by geometry G. The vertical
+     frame is the same scene turned a quarter anticlockwise: the line runs bottom to top,
+     the circle rides on its left and the names sit on its right, turned back so they
+     read normally. */
   function draw(c, G, ms, transparent){
-    if(!G.stacked) return paint(c, G, ms, transparent);
+    if(!G.upright) return paint(c, G, ms, transparent);
     c.save();
-    c.transform(0, 1, 1, 0, 0, 0);
+    c.transform(0, -1, 1, 0, 0, G.w);
     var idx = paint(c, G, ms, transparent);
     c.restore();
     return idx;
@@ -647,11 +654,15 @@
       return d >= spread ? 0 : depth * (1 + Math.cos(Math.PI * d / spread)) / 2;
     }
 
-    if(transparent) c.clearRect(0, 0, G.w, G.h);
+    /* in pixels, so no row at the frame's edge is missed whichever way the scene is turned */
+    c.save();
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    if(transparent) c.clearRect(0, 0, c.canvas.width, c.canvas.height);
     else{
       c.fillStyle = css(bg);
-      c.fillRect(0, 0, G.w, G.h);
+      c.fillRect(0, 0, c.canvas.width, c.canvas.height);
     }
+    c.restore();
 
     /* Animating in and out. "Draw on": the circle pops in, then the line grows out of it
        and the ticks and labels arrive as it passes; going out plays that in reverse, the
@@ -820,8 +831,8 @@
       c.fillStyle = css(text, alpha);
       c.font = labelFont(size);
       c.translate(sx, y);
-      if(G.stacked){
-        c.transform(0, 1, 1, 0, 0, 0);   /* undo the mirror for the text */
+      if(G.upright){
+        c.rotate(Math.PI / 2);   /* turned back to read across */
         c.textAlign = "left";
         c.textBaseline = "middle";
       }else if(state.vertical){
@@ -852,7 +863,9 @@
     c.shadowColor = darkBg ? "rgba(0,0,0,.6)" : "rgba(0,0,0,.22)";
     c.shadowBlur = r * 0.9;
     c.shadowOffsetY = r * 0.22;
-    var og = c.createLinearGradient(kx - r, ky - r, kx + r, ky + r);
+    /* lit from the top left of the frame, whichever way the scene is turned */
+    var og = G.upright ? c.createLinearGradient(kx + r, ky - r, kx - r, ky + r)
+                       : c.createLinearGradient(kx - r, ky - r, kx + r, ky + r);
     og.addColorStop(0, css(mixRgb(body, [255,255,255], darkBody ? 0.1 : 0.7)));
     og.addColorStop(1, css(mixRgb(body, [0,0,0], darkBody ? 0.28 : 0.08)));
     c.fillStyle = og;
@@ -1045,12 +1058,34 @@
   bindCheck("stepChk", "stepMode");
   bindCheck("dimChk", "dimAhead");
   bindCheck("vertChk", "vertical", layout);
+  /* the Horizontal and Vertical tabs share every setting; only the way the bar runs changes */
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
   function orientChanged(){
-    $("vertChk").disabled = state.orient === "stacked";   /* stacked names always read across */
+    tabs.forEach(function(t){
+      var on = t.dataset.orient === state.orient;
+      t.setAttribute("aria-selected", on);
+      t.tabIndex = on ? 0 : -1;
+      if(on) stageBox.setAttribute("aria-labelledby", t.id);
+    });
+    $("vertChk").disabled = state.orient === "vertical";   /* vertical names always read across */
     layout();
   }
-  $("orient").value = state.orient;
-  $("orient").addEventListener("change", function(e){ state.orient = e.target.value; orientChanged(); save(); });
+  function pickTab(t){
+    if(state.orient === t.dataset.orient) return;
+    state.orient = t.dataset.orient;
+    orientChanged();
+    save();
+  }
+  tabs.forEach(function(t, i){
+    t.addEventListener("click", function(){ pickTab(t); });
+    t.addEventListener("keydown", function(e){
+      if(e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      var next = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+      next.focus();
+      pickTab(next);
+      e.preventDefault();
+    });
+  });
   orientChanged();
 
   $("colorA").addEventListener("input", function(e){ setGradient(e.target.value, state.colorB); });
@@ -1200,7 +1235,7 @@
   }
 
   function baseName(P){
-    return "toregem-progress-" + P.width + "x" + P.height + (P.transparent ? "-transparent" : "");
+    return "toregem-progress-" + (P.G.upright ? "vertical-" : "") + P.width + "x" + P.height + (P.transparent ? "-transparent" : "");
   }
 
   async function exportVideo(P, job){
