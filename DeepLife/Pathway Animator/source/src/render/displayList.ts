@@ -215,7 +215,13 @@ const withAlpha = ([r, g, b]: RGBA, a: number) => rgbaString([r, g, b, a]);
 export function buildDisplayList(
   scene: Scene, t = 0,
   opts: {
-    signal?: boolean; linkAlpha?: number; others?: { keep: string; alpha: number };
+    signal?: boolean; linkAlpha?: number;
+    /**
+     * Fades every cell but `keep`: `alpha` for everything of theirs, or, with
+     * `outlineAlpha`, that for their outlines (membrane, nucleus) and `alpha`
+     * for the rest; `mono` (0–1) turns their outlines towards grey.
+     */
+    others?: { keep: string; alpha: number; outlineAlpha?: number; mono?: number };
     /** How far discovery has got (0–1; the real-cell view): discovered nodes and edges appear as it passes them. */
     discovered?: number;
     /** Fades the cell's outlines (the virtual cell giving way to a real one). */
@@ -655,22 +661,43 @@ export function buildDisplayList(
   let out = prims;
   let staticOut = staticCount;
   const linkAlpha = Math.max(0, Math.min(1, opts.linkAlpha ?? 1));
-  const others = opts.others && opts.others.alpha < 1 ? { ...opts.others, alpha: Math.max(0, opts.others.alpha) } : null;
+  const o = opts.others;
+  const others = o && (o.alpha < 1 || (o.outlineAlpha ?? o.alpha) < 1 || (o.mono ?? 0) > 0)
+    ? { keep: o.keep, alpha: Math.max(0, o.alpha), outlineAlpha: Math.max(0, Math.min(1, o.outlineAlpha ?? o.alpha)), mono: Math.max(0, Math.min(1, o.mono ?? 0)) }
+    : null;
+  /** A colour moved towards the grey of the same brightness by k (0–1). */
+  const toGrey = (c: string, k: number) => {
+    const [r, gr, b, a] = parseColor(c);
+    const l = 0.2126 * r + 0.7152 * gr + 0.0722 * b;
+    return rgbaString([r + (l - r) * k, gr + (l - gr) * k, b + (l - b) * k, a]);
+  };
   const outlineAlpha = Math.max(0, Math.min(1, opts.outlineAlpha ?? 1));
   if (linkAlpha < 1 || others || outlineAlpha < 1) {
     // Link edges and everything drawn along them have ids starting `link-`;
     // everything of a map cell (outlines, receptors, nodes, edges, signals)
     // carries its cell id (`c3-`), except the centre cell's pathways.
-    const fadeOf = (id: string) => {
-      if (id.startsWith('link-')) return linkAlpha;
+    const outline = (p: Prim) => p.group === 'membrane' || p.group === 'nucleus';
+    const otherCell = (id: string) => {
       const m = others && /(?:^|-)(c\d+)-/.exec(id);
-      return m && m[1] !== others!.keep ? others!.alpha : 1;
+      return !!m && m[1] !== others!.keep;
+    };
+    const fadeOf = (p: Prim) => {
+      if (p.id.startsWith('link-')) return linkAlpha;
+      return otherCell(p.id) ? (outline(p) ? others!.outlineAlpha : others!.alpha) : 1;
     };
     out = [];
     prims.forEach((p, i) => {
-      const a = fadeOf(p.id) * (p.group === 'membrane' || p.group === 'nucleus' ? outlineAlpha : 1);
-      if (a >= 1) out.push(p);
-      else if (a > 0) out.push({ ...p, opacity: (p.opacity ?? 1) * a });
+      const a = fadeOf(p) * (outline(p) ? outlineAlpha : 1);
+      const grey = others && others.mono > 0 && outline(p) && otherCell(p.id) ? others.mono : 0;
+      if (a >= 1 && !grey) out.push(p);
+      else if (a > 0) {
+        const q = { ...p, opacity: (p.opacity ?? 1) * a } as Prim & { stroke?: string; fill?: string };
+        if (grey) {
+          if (typeof q.stroke === 'string') q.stroke = toGrey(q.stroke, grey);
+          if (typeof q.fill === 'string') q.fill = toGrey(q.fill, grey);
+        }
+        out.push(q);
+      }
       if (i === staticCount - 1) staticOut = out.length;
     });
     if (staticCount === 0) staticOut = 0;
@@ -685,7 +712,7 @@ export function buildDisplayList(
     staticKey: g,
     // The static layer differs with fades and discovery: its cached bitmap must too.
     ...(linkAlpha < 1 || others || outlineAlpha < 1 || (g.discoverSpan !== undefined && disc < 1)
-      ? { staticTag: `links-${linkAlpha.toFixed(3)}-${others ? `${others.keep}-${others.alpha.toFixed(3)}` : ''}-o${outlineAlpha.toFixed(3)}-d${disc.toFixed(4)}` }
+      ? { staticTag: `links-${linkAlpha.toFixed(3)}-${others ? `${others.keep}-${others.alpha.toFixed(3)}-${others.outlineAlpha.toFixed(3)}-${others.mono.toFixed(3)}` : ''}-o${outlineAlpha.toFixed(3)}-d${disc.toFixed(4)}` }
       : {}),
     ...(underlays.length ? { underlays } : {}),
   };

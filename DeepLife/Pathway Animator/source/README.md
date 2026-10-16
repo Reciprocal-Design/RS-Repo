@@ -92,7 +92,9 @@ cell or generated tissue.
 neighbouring cells" draws the cells round the cell behind it, outlines only, without changing the cell's size or
 place: the selected cell's real neighbours when a tissue map is uploaded (with the same transform that fits the
 cell to the canvas), otherwise a tissue generated round the cell. "Neighbour opacity" sets how see-through they
-are, and "Monochrome neighbours" draws them in greys.
+are, and "Monochrome neighbours" draws them in greys. The same option on the Cell → tissue → body tab shows the
+tissue's other cells round the centre cell in the cell section, as see-through (optionally grey) outlines, which
+grow to full opacity and colour, their pathways fading in, as the camera pulls back into the tissue.
 
 Scene JSON saves the current tab, including its module settings; a file loads into the current tab and keeps the
 tab's module.

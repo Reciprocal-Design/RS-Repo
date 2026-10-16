@@ -112,7 +112,7 @@ export function Panel() {
           onChange={(decorativeReceptors) => cell({ decorativeReceptors })} />
         <Toggle label="Show decorative receptors" checked={c.showDecorativeReceptors}
           onChange={(showDecorativeReceptors) => cell({ showDecorativeReceptors })} />
-        {singleCellView(scene) && (
+        {(singleCellView(scene) || scene.module.kind === 'journey') && (
           <>
             <Toggle label="Show neighbouring cells" checked={c.neighbours.show}
               onChange={(show) => cell({ neighbours: { ...c.neighbours, show } })} />
@@ -123,8 +123,9 @@ export function Panel() {
                 <Toggle label="Monochrome neighbours" checked={c.neighbours.mono}
                   onChange={(mono) => cell({ neighbours: { ...c.neighbours, mono } })} />
                 <p className="hint">
-                  The cells round this one, outlines only, behind it; the cell keeps its size. From the tissue map when one
-                  is uploaded, otherwise generated round the cell.
+                  {scene.module.kind === 'journey'
+                    ? 'In the cell section, the tissue’s other cells show round the centre cell as outlines, like this; they grow to full opacity and colour as the camera pulls back into the tissue.'
+                    : 'The cells round this one, outlines only, behind it; the cell keeps its size. From the tissue map when one is uploaded, otherwise generated round the cell.'}
                 </p>
               </>
             )}

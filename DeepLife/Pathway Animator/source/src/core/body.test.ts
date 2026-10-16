@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildDisplayList } from '../render/displayList';
-import { heroView, journeyScenes, journeyState, tissueView } from '../render/journey';
+import { heroView, journeyScenes, journeyState, neighbourFade, tissueView } from '../render/journey';
 import { displayListToSvg } from '../render/svg';
 import { ORGANS, organCenter } from './body';
 import { buildGeometry } from './geometry';
@@ -205,5 +205,43 @@ describe('journey in portrait', () => {
     const s = moduleScene('journey', 7);
     expect(journeyState(s, 0).tissue.turn).toBe(false);
     expect(journeyScenes(s).tissue.canvas).toEqual(s.canvas);
+  });
+});
+
+describe('journey: neighbouring cells in the cell section', () => {
+  const setup = (show: boolean, mono = false) => {
+    const s = moduleScene('journey', 7);
+    s.cell = { ...s.cell, neighbours: { show, opacity: 0.3, mono } };
+    const { tissue } = journeyScenes(s);
+    const hero = buildGeometry(tissue).cells.find((c) => c.hero)!;
+    const at = (n: number) => buildDisplayList(tissue, 0, { signal: false, linkAlpha: n, others: neighbourFade(s, hero.id, n) }).prims;
+    const isOther = (id: string) => { const m = /(?:^|-)(c\d+)-/.exec(id); return !!m && m[1] !== hero.id; };
+    return { at, isOther };
+  };
+  const outline = (p: { group: string }) => p.group === 'membrane' || p.group === 'nucleus';
+
+  it('off: the other cells are hidden at first, as before', () => {
+    const { at, isOther } = setup(false);
+    expect(at(0).some((p) => isOther(p.id))).toBe(false);
+  });
+
+  it('on: their outlines show see-through from the start, their pathways do not; all full by the tissue', () => {
+    const { at, isOther } = setup(true);
+    const start = at(0).filter((p) => isOther(p.id));
+    expect(start.length).toBeGreaterThan(0);
+    expect(start.every(outline)).toBe(true);
+    const full = at(0.999).filter((p) => isOther(p.id) && outline(p));
+    const first = start[0], same = full.find((p) => p.id === first.id)!;
+    expect(first.opacity ?? 1).toBeLessThan((same.opacity ?? 1) * 0.35);
+    // Pathways (nodes, edges) of the other cells appear as the tissue fades in.
+    expect(at(0.999).some((p) => isOther(p.id) && !outline(p))).toBe(true);
+  });
+
+  it('monochrome greys their outlines at first, back to colour by the tissue', () => {
+    const { at, isOther } = setup(true, true);
+    const greyish = (c: string) => { const [r, g, b] = c.match(/[\d.]+/g)!.map(Number); return Math.abs(r - g) < 1.5 && Math.abs(g - b) < 1.5; };
+    const strokes = (ps: ReturnType<typeof at>) => ps.filter((p) => isOther(p.id) && 'stroke' in p && typeof p.stroke === 'string').map((p) => (p as { stroke: string }).stroke);
+    expect(strokes(at(0)).every(greyish)).toBe(true);
+    expect(strokes(at(1)).some((c) => !greyish(c))).toBe(true);
   });
 });

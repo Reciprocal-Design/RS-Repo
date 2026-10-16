@@ -275,6 +275,19 @@ function drawLayer(
   return c;
 }
 
+/**
+ * How the centre cell's neighbours show while they fade in (n: 0 in the cell
+ * section, 1 once the tissue is in). By default they are hidden at first. With
+ * "Show neighbouring cells", their outlines show from the start, see-through
+ * and optionally in greys, and grow to full opacity and colour as their
+ * pathways fade in.
+ */
+export function neighbourFade(scene: Scene, keep: string, n: number) {
+  const nb = scene.cell.neighbours;
+  if (!nb?.show) return { keep, alpha: n };
+  return { keep, alpha: n, outlineAlpha: nb.opacity + (1 - nb.opacity) * n, mono: nb.mono ? 1 - n : 0 };
+}
+
 export function drawJourney(ctx: Ctx, scene: Scene, t: number, opts: CanvasDrawOptions = {}): void {
   const tau = cycleTime(scene, t);
   const st = journeyState(scene, tau);
@@ -296,7 +309,7 @@ export function drawJourney(ctx: Ctx, scene: Scene, t: number, opts: CanvasDrawO
     const hero = buildGeometry(tissue).cells.find((c) => c.hero);
     const n = st.tissue.neighbours;
     const img = drawLayer('tissue', ctx, tissue, t, cameraMatrix(base, st.tissue), n, mapExtent(tissue),
-      hero && n < 1 ? { keep: hero.id, alpha: n } : undefined);
+      hero && n < 1 ? neighbourFade(scene, hero.id, n) : undefined);
     ctx.globalAlpha = st.tissue.alpha;
     ctx.drawImage(img, 0, 0);
   }
