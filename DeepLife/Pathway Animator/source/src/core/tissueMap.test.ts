@@ -10,6 +10,17 @@ import { parseSceneJson, serializeScene } from './sceneIO';
 import { buildSchedule } from './timeline';
 import type { MapCell, ModuleKind, Scene } from './types';
 
+/** A tab as it started before tabs 1–5 went square and zoomed out: 1920 × 1080, zoom 1, no neighbours. */
+const classic = (kind: ModuleKind, seed = 7): Scene => {
+  const s = moduleScene(kind, seed);
+  return {
+    ...s,
+    canvas: { ...s.canvas, width: 1920, height: 1080 },
+    cell: { ...s.cell, neighbours: { ...s.cell.neighbours, show: false } },
+    module: { ...s.module, zoom: 1 },
+  };
+};
+
 /** An n × n tissue of square cells, 96 wide on a 100 grid (near enough to touch). */
 function grid(n = 3): TissueUpload {
   const cells: MapCell[] = [];
@@ -21,7 +32,7 @@ function grid(n = 3): TissueUpload {
   }
   return { name: 'grid.svg', viewBox: { x: 0, y: 0, width: n * 100, height: n * 100 }, cells };
 }
-const view = (kind: ModuleKind, hero = 'c5') => withTissueMap(moduleScene(kind, 7), grid(), hero);
+const view = (kind: ModuleKind, hero = 'c5') => withTissueMap(classic(kind), grid(), hero);
 const bbox = (pts: { x: number; y: number }[]) => {
   const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
   return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
@@ -134,7 +145,7 @@ describe('a shared tissue map', () => {
 });
 
 describe('the tissue view zoomed in on the selected cell', () => {
-  const big = () => withTissueMap(moduleScene('tissue', 7), grid(9), 'c41'); // the middle of a 9 × 9 map
+  const big = () => withTissueMap(classic('tissue'), grid(9), 'c41'); // the middle of a 9 × 9 map
 
   it('shows the selected cell and two cells beyond it along the short side', () => {
     const s = big();
@@ -252,8 +263,8 @@ describe('neighbouring cells round a single cell', () => {
   const nbPrims = (s: Scene) => buildDisplayList(s, 0, { signal: false }).prims.filter((p) => p.id.startsWith('nb'));
   const own = (s: Scene) => JSON.stringify(buildDisplayList(s, 0, { signal: false }).prims.filter((p) => !p.id.startsWith('nb')));
 
-  it('are off by default; shown, the cell itself is unchanged and they sit round it, see-through', () => {
-    const s = moduleScene('targetId', 7);
+  it('can be off; shown, the cell itself is unchanged and they sit round it, see-through', () => {
+    const s = classic('targetId');
     expect(nbPrims(s)).toHaveLength(0);
     const shown = on(s);
     const prims = nbPrims(shown);

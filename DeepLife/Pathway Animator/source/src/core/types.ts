@@ -147,6 +147,12 @@ export interface ModuleSettings {
    * layer shows; below 1 pulls back towards the whole tissue; above 1 closer).
    */
   tissueZoom: number;
+  /**
+   * Tabs 1–5: zoom about the centre cell. Everything (cell, network, line and
+   * node sizes, neighbours) scales together; below 1 the cell is smaller and
+   * more of the cells round it show. 1 is the cell at its own size.
+   */
+  zoom: number;
   /** Body: how far the glow reaches in from the outline, 0–1. */
   bodyGlow: number;
   /** Body: the wireframe mesh. */

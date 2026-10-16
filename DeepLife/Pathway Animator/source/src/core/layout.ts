@@ -1,11 +1,18 @@
 import { makeOutline, outlineNormal } from './outline';
 import { hash, rngFor, signed } from './rng';
-import type { NodeGeom, Outline, Pathway, ReceptorGeom, Scene, Vec2 } from './types';
+import type { ModuleKind, NodeGeom, Outline, Pathway, ReceptorGeom, Scene, Vec2 } from './types';
 
 /** Reference short side: style sizes in the Scene are pixels at 1080px. */
 export const REFERENCE_SHORT_SIDE = 1080;
 
 const TAU = Math.PI * 2;
+
+/** The views (tabs 1–5) that can zoom out round their centre cell. */
+export const ZOOM_VIEWS: ModuleKind[] = ['targetId', 'moa', 'combination', 'toxicity', 'tissue'];
+
+/** The scene's zoom about its centre cell: the module's zoom in tabs 1–5, otherwise 1. */
+export const viewZoom = (scene: Scene): number =>
+  ZOOM_VIEWS.includes(scene.module.kind) ? Math.max(0.05, scene.module.zoom ?? 1) : 1;
 const polar = (c: Vec2, r: number, th: number): Vec2 => ({ x: c.x + Math.cos(th) * r, y: c.y + Math.sin(th) * r });
 const angleOf = (from: Vec2, to: Vec2) => Math.atan2(to.y - from.y, to.x - from.x);
 const dist = (a: Vec2, b: Vec2) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -46,9 +53,11 @@ export interface CellFrame {
 export function cellFrame(scene: Scene): CellFrame {
   const { width, height } = scene.canvas;
   const S = Math.min(width, height);
-  const scale = S / REFERENCE_SHORT_SIDE;
+  // Zoomed, the cell and every size in it scale together about the canvas centre.
+  const z = viewZoom(scene);
+  const scale = (S / REFERENCE_SHORT_SIDE) * z;
   const center = { x: width / 2, y: height / 2 };
-  const R = scene.cell.radius * S;
+  const R = scene.cell.radius * S * z;
   const cell = makeOutline(center, R, scene.cell.wobble, hash(scene.seed, 'membrane'));
   const nc = { x: center.x + scene.nucleus.offset.x * R, y: center.y + scene.nucleus.offset.y * R };
   const nucleus = makeOutline(nc, R * scene.nucleus.radiusRatio, scene.nucleus.wobble, hash(scene.seed, 'nucleus'));

@@ -2,10 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { buildDisplayList } from '../render/displayList';
 import { displayListToSvg } from '../render/svg';
 import { defaultScene } from './defaults';
+import { neighbourCells } from './cellMap';
 import { buildGeometry } from './geometry';
 import { MODULES, moduleScene, shareScene } from './modules';
 import { parseSceneJson, serializeScene } from './sceneIO';
 import { buildSchedule } from './timeline';
+import type { ModuleKind, Scene } from './types';
+
+/** A tab as it started before tabs 1–5 went square and zoomed out: 1920 × 1080, zoom 1, no neighbours. */
+const classic = (kind: ModuleKind, seed = 7): Scene => {
+  const s = moduleScene(kind, seed);
+  return {
+    ...s,
+    canvas: { ...s.canvas, width: 1920, height: 1080 },
+    cell: { ...s.cell, neighbours: { ...s.cell.neighbours, show: false } },
+    module: { ...s.module, zoom: 1 },
+  };
+};
 
 const lastLayer = (s: ReturnType<typeof defaultScene>) => s.pathways[0].layers.length - 1;
 
@@ -130,7 +143,7 @@ describe('modules', () => {
   });
 
   it('toxicity turns the cell red once a toxic DEG fires', () => {
-    const s = moduleScene('toxicity', 7);
+    const s = classic('toxicity', 7);
     s.module = { ...s.module, toxicDegs: 2 };
     const g = buildGeometry(s);
     expect(g.nodes.filter((n) => n.toxic).length).toBe(2);
@@ -147,7 +160,7 @@ describe('modules', () => {
   });
 
   it('tissue puts the same cell at the centre, scaled, with neighbours round it', () => {
-    const s = moduleScene('tissue', 7);
+    const s = classic('tissue', 7);
     const single = buildGeometry(defaultScene(7));
     const g = buildGeometry(s);
     const k = s.cellMap.detailScale;
@@ -199,7 +212,7 @@ describe('modules', () => {
   });
 
   it('toxicity shows a large warning in the middle of the cell once it turns', () => {
-    const s = moduleScene('toxicity', 7);
+    const s = classic('toxicity', 7);
     const g = buildGeometry(s);
     const sched = buildSchedule(s);
     const fired = Math.min(...g.nodes.filter((n) => n.toxic).map((n) => sched.fire.get(n.id)!));
@@ -238,5 +251,90 @@ describe('modules', () => {
     const old = JSON.parse(serializeScene(defaultScene(7)));
     delete old.module;
     expect(parseSceneJson(JSON.stringify(old)).module.kind).toBe('custom');
+  });
+});
+
+describe('zoom (tabs 1–5)', () => {
+  const ZOOMED: ModuleKind[] = ['targetId', 'moa', 'combination', 'toxicity', 'tissue'];
+  const zoomed = (s: Scene, zoom: number): Scene => ({ ...s, module: { ...s.module, zoom } });
+
+  it('tabs 1–5 start square and zoomed out, the single-cell tabs with their neighbours showing', () => {
+    for (const kind of ZOOMED) {
+      const s = moduleScene(kind, 7);
+      expect(s.canvas.width).toBe(s.canvas.height);
+      expect(s.module.zoom).toBeLessThan(1);
+      expect(s.cell.neighbours.show).toBe(kind !== 'tissue');
+    }
+    for (const kind of ['crossTissue', 'body', 'journey', 'realCell'] as ModuleKind[]) {
+      const s = moduleScene(kind, 7);
+      expect([s.canvas.width, s.canvas.height]).toEqual([1920, 1080]);
+      expect(s.module.zoom).toBe(1);
+    }
+  });
+
+  it('scales the single cell, its network and its sizes together about the canvas centre', () => {
+    for (const kind of ['targetId', 'moa', 'combination', 'toxicity'] as ModuleKind[]) {
+      const base = zoomed(moduleScene(kind, 7), 1);
+      const a = buildGeometry(base);
+      const b = buildGeometry(zoomed(base, 0.5));
+      const cx = base.canvas.width / 2, cy = base.canvas.height / 2;
+      expect(b.scale).toBeCloseTo(a.scale * 0.5, 9);
+      for (const n of a.nodes) {
+        const m = b.nodeById.get(n.id)!;
+        expect(m.x).toBeCloseTo(cx + (n.x - cx) * 0.5, 6);
+        expect(m.y).toBeCloseTo(cy + (n.y - cy) * 0.5, 6);
+      }
+    }
+  });
+
+  it('shows more of the cells round the cell as it zooms out', () => {
+    const s = moduleScene('targetId', 7);
+    const count = (zoom: number) => neighbourCells(zoomed(s, zoom)).length;
+    expect(count(0.4)).toBeGreaterThan(count(0.7));
+    expect(count(0.7)).toBeGreaterThan(count(1));
+    // Neighbours never overlap the zoomed cell.
+    const z = zoomed(s, 0.4);
+    const cell = buildGeometry(z).cells[0].cell;
+    for (const n of neighbourCells(z)) {
+      const th = Math.atan2(n.cell.center.y - cell.center.y, n.cell.center.x - cell.center.x);
+      expect(Math.hypot(n.cell.center.x - cell.center.x, n.cell.center.y - cell.center.y)).toBeGreaterThan(cell.radiusAt(th));
+    }
+  });
+
+  it('zooms the tissue round its centre cell, with more cells as it zooms out', () => {
+    const base = zoomed(moduleScene('tissue', 7), 1);
+    const a = buildGeometry(base);
+    const b = buildGeometry(zoomed(base, 0.6));
+    const cx = base.canvas.width / 2, cy = base.canvas.height / 2;
+    for (const n of a.nodes.filter((x) => x.id.startsWith('p'))) {
+      const m = b.nodeById.get(n.id)!;
+      expect(m.x).toBeCloseTo(cx + (n.x - cx) * 0.6, 6);
+      expect(m.y).toBeCloseTo(cy + (n.y - cy) * 0.6, 6);
+    }
+    expect(b.cells.length).toBeGreaterThan(a.cells.length);
+  });
+
+  it('leaves the other tabs alone', () => {
+    for (const kind of ['custom', 'crossTissue', 'journey', 'realCell'] as ModuleKind[]) {
+      const s = moduleScene(kind, 7);
+      expect(buildGeometry(zoomed(s, 0.5)).nodes.map((n) => [n.x, n.y])).toEqual(buildGeometry(s).nodes.map((n) => [n.x, n.y]));
+    }
+  });
+
+  it('scales the toxicity warning with the cell', () => {
+    const s = zoomed(classic('toxicity'), 0.5);
+    const g = buildGeometry(s);
+    const sched = buildSchedule(s);
+    const fired = Math.min(...g.nodes.filter((n) => n.toxic).map((n) => sched.fire.get(n.id)!));
+    const w = buildDisplayList(s, fired + 1.5).prims.find((p) => p.kind === 'warning')!;
+    expect(w.kind === 'warning' && w.size).toBeCloseTo(0.5 * 0.2 * 1080, 0);
+  });
+
+  it('is saved in the scene JSON; files saved before it load at zoom 1', () => {
+    const s = zoomed(moduleScene('moa', 7), 0.45);
+    expect(parseSceneJson(serializeScene(s)).module.zoom).toBe(0.45);
+    const old = JSON.parse(serializeScene(s));
+    delete old.module.zoom;
+    expect(parseSceneJson(JSON.stringify(old)).module.zoom).toBe(1);
   });
 });
