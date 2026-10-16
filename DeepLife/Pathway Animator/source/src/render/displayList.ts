@@ -2,6 +2,7 @@ import { bezierHead, bezierPoint, tAtDistance } from '../core/bezier';
 import { makeRamp, parseColor, rgbaString, type RGBA } from '../core/color';
 import { neighbourCells, singleCellView } from '../core/cellMap';
 import { buildGeometry } from '../core/geometry';
+import { viewZoom } from '../core/layout';
 import { closedSplineSegments } from '../core/outline';
 import { buildSchedule, cycleTime, ease, FADE_OUT, pulseEnvelope, since } from '../core/timeline';
 import type { Bezier, OutlineLook, Scene, SceneGeom, Vec2 } from '../core/types';
@@ -653,7 +654,8 @@ export function buildDisplayList(
   if (toxicity && scene.module.warning && tint > 0) {
     const c = (g.cells.find((x) => x.hero) ?? g.cells[0]).cell.center;
     const pop = 0.7 + 0.3 * Math.min(1, tint * 1.4);
-    const size = 0.2 * Math.min(scene.canvas.width, scene.canvas.height) * Math.max(0.2, scene.module.warningSize) * pop;
+    // Sized to the canvas, and zoomed with the cell.
+    const size = 0.2 * Math.min(scene.canvas.width, scene.canvas.height) * viewZoom(scene) * Math.max(0.2, scene.module.warningSize) * pop;
     prims.push({ kind: 'glow', id: 'warning-glow', group: 'signal', blend: 'lighter', c, r: size * 1.6, color: withAlpha(toxicRgb, 0.55), opacity: tint });
     prims.push({ kind: 'warning', id: 'warning', group: 'signal', c, size, fill: toxicFill, mark: '#FFFFFF', opacity: tint });
   }

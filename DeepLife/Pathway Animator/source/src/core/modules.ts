@@ -2,6 +2,7 @@ import { arcLengthLut } from './bezier';
 import { middleCellId, suggestedDetailScale } from './cellMap';
 import { makeEdge } from './connect';
 import { defaultCellMap, defaultModule, defaultScene, makePathway } from './defaults';
+import { ZOOM_VIEWS } from './layout';
 import { organicTissue } from './organic';
 import { hash, rngFor } from './rng';
 import type { Bezier, CellMap, EdgeGeom, ModuleKind, NodeGeom, ReceptorGeom, Scene, SceneGeom } from './types';
@@ -122,6 +123,11 @@ export function withOrganicTissue(scene: Scene, seed: number): Scene {
   return withTissueMap(scene, map, middleCellId(probe) ?? map.cells[0]?.id ?? '');
 }
 
+/** Each zoomable tab's starting zoom: the single cell about half the canvas across, the tissue's centre cell a third. */
+const DEFAULT_ZOOM: Partial<Record<ModuleKind, number>> = {
+  targetId: 0.6, moa: 0.6, combination: 0.6, toxicity: 0.6, tissue: 0.75,
+};
+
 /**
  * A module's starting scene. Every module starts from the same seed, so the
  * tabs show the same pathway; each then adjusts what it needs.
@@ -130,6 +136,12 @@ export function moduleScene(kind: ModuleKind, seed = 1234): Scene {
   const s = defaultScene(seed);
   s.module = defaultModule(kind);
   s.name = moduleInfo(kind).label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  if (ZOOM_VIEWS.includes(kind)) {
+    // Tabs 1–5: a square canvas, zoomed out so the cells round the centre cell show.
+    s.canvas = { ...s.canvas, width: 2000, height: 2000 };
+    s.module.zoom = DEFAULT_ZOOM[kind] ?? 1;
+    if (kind !== 'tissue') s.cell.neighbours = { ...s.cell.neighbours, show: true };
+  }
   if (kind === 'combination') {
     // Three targets, hit together, spaced unevenly and interconnected.
     s.pathwayCount = 3;

@@ -1,3 +1,4 @@
+import { viewZoom } from './layout';
 import { makeOutline } from './outline';
 import { hash, range, rngFor, signed } from './rng';
 import type { MapCell, Outline, Scene, Vec2 } from './types';
@@ -17,7 +18,7 @@ export interface TissueCell {
   polygon: Vec2[];
 }
 
-const MAX_CELLS = 40;
+const MAX_CELLS = 90;
 const CANDIDATES = 1500;
 
 const flat = (pts: Vec2[]) => pts.flatMap((p) => [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10]);
@@ -39,7 +40,7 @@ export function tissueCells(scene: Scene): TissueCell[] {
   const X = f.x, Y = f.y, W = f.w, H = f.h;
   const S = Math.min(scene.canvas.width, scene.canvas.height);
   const center = { x: X + W / 2, y: Y + H / 2 };
-  const R = scene.cell.radius * S * Math.max(0.05, scene.cellMap.detailScale);
+  const R = scene.cell.radius * S * Math.max(0.05, scene.cellMap.detailScale) * viewZoom(scene);
   const stored = new Map(scene.cellMap.cells.map((c) => [c.id, c]));
 
   const out: TissueCell[] = [];

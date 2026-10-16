@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { bodyImageInfo } from '../core/bodyImage';
 import { ORGANS } from '../core/body';
 import { degCount, MODULES, moduleInfo, tissueMap, withOrganicTissue } from '../core/modules';
+import { ZOOM_VIEWS } from '../core/layout';
 import { ORGANIC_NAME } from '../core/organic';
 import { randomSeed } from '../core/rng';
 import type { ModuleSettings, OrganId } from '../core/types';
@@ -82,6 +83,17 @@ export function ModuleSection() {
   return (
     <Section title={m.kind === 'custom' ? info.label : `Module ${active + 1}: ${info.label}`}>
       <p className="hint module-blurb">{info.blurb}</p>
+
+      {ZOOM_VIEWS.includes(m.kind) && (
+        <>
+          <Slider label="Zoom" value={m.zoom} min={0.3} max={1.5} step={0.01} onChange={(zoom) => set({ zoom })} />
+          <p className="hint">
+            Zooms the whole view about the centre cell: lower makes the cell smaller and shows more of the cells round
+            it; 1 is the cell at its own size.
+            {m.kind !== 'tissue' && !scene.cell.neighbours.show && ' Turn on Cell membrane → Show neighbouring cells to see them.'}
+          </p>
+        </>
+      )}
 
       {m.kind === 'targetId' && (
         <>

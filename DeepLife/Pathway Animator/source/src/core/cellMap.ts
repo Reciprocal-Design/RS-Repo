@@ -1,5 +1,5 @@
 import { connectCellLinks, connectCrosstalk, connectPathway, type LinkCell } from './connect';
-import { decorativeReceptors, layoutPathway, pathwayGaps, REFERENCE_SHORT_SIDE, type CellFrame, type PathwayLayout } from './layout';
+import { decorativeReceptors, layoutPathway, pathwayGaps, REFERENCE_SHORT_SIDE, viewZoom, type CellFrame, type PathwayLayout } from './layout';
 import { varyLayers } from './layers';
 import { pointInPolygon, polygonArea, polygonCentroid, polygonOutline } from './polygon';
 import { hash, rngFor } from './rng';
@@ -104,6 +104,8 @@ export function mapTransform(scene: Scene) {
     const kz = Math.min(f.w, f.h) / 2 / (cellRadius(hero) + cm.rings * 2 * meanRadius(cm));
     if (kz > k) (zoom = kz / k), (k = kz);
   }
+  // Tabs 1–5 zoom about the selected cell (or the map's middle).
+  k *= viewZoom(scene);
   const ox = f.x + f.w / 2 - mx * k, oy = f.y + f.h / 2 - my * k;
   return { k, zoom, map: (x: number, y: number): Vec2 => ({ x: x * k + ox, y: y * k + oy }) };
 }
@@ -211,8 +213,9 @@ export function buildMapGeometry(scene: Scene, opts: MapBuildOptions = {}): Scen
   const cm = scene.cellMap;
   const pre = opts.prefix ?? '';
   // A solo view is the single cell: full-size detail. Zoomed in on the
-  // selected cell, detail grows with the cells (up to full size).
-  const detail = soloActive(scene) ? 1 : Math.min(1, Math.max(0.05, cm.detailScale) * mapTransform(scene).zoom);
+  // selected cell, detail grows with the cells (up to full size). The view's
+  // own zoom (tabs 1–5) then scales it with everything else.
+  const detail = (soloActive(scene) ? 1 : Math.min(1, Math.max(0.05, cm.detailScale) * mapTransform(scene).zoom)) * viewZoom(scene);
   const scale = (Math.min(scene.canvas.width, scene.canvas.height) / REFERENCE_SHORT_SIDE) * detail;
   const count = Math.max(1, scene.pathwayCount);
 
@@ -409,7 +412,8 @@ export function suggestedDetailScale(scene: Scene, cm: Pick<CellMap, 'viewBox' |
   const radii = cm.cells.map((c) => Math.sqrt(Math.abs(polygonArea(unflat(c.membrane, map))) / Math.PI));
   if (!radii.length) return 0.6;
   const mean = radii.reduce((a, b) => a + b, 0) / radii.length;
-  const single = scene.cell.radius * Math.min(scene.canvas.width, scene.canvas.height);
+  // Both sides scale with the view's zoom, so the suggestion does not depend on it.
+  const single = scene.cell.radius * Math.min(scene.canvas.width, scene.canvas.height) * viewZoom(scene);
   return +Math.max(0.25, Math.min(1, Math.sqrt(mean / single))).toFixed(2);
 }
 
