@@ -69,7 +69,8 @@ describe('virtual → real cell', () => {
   });
 
   it('shows the discovered nodes as inactive until discovery reaches them, then as active nodes', () => {
-    const net = realCellNet(view());
+    const v = view();
+    const net = realCellNet({ ...v, style: { ...v.style, showInactiveNodes: true } });
     const g = buildGeometry(net);
     const n = g.nodes.filter((x) => x.discoverAt !== undefined).sort((a, b) => b.discoverAt! - a.discoverAt!)[0];
     const e = g.edges.find((x) => x.discoverAt !== undefined)!;
@@ -91,6 +92,12 @@ describe('virtual → real cell', () => {
     // The virtual cell's outlines can fade out under a video.
     const faded = buildDisplayList(net, 1, { outlineAlpha: 0 }).prims;
     expect(faded.some((p) => p.group === 'membrane' || p.group === 'nucleus')).toBe(false);
+    // With inactive nodes hidden (the default), a discovered node is hidden until it pops up.
+    const hiddenNet = realCellNet(view());
+    const hid = (d: number) => new Set(buildDisplayList(hiddenNet, 1, { discovered: d }).prims.map((p) => p.id));
+    expect(hid(0).has(`${n.id}-outer`)).toBe(false);
+    expect(hid(0).has(n.id)).toBe(false);
+    expect(hid(1).has(n.id)).toBe(true);
   });
 
   it('takes the cell selected on an uploaded tissue map, alone', () => {

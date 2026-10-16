@@ -18,6 +18,7 @@ const count = (s: string, re: RegExp) => (s.match(re) ?? []).length;
 describe('SVG export', () => {
   it('has named groups, one gradient per edge, and no raster content', () => {
     const s = multi(3);
+    s.style.showInactiveNodes = true;
     const svg = displayListToSvg(buildDisplayList(s, 0, { signal: false }));
     const g = buildGeometry(s);
     for (const id of ['membrane', 'nucleus', 'receptors', 'edges', 'crosstalk', 'nodes-active', 'nodes-inactive']) {
@@ -107,7 +108,10 @@ describe('scene JSON', () => {
 
 describe('inactive nodes', () => {
   it('can be hidden, without moving anything else', () => {
+    // Hidden by default.
+    expect(defaultScene(21).style.showInactiveNodes).toBe(false);
     const s = defaultScene(21);
+    s.style.showInactiveNodes = true;
     const shown = buildDisplayList(s, 0).prims;
     expect(shown.some((p) => p.group === 'nodes-inactive')).toBe(true);
     const hidden = buildDisplayList({ ...s, style: { ...s.style, showInactiveNodes: false } }, 0).prims;

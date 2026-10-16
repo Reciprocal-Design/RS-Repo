@@ -3,6 +3,7 @@ import type { Scene } from '../core/types';
 import { planVideo, videoSize, videoSizeError } from '../core/video';
 import { prepareFrame, render } from '../render/render';
 import { downloadBlob } from './exporters';
+import { ZipWriter, type DirHandle } from './sequenceExport';
 
 export type VideoQuality = 'medium' | 'high' | 'veryHigh';
 export type VideoFormat = 'mp4' | 'webm';
@@ -39,6 +40,18 @@ export async function exportVideo(
   onProgress: (done: number, total: number) => void,
   signal: AbortSignal,
 ): Promise<VideoFormat> {
+  const v = await encodeVideo(scene, opts, onProgress, signal);
+  downloadBlob(v.blob, v.name);
+  return v.format;
+}
+
+/** Render and encode one scene's video (see exportVideo); resolves with the file, not yet saved. */
+export async function encodeVideo(
+  scene: Scene,
+  opts: VideoOptions,
+  onProgress: (done: number, total: number) => void,
+  signal: AbortSignal,
+): Promise<{ blob: Blob; name: string; format: VideoFormat }> {
   if (!videoSupported()) {
     throw new Error('This browser cannot encode video. Use a recent Chrome, Edge, Safari (17+) or Firefox (130+).');
   }
@@ -101,6 +114,40 @@ export async function exportVideo(
   }
   const buffer = output.target.buffer;
   if (!buffer) throw new Error('Video encoding produced no data.');
-  downloadBlob(new Blob([buffer], { type: fmt.mime }), exportFileName(scene, width, height, fmt.ext));
-  return format;
+  return { blob: new Blob([buffer], { type: fmt.mime }), name: exportFileName(scene, width, height, fmt.ext), format };
+}
+
+/** Does a scene's video run once (the journey, the real-cell view) rather than for whole loops? */
+export const runsOnce = (scene: Scene) => scene.module.kind === 'journey' || scene.module.kind === 'realCell';
+
+/**
+ * Several tabs' videos in one go, one after another, with the same settings
+ * (each tab at its own canvas size; a looping tab gets the chosen number of
+ * loops). Saved into a folder the user picks where the browser allows it
+ * (Chrome, Edge: pick it before this is called, from the click), otherwise
+ * all together in one ZIP. File names start with the tab's number.
+ */
+export async function exportVideoBatch(
+  tabs: { scene: Scene; number: number }[],
+  opts: VideoOptions,
+  dir: DirHandle | null,
+  onProgress: (tab: number, done: number, total: number) => void,
+  signal: AbortSignal,
+): Promise<{ count: number; zipped: boolean; webm: number }> {
+  const zip = dir ? null : new ZipWriter();
+  let webm = 0;
+  for (const [k, { scene, number }] of tabs.entries()) {
+    const v = await encodeVideo(scene, { ...opts, loops: runsOnce(scene) ? 1 : opts.loops }, (d, n) => onProgress(k, d, n), signal);
+    if (v.format !== opts.format) webm++;
+    const name = `${number}_${v.name}`;
+    if (dir) {
+      const file = await (await dir.getFileHandle(name, { create: true })).createWritable();
+      await file.write(v.blob);
+      await file.close();
+    } else {
+      zip!.add(name, new Uint8Array(await v.blob.arrayBuffer()));
+    }
+  }
+  if (zip) downloadBlob(zip.finish(), `pathway-tabs-${tabs.map((t) => t.number).join('')}.zip`);
+  return { count: tabs.length, zipped: !dir, webm };
 }

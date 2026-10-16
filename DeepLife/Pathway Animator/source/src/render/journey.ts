@@ -89,17 +89,44 @@ const ease = (x: number) => {
 };
 const lerp = (a: Vec2, b: Vec2, t: number): Vec2 => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
 
-/** The centre cell of the journey's tissue, and the camera that shows it alone at the single cell's size. */
+/** Share of the frame kept clear round the centre cell in section 1 (each side). */
+const HERO_MARGIN = 0.05;
+
+/**
+ * The centre cell of the journey's tissue, and the camera that shows it alone
+ * at the single cell's size: centred on its bounding box, and zoomed out if
+ * need be so the whole cell, receptors included, fits the frame with a margin
+ * (an imported cell is rarely round, so its area alone would let a long or
+ * angular cell run off the top and bottom).
+ */
 export function heroView(scene: Scene): { center: Vec2; zoom: number } {
   const { tissue } = journeyScenes(scene);
   const C = { x: tissue.canvas.width / 2, y: tissue.canvas.height / 2 };
   const k = Math.max(0.05, scene.cellMap.detailScale);
-  const hero = buildGeometry(tissue).cells.find((c) => c.hero);
+  const g = buildGeometry(tissue);
+  const hero = g.cells.find((c) => c.hero);
   // A generated tissue's centre cell is the single cell scaled by k about the canvas centre.
-  if (!hero || scene.cellMap.around) return { center: C, zoom: 1 / k };
-  const R = Math.sqrt(Math.abs(polygonArea(hero.cell.points)) / Math.PI);
+  const generated = !hero || scene.cellMap.around;
+  const cell = generated
+    ? g.cells.reduce<(typeof g.cells)[number] | undefined>((best, c) =>
+      !best || Math.hypot(c.cell.center.x - C.x, c.cell.center.y - C.y) < Math.hypot(best.cell.center.x - C.x, best.cell.center.y - C.y) ? c : best, undefined)
+    : hero;
+  if (!cell) return { center: C, zoom: 1 / k };
   const single = scene.cell.radius * Math.min(scene.canvas.width, scene.canvas.height);
-  return { center: hero.cell.center, zoom: Math.max(1, single / Math.max(1, R)) };
+  const want = generated ? 1 / k : Math.max(1, single / Math.max(1, Math.sqrt(Math.abs(polygonArea(cell.cell.points)) / Math.PI)));
+
+  // The cell's extent, receptors included (a capsule sits across the membrane,
+  // reaching out about half its length; a little more for its stroke).
+  const out = 0.6 * scene.style.receptorSize.length * g.scale;
+  const xs = cell.cell.points.map((p) => p.x), ys = cell.cell.points.map((p) => p.y);
+  const x0 = Math.min(...xs) - out, x1 = Math.max(...xs) + out, y0 = Math.min(...ys) - out, y1 = Math.max(...ys) + out;
+  const center = generated ? C : { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
+  // The frame as the tissue sees it (sides swapped when the tissue is turned onto a portrait frame).
+  const turned = isPortrait(scene);
+  const fw = turned ? scene.canvas.height : scene.canvas.width, fh = turned ? scene.canvas.width : scene.canvas.height;
+  const halfW = Math.max(center.x - x0, x1 - center.x), halfH = Math.max(center.y - y0, y1 - center.y);
+  const fit = Math.min((fw * (0.5 - HERO_MARGIN)) / halfW, (fh * (0.5 - HERO_MARGIN)) / halfH);
+  return { center, zoom: Math.min(want, fit) };
 }
 
 /** Cameras and fades at journey time tau (seconds from the start). Pure. */

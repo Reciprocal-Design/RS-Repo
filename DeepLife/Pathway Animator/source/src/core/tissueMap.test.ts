@@ -92,8 +92,43 @@ describe('a shared tissue map', () => {
   it('starts the journey on the selected cell', () => {
     const s = view('journey', 'c3');
     const g = buildGeometry(journeyScenes(s).tissue);
-    expect(g.cells.find((c) => c.hero)!.id).toBe('c3');
-    expect(heroView(s).center).toEqual(g.cells.find((c) => c.hero)!.cell.center);
+    const hero = g.cells.find((c) => c.hero)!;
+    expect(hero.id).toBe('c3');
+    // Centred on the selected cell (its bounding box), which lies wholly in the frame.
+    const v = heroView(s);
+    const xs = hero.cell.points.map((p) => p.x), ys = hero.cell.points.map((p) => p.y);
+    expect(v.center.x).toBeCloseTo((Math.min(...xs) + Math.max(...xs)) / 2, 6);
+    expect(v.center.y).toBeCloseTo((Math.min(...ys) + Math.max(...ys)) / 2, 6);
+    for (const p of hero.cell.points) {
+      const x = s.canvas.width / 2 + (p.x - v.center.x) * v.zoom, y = s.canvas.height / 2 + (p.y - v.center.y) * v.zoom;
+      expect(x).toBeGreaterThan(0);
+      expect(x).toBeLessThan(s.canvas.width);
+      expect(y).toBeGreaterThan(0);
+      expect(y).toBeLessThan(s.canvas.height);
+    }
+  });
+
+  it('never crops the starting cell, even a long one, in either layout', () => {
+    for (const [w, h] of [[1920, 1080], [1080, 1350]]) {
+      // A tall, thin hexagon: by area alone it would be zoomed far past the frame's height.
+      const tall: MapCell = {
+        id: 'c1', enabled: true, seed: 1, nucleus: null,
+        membrane: [0, -300, 60, -150, 60, 150, 0, 300, -60, 150, -60, -150],
+      };
+      const s0 = moduleScene('journey', 7);
+      const s = withTissueMap({ ...s0, canvas: { ...s0.canvas, width: w, height: h } },
+        { name: 'tall.svg', viewBox: { x: -400, y: -400, width: 800, height: 800 }, cells: [tall] }, 'c1');
+      const g = buildGeometry(journeyScenes(s).tissue);
+      const hero = g.cells.find((c) => c.hero)!;
+      const v = heroView(s);
+      const turned = h > w;
+      // The frame as the tissue sees it (sides swapped when turned onto a portrait frame).
+      const fw = turned ? h : w, fh = turned ? w : h;
+      for (const p of hero.cell.points) {
+        expect(Math.abs(p.x - v.center.x) * v.zoom).toBeLessThan(fw / 2);
+        expect(Math.abs(p.y - v.center.y) * v.zoom).toBeLessThan(fh / 2);
+      }
+    }
   });
 });
 

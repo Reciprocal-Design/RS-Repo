@@ -4,8 +4,9 @@ import { planVideo, VIDEO_FPS, videoSize, videoSizeError } from '../core/video';
 import { Section, Select, Toggle } from './controls';
 import { exportPng, exportSvg, pngSize, pngSizeError, readSceneFile, saveSceneJson } from './exporters';
 import { useApp } from './store';
-import { exportVideo, videoSupported, type VideoFormat, type VideoQuality } from './videoExport';
-import { canPickFolder, exportPngSequence, frameName } from './sequenceExport';
+import { exportVideo, exportVideoBatch, videoSupported, type VideoFormat, type VideoQuality } from './videoExport';
+import { canPickFolder, exportPngSequence, frameName, pickFolder, type DirHandle } from './sequenceExport';
+import { moduleInfo } from '../core/modules';
 import { JOURNEY_SECTIONS } from '../render/journey';
 
 type Msg = { text: string; error?: boolean } | null;
@@ -22,7 +23,10 @@ function VideoExport({ busy, setBusy, setMessage }: { busy: boolean; setBusy: (b
   const [transparent, setTransparent] = useState(false);
   const alpha = transparent && format === 'webm';
   const [progress, setProgress] = useState<number | null>(null);
+  // Batch export: which of the six tabs is being encoded (null when not batching).
+  const [batchTab, setBatchTab] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const tabs = useApp((s) => s.tabs);
 
   // The journey runs once, start to end.
   const looping = loops(scene) && scene.module.kind !== 'journey' && scene.module.kind !== 'realCell';
@@ -49,6 +53,51 @@ function VideoExport({ busy, setBusy, setMessage }: { busy: boolean; setBusy: (b
     } finally {
       setBusy(false);
       setProgress(null);
+      abortRef.current = null;
+    }
+  };
+
+  // Tabs 1–6 (the client modules), each as its own video with these settings.
+  const BATCH = 6;
+  const batch = tabs.slice(0, BATCH).map((sc, i) => ({ scene: sc, number: i + 1 }));
+  const batchSizeError = batch.map((b) => {
+    const v = videoSize(b.scene, scale);
+    return videoSizeError(v.width, v.height);
+  }).find(Boolean) ?? null;
+  const startBatch = async () => {
+    // Ask for the folder first, straight from the click (browsers require that).
+    let dir: DirHandle | null = null;
+    if (canPickFolder()) {
+      try {
+        dir = await pickFolder('video-tabs');
+      } catch {
+        return; // the user closed the folder picker
+      }
+    }
+    const ac = new AbortController();
+    abortRef.current = ac;
+    setBusy(true);
+    setPlaying(false);
+    setMessage(null);
+    setProgress(0);
+    setBatchTab(0);
+    try {
+      const r = await exportVideoBatch(batch, { scale, fps, loops: loopCount, quality, format, transparent: alpha }, dir,
+        (k, d, n) => {
+          setBatchTab(k);
+          setProgress((k + d / n) / batch.length);
+        }, ac.signal);
+      setMessage({
+        text: `${r.count} videos saved${r.zipped ? ' in one ZIP' : ''}.` +
+          (r.webm ? ` ${r.webm} saved as WebM: this browser cannot encode MP4 (H.264).` : ''),
+      });
+    } catch (e) {
+      const err = e as Error;
+      setMessage(err.name === 'AbortError' ? { text: 'Video export cancelled.' } : { text: err.message, error: true });
+    } finally {
+      setBusy(false);
+      setProgress(null);
+      setBatchTab(null);
       abortRef.current = null;
     }
   };
@@ -115,15 +164,33 @@ function VideoExport({ busy, setBusy, setMessage }: { busy: boolean; setBusy: (b
                 alpha ? 'Transparent background.' : format === 'webm' ? 'The background is included.' : 'The background is included (MP4 has no transparency: choose WebM for that).'}`}
           </p>
           {progress === null ? (
-            <button className="btn wide" disabled={busy || !!sizeError} onClick={start}>
-              Export video
-            </button>
+            <>
+              <button className="btn wide" disabled={busy || !!sizeError} onClick={start}>
+                Export video
+              </button>
+              <button
+                className="btn wide"
+                disabled={busy || !!batchSizeError}
+                title="Tabs 1–6, one video each, with the settings above"
+                onClick={startBatch}
+              >
+                Export tabs 1–{BATCH} ({BATCH} videos)
+              </button>
+              <p className={`hint ${batchSizeError ? 'error' : ''}`}>
+                {batchSizeError ??
+                  `${tabs.slice(0, BATCH).map((_, i) => moduleInfo(tabs[i].module.kind).label).join(', ')}: each with the settings above` +
+                    `${looping ? ` (looping tabs: ${loopCount} loop${loopCount > 1 ? 's' : ''})` : ''}. ` +
+                    (canPickFolder() ? 'You pick a folder to save them in.' : 'Saved together in one ZIP.')}
+              </p>
+            </>
           ) : (
             <div className="row">
               <div className="progress grow" title={`${Math.round(progress * 100)}%`}>
                 <i style={{ width: `${progress * 100}%` }} />
               </div>
-              <span className="hint">{Math.round(progress * 100)}%</span>
+              <span className="hint">
+                {batchTab !== null ? `Tab ${batchTab + 1} of ${BATCH} · ` : ''}{Math.round(progress * 100)}%
+              </span>
               <button className="btn small" onClick={() => abortRef.current?.abort()}>Cancel</button>
             </div>
           )}

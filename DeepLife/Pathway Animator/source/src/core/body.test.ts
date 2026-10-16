@@ -82,7 +82,9 @@ describe('journey', () => {
     const L = s.module.sectionLength;
     const k = s.cellMap.detailScale;
     const start = journeyState(s, 0);
-    expect(start.tissue.zoom).toBeCloseTo(1 / k);
+    // The single cell's size, or a little less if that would crop it (receptors included).
+    expect(start.tissue.zoom).toBeLessThanOrEqual(1 / k + 1e-9);
+    expect(start.tissue.zoom).toBeGreaterThan(0.8 / k);
     expect(start.tissue.neighbours).toBe(0);
     expect(start.body.alpha).toBe(0);
     const end = journeyState(s, 5 * L - 1e-6);

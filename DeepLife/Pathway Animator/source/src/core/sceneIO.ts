@@ -159,6 +159,9 @@ export function normalizeScene(raw: unknown): Scene {
   if (s.style.gradientStops.length < 2) s.style.gradientStops = [...base.style.gradientStops];
   if (!['capsule', 'diamond', 'capsuleDiamond'].includes(s.style.receptorStyle)) s.style.receptorStyle = base.style.receptorStyle;
   s.style.idleOpacity = num(s.style.idleOpacity, base.style.idleOpacity, 0, 1);
+  // Inactive nodes are hidden by default now; scenes saved before the setting existed showed them, and still do.
+  const rawStyle = isObj(raw.style) ? raw.style : {};
+  s.style.showInactiveNodes = bool(rawStyle.showInactiveNodes, true);
   for (const [o, d] of [[s.cell, base.cell], [s.nucleus, base.nucleus]] as const) {
     if (o.outlineStyle !== 'line' && o.outlineStyle !== 'glow') o.outlineStyle = d.outlineStyle;
     o.glowWidth = num(o.glowWidth, d.glowWidth, 0, 400);

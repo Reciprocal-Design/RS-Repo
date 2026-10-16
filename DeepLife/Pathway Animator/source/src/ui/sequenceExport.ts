@@ -11,7 +11,7 @@ export interface SequenceOptions {
   transparent: boolean;
 }
 
-interface DirHandle {
+export interface DirHandle {
   getFileHandle(name: string, opts: { create: boolean }): Promise<{
     createWritable(): Promise<{ write(data: Blob): Promise<void>; close(): Promise<void> }>;
   }>;
@@ -20,6 +20,10 @@ type DirPicker = (opts?: { mode?: 'readwrite'; id?: string }) => Promise<DirHand
 
 /** Can this browser write files into a folder (Chrome, Edge)? Others get a ZIP. */
 export const canPickFolder = () => typeof window !== 'undefined' && 'showDirectoryPicker' in window;
+
+/** Ask for a folder to save into (Chrome, Edge); call straight from a click. */
+export const pickFolder = (id: string) =>
+  (window as unknown as { showDirectoryPicker: DirPicker }).showDirectoryPicker({ mode: 'readwrite', id });
 
 /** Frame file name: `{scene}_0001.png`. */
 export const frameName = (scene: Scene, i: number, digits = 4) =>
