@@ -1,7 +1,7 @@
 import { organCenter } from '../core/body';
 import { heroCellOf, mapExtent, middleCellId } from '../core/cellMap';
 import { buildGeometry } from '../core/geometry';
-import { polygonArea } from '../core/polygon';
+import { pointInPolygon, polygonArea } from '../core/polygon';
 import { cycleTime } from '../core/timeline';
 import type { Scene, Vec2 } from '../core/types';
 import { drawDisplayList, type CanvasDrawOptions } from './canvas';
@@ -129,19 +129,70 @@ export function heroView(scene: Scene): { center: Vec2; zoom: number } {
   return { center, zoom: Math.min(want, fit) };
 }
 
+/**
+ * How far into the tissue layer's soft edge the frame may reach, as a share of
+ * the vignette's radius: the layer is fully opaque out to EDGE_FADE_START and
+ * still about three-quarters opaque here, so at most the corners darken a touch.
+ */
+const FILL_REACH = 0.72;
+const tissueViews = new WeakMap<Scene, { center: Vec2; zoom: number }>();
+
+/**
+ * The camera for the tissue section: centred on the centre cell, zoomed in
+ * just enough that tissue fills the whole frame (no edge of the tissue layer,
+ * and on an imported map no background beyond its cells, shows), then scaled
+ * by the "Tissue zoom" setting. Never closer than the cell shot, so the
+ * camera always pulls back from the cell into the tissue.
+ */
+export function tissueView(scene: Scene): { center: Vec2; zoom: number } {
+  const hit = tissueViews.get(scene);
+  if (hit) return hit;
+  const { tissue } = journeyScenes(scene);
+  const hero = heroView(scene);
+  const g = buildGeometry(tissue);
+  const center = scene.cellMap.around ? { x: tissue.canvas.width / 2, y: tissue.canvas.height / 2 } : hero.center;
+  const turned = isPortrait(scene);
+  const fw = turned ? scene.canvas.height : scene.canvas.width, fh = turned ? scene.canvas.width : scene.canvas.height;
+  // The layer's soft edge (see drawLayer), and on a map the cells themselves.
+  const e = mapExtent(tissue);
+  const ex = e.x + e.w / 2, ey = e.y + e.h / 2, ea = (e.w / 2) * 1.15, eb = (e.h / 2) * 1.15;
+  const map = !scene.cellMap.around;
+  const radii = g.cells.map((c) => Math.sqrt(Math.abs(polygonArea(c.cell.points)) / Math.PI)).sort((a, b) => a - b);
+  const gap = 0.3 * (radii[Math.floor(radii.length / 2)] ?? 0); // walls between cells may have a thin gap
+  const nearCell = (p: Vec2) => g.cells.some((c) => pointInPolygon(p, c.cell.points)
+    || c.cell.points.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < gap));
+  const covered = (z: number) => {
+    const hw = fw / 2 / z, hh = fh / 2 / z;
+    for (let i = 0; i <= 6; i++) {
+      for (let j = 0; j <= 6; j++) {
+        const p = { x: center.x + hw * (i / 3 - 1), y: center.y + hh * (j / 3 - 1) };
+        if (Math.hypot((p.x - ex) / ea, (p.y - ey) / eb) > FILL_REACH) return false;
+        if (map && !nearCell(p)) return false;
+      }
+    }
+    return true;
+  };
+  let fill = 1;
+  while (fill < hero.zoom && !covered(fill)) fill *= 1.02;
+  const zoom = Math.min(hero.zoom, Math.max(1e-3, fill * Math.max(0.1, scene.module.tissueZoom ?? 1)));
+  const view = { center, zoom };
+  tissueViews.set(scene, view);
+  return view;
+}
+
 /** Cameras and fades at journey time tau (seconds from the start). Pure. */
 export function journeyState(scene: Scene, tau: number): JourneyState {
   const L = sectionLength(scene);
-  // C: the frame's centre; T: the tissue's own centre (the same unless the tissue is turned).
+  // C: the frame's centre.
   const C = { x: scene.canvas.width / 2, y: scene.canvas.height / 2 };
-  const { tissue: ts } = journeyScenes(scene);
-  const T = { x: ts.canvas.width / 2, y: ts.canvas.height / 2 };
   const A = organCenter(scene, scene.module.organ);
   const hero = heroView(scene);
+  // The tissue section's camera: zoomed in so tissue fills the frame.
+  const tv = tissueView(scene);
   const section = Math.max(0, Math.min(4, Math.floor(tau / L)));
   const u = clamp01((tau - section * L) / L);
 
-  const tissue = { at: C, origin: T, zoom: 1, alpha: 1, neighbours: 1, turn: isPortrait(scene) };
+  const tissue = { at: C, origin: tv.center, zoom: tv.zoom, alpha: 1, neighbours: 1, turn: isPortrait(scene) };
   const body = { at: C, origin: A, zoom: BODY_ZOOM, alpha: 0 };
   if (section === 0) {
     // The centre cell alone, centred, at the single cell's size.
@@ -150,15 +201,15 @@ export function journeyState(scene: Scene, tau: number): JourneyState {
     tissue.neighbours = 0;
   } else if (section === 1) {
     const e = ease(u);
-    tissue.origin = lerp(hero.center, T, e);
-    tissue.zoom = hero.zoom ** (1 - e); // even zoom speed on a log scale
+    tissue.origin = lerp(hero.center, tv.center, e);
+    tissue.zoom = hero.zoom * (tv.zoom / hero.zoom) ** e; // even zoom speed on a log scale
     tissue.neighbours = smooth(0.1, 0.8, u);
   } else if (section === 3) {
     const e = ease(u);
     body.zoom = BODY_ZOOM ** (1 - e);
     body.at = lerp(C, A, e);
     body.alpha = smooth(0.1, 0.6, u);
-    tissue.zoom = body.zoom / BODY_ZOOM;
+    tissue.zoom = (tv.zoom * body.zoom) / BODY_ZOOM;
     tissue.at = body.at;
     tissue.alpha = 1 - smooth(0.15, 0.6, u);
   } else if (section === 4) {
@@ -166,7 +217,7 @@ export function journeyState(scene: Scene, tau: number): JourneyState {
     body.at = A;
     body.alpha = 1;
     // Faded out, but where section 4 left it.
-    tissue.zoom = 1 / BODY_ZOOM;
+    tissue.zoom = tv.zoom / BODY_ZOOM;
     tissue.at = A;
     tissue.alpha = 0;
   }

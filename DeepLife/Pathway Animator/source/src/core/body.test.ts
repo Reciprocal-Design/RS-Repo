@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildDisplayList } from '../render/displayList';
-import { heroView, journeyScenes, journeyState } from '../render/journey';
+import { heroView, journeyScenes, journeyState, tissueView } from '../render/journey';
 import { displayListToSvg } from '../render/svg';
 import { ORGANS, organCenter } from './body';
 import { buildGeometry } from './geometry';
@@ -137,7 +137,7 @@ describe('journey on an imported map', () => {
     expect(g.edges.filter((e) => e.link).every((e) => !e.to.startsWith('p1-'))).toBe(true);
   });
 
-  it('pulls back from the middle cell to the whole map with no jumps', () => {
+  it('pulls back from the middle cell into the tissue with no jumps', () => {
     const s = gridJourney();
     const L = s.module.sectionLength;
     for (let b = 1; b < 3; b++) {
@@ -146,7 +146,25 @@ describe('journey on an imported map', () => {
       expect(c.tissue.origin.x).toBeCloseTo(a.tissue.origin.x, 2);
       expect(c.tissue.origin.y).toBeCloseTo(a.tissue.origin.y, 2);
     }
-    expect(journeyState(s, 2.5 * L).tissue.zoom).toBe(1);
+    // The tissue section is zoomed in from the whole map (zoom 1) so tissue
+    // fills the frame, but stays further out than the cell shot.
+    const mid = journeyState(s, 2.5 * L).tissue;
+    const tv = tissueView(s);
+    expect(mid.zoom).toBeCloseTo(tv.zoom, 9);
+    expect(mid.origin).toEqual(tv.center);
+    expect(tv.zoom).toBeGreaterThan(1);
+    expect(tv.zoom).toBeLessThanOrEqual(heroView(s).zoom);
+    // Every point of the frame lands on the map's cells (or the thin walls between them).
+    const g = buildGeometry(journeyScenes(s).tissue);
+    const xs = g.cells.flatMap((c) => c.cell.points.map((p) => p.x)), ys = g.cells.flatMap((c) => c.cell.points.map((p) => p.y));
+    const hw = s.canvas.width / 2 / tv.zoom, hh = s.canvas.height / 2 / tv.zoom;
+    expect(tv.center.x - hw).toBeGreaterThanOrEqual(Math.min(...xs) - 1);
+    expect(tv.center.x + hw).toBeLessThanOrEqual(Math.max(...xs) + 1);
+    expect(tv.center.y - hh).toBeGreaterThanOrEqual(Math.min(...ys) - 1);
+    expect(tv.center.y + hh).toBeLessThanOrEqual(Math.max(...ys) + 1);
+    // The setting scales it.
+    const closer = { ...s, module: { ...s.module, tissueZoom: 1.5 } };
+    expect(tissueView(closer).zoom).toBeCloseTo(Math.min(heroView(closer).zoom, tv.zoom * 1.5), 6);
   });
 });
 

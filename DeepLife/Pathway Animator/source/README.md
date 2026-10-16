@@ -70,7 +70,8 @@ cell or generated tissue.
    the figure are kept. The image is saved in the scene JSON and used by the Body and journey tabs.
 8. **Cell → tissue → body** (`src/render/journey.ts`): the website's scroll sequence, in five sections of equal
    length: cell, cell → tissue (the camera pulls back from the centre cell as the neighbours fade in),
-   tissue, tissue → body (the tissue shrinks into the chosen organ and fades as the body fades in round it),
+   tissue (zoomed in just enough that tissue fills the frame, no edge of the cell layer showing; "Tissue zoom"
+   goes closer or pulls back), tissue → body (the tissue shrinks into the chosen organ and fades as the body fades in round it),
    body. The tissue is the generated one round the single cell, or an SVG map imported under Cell map: then the
    cell nearest the map's middle is the centre cell, shown alone at the single cell's size to start with (every
    other cell, and the links to them, faded out) and starting the signal. The tissue layer fades out towards its

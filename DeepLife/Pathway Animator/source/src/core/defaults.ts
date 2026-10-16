@@ -38,6 +38,7 @@ export function defaultModule(kind: ModuleKind = 'custom'): ModuleSettings {
     warningSize: 1,
     organ: 'heart',
     sectionLength: 3,
+    tissueZoom: 1,
     bodyGlow: 0.5,
     bodyMesh: false,
     bodyParticles: true,

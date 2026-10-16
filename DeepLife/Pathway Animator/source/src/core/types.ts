@@ -135,6 +135,12 @@ export interface ModuleSettings {
   organ: OrganId;
   /** Journey: seconds per section (cell, cell → tissue, tissue, tissue → body, body). */
   sectionLength: number;
+  /**
+   * Journey: how close the camera is in the tissue section, relative to the
+   * zoom that just fills the frame with tissue (1: no edge of the tissue
+   * layer shows; below 1 pulls back towards the whole tissue; above 1 closer).
+   */
+  tissueZoom: number;
   /** Body: how far the glow reaches in from the outline, 0–1. */
   bodyGlow: number;
   /** Body: the wireframe mesh. */
