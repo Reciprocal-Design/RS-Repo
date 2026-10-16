@@ -28,7 +28,8 @@ a preset scene plus a pure transform of the geometry (`src/core/modules.ts`):
 
 **One tissue map for every cell view.** "Tissue map → Upload SVG tissue map…" (on tabs 1–6 and the journey) takes
 one SVG of the tissue and applies it everywhere; click a cell in the thumbnail (or in the preview on tab 5) to
-select it. Tabs 1–4 then show only the selected cell, as the single cell (its own shape, fitted to the canvas);
+select it. "↺ 90°" / "↻ 90°" and "Rotation" (any angle, −180° to 180°) turn the map in every view, about its
+middle; "Reset" puts it back as uploaded. Tabs 1–4 then show only the selected cell, as the single cell (its own shape, fitted to the canvas);
 tab 5 shows the map with that cell in the middle, zoomed in until about two cells show beyond it along the
 canvas's short side ("Cells shown beyond it"; 0 shows the whole map); tab 6 shows the map twice; the journey
 starts on it. The
@@ -133,7 +134,8 @@ own pathway has run), through the far side of the cell (never back across the pa
 arrives at a receptor of the neighbour: the neighbour's own where that faces the sender, otherwise a relay
 receptor made on the facing wall. Where the signal has a source (a selected or centre cell, or the side a second
 tissue receives it on), the other cells turn their receptors to face it. The "Relay chain" sets how many cells in
-a row a signal can pass on; as each step is a whole pathway, long chains make long loops. The map is saved in the scene JSON. Try
+a row a signal can pass on; as each step is a whole pathway, long chains make long loops. "↺ 90°", "↻ 90°" and
+"Rotation" turn the imported map (cells keep their pathways and seeds). The map, turned, is saved in the scene JSON. Try
 `../samples/cell-cluster-voronoi.svg`.
 
 Status: milestone 5 (PNG and SVG export, scene JSON save/load), plus cell maps. See `milestone-5.png`.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildDisplayList } from '../render/displayList';
 import { heroView, journeyScenes } from '../render/journey';
-import { neighbourCells, singleCellView } from './cellMap';
+import { neighbourCells, rotateMap, singleCellView } from './cellMap';
 import { buildGeometry } from './geometry';
 import { moduleScene, withHero, withoutTissueMap, withTissueMap, type TissueUpload } from './modules';
 import { ORGANIC_NAME, organicTissue } from './organic';
@@ -295,5 +295,62 @@ describe('neighbouring cells round a single cell', () => {
       const s = on(moduleScene(kind, 7));
       expect(singleCellView(s)).toBe(false);
     }
+  });
+});
+
+describe('turning an uploaded map', () => {
+  /** A 3 × 2 grid: wider than tall, so a quarter turn shows. */
+  function wide(): TissueUpload {
+    const g = grid(3);
+    return { ...g, viewBox: { x: 0, y: 0, width: 300, height: 200 }, cells: g.cells.slice(0, 6) };
+  }
+
+  it('turns the cells about the middle and swaps the viewBox on a quarter turn', () => {
+    const s = withTissueMap(moduleScene('tissue', 7), wide(), 'c2');
+    const r = rotateMap(s.cellMap, 90);
+    expect(r.rotation).toBe(90);
+    expect(r.viewBox).toEqual({ x: 50, y: -50, width: 200, height: 300 });
+    // Clockwise (y down): the top-left corner of c1 goes to the top right.
+    expect(r.cells[0].membrane.slice(0, 2)).toEqual([248, -48]);
+    // Ids, seeds, the selected cell and the view's settings stay.
+    expect(r.cells.map((c) => [c.id, c.seed])).toEqual(s.cellMap.cells.map((c) => [c.id, c.seed]));
+    expect(r).toMatchObject({ heroId: 'c2', centerHero: true, rings: 2 });
+  });
+
+  it('comes back exactly after four quarter turns, or back to 0', () => {
+    const cm = withTissueMap(moduleScene('journey', 7), wide(), 'c2').cellMap;
+    let r = cm;
+    for (let i = 1; i <= 4; i++) r = rotateMap(r, 90 * i);
+    expect(r.cells).toEqual(cm.cells);
+    expect(r.viewBox).toEqual(cm.viewBox);
+    expect(r.rotation).toBeUndefined();
+    const back = rotateMap(rotateMap(cm, 37), 0);
+    expect(back.viewBox).toEqual(cm.viewBox);
+    back.cells.forEach((c, i) => c.membrane.forEach((v, j) => expect(v).toBeCloseTo(cm.cells[i].membrane[j], 2)));
+  });
+
+  it('boxes any angle round the turned map, and is saved with the scene', () => {
+    const s = withTissueMap(moduleScene('crossTissue', 7), wide(), 'c2');
+    const r = { ...s, cellMap: rotateMap(s.cellMap, 45) };
+    const w = (300 + 200) * Math.SQRT1_2;
+    expect(r.cellMap.viewBox.width).toBeCloseTo(w, 6);
+    expect(r.cellMap.viewBox.height).toBeCloseTo(w, 6);
+    for (const c of r.cellMap.cells) {
+      for (let i = 0; i < c.membrane.length; i += 2) {
+        expect(c.membrane[i]).toBeGreaterThanOrEqual(r.cellMap.viewBox.x);
+        expect(c.membrane[i]).toBeLessThanOrEqual(r.cellMap.viewBox.x + w);
+      }
+    }
+    expect(buildGeometry(r).cells.length).toBe(6);
+    const loaded = parseSceneJson(serializeScene(r));
+    expect(loaded.cellMap.rotation).toBe(45);
+    expect(loaded.cellMap.sourceViewBox).toEqual({ x: 0, y: 0, width: 300, height: 200 });
+    // Turning a loaded map goes on from where it was saved.
+    expect(rotateMap(loaded.cellMap, 0).viewBox).toEqual({ x: 0, y: 0, width: 300, height: 200 });
+  });
+
+  it('leaves a generated tissue alone', () => {
+    const t = moduleScene('tissue', 7).cellMap;
+    expect(rotateMap(t, 90)).toBe(t);
   });
 });

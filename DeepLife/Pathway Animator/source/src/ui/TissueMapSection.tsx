@@ -3,6 +3,7 @@ import { heroCellOf } from '../core/cellMap';
 import { SINGLE_CELL } from '../core/modules';
 import { importCellMapSvg } from '../core/svgImport';
 import { Section } from './controls';
+import { MapRotation } from './MapRotation';
 import { useApp } from './store';
 
 const points = (a: number[]) => {
@@ -20,6 +21,7 @@ export function TissueMapSection() {
   const setTissueMap = useApp((s) => s.setTissueMap);
   const setHeroCell = useApp((s) => s.setHeroCell);
   const clearTissueMap = useApp((s) => s.clearTissueMap);
+  const rotateTissueMap = useApp((s) => s.rotateTissueMap);
   const fileRef = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const kind = scene.module.kind;
@@ -88,6 +90,7 @@ export function TissueMapSection() {
             {cm.name || 'Map'}: cell {cm.cells.findIndex((c) => c.id === hero.id) + 1} of {cm.cells.length} selected. Click
             a cell above to select another; it applies to every view. {what}
           </p>
+          <MapRotation value={cm.rotation ?? 0} onChange={rotateTissueMap} />
           <button className="btn small" onClick={() => { clearTissueMap(); setMessage(null); }}>Remove the map</button>
         </>
       ) : (

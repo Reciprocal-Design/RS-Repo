@@ -412,3 +412,52 @@ export function suggestedDetailScale(scene: Scene, cm: Pick<CellMap, 'viewBox' |
   const single = scene.cell.radius * Math.min(scene.canvas.width, scene.canvas.height);
   return +Math.max(0.25, Math.min(1, Math.sqrt(mean / single))).toFixed(2);
 }
+
+/** An angle in degrees, wrapped to -180…180. */
+const wrapDeg = (d: number) => {
+  const w = ((((d + 180) % 360) + 360) % 360) - 180;
+  return w === -180 && d > 0 ? 180 : w;
+};
+/** Exact 0 and ±1 at right angles, so quarter turns keep coordinates exact. */
+const snapUnit = (v: number) => (Math.abs(v) < 1e-12 ? 0 : Math.abs(Math.abs(v) - 1) < 1e-12 ? Math.sign(v) : v);
+
+/**
+ * Turn an imported map to `deg` degrees (clockwise) from the SVG as uploaded,
+ * about the middle of its viewBox: every cell's membrane and nucleus turn,
+ * and the viewBox becomes the box round the turned original (width and
+ * height swap on a quarter turn). Cells keep their ids, seeds and on/off.
+ */
+export function rotateMap(cm: CellMap, deg: number): CellMap {
+  const to = wrapDeg(deg);
+  const from = cm.rotation ?? 0;
+  if (cm.around || !cm.cells.length || to === from) return cm;
+  const src = cm.sourceViewBox ?? cm.viewBox;
+  const cx = src.x + src.width / 2;
+  const cy = src.y + src.height / 2;
+  const a = ((to - from) * Math.PI) / 180;
+  const c = snapUnit(Math.cos(a));
+  const s = snapUnit(Math.sin(a));
+  const r = (v: number) => Math.round(v * 1000) / 1000;
+  const turn = (p: number[]) => {
+    const out = new Array<number>(p.length);
+    for (let i = 0; i + 1 < p.length; i += 2) {
+      const x = p[i] - cx;
+      const y = p[i + 1] - cy;
+      out[i] = r(cx + x * c - y * s);
+      out[i + 1] = r(cy + x * s + y * c);
+    }
+    return out;
+  };
+  const t = (to * Math.PI) / 180;
+  const ct = Math.abs(snapUnit(Math.cos(t)));
+  const st = Math.abs(snapUnit(Math.sin(t)));
+  const w = src.width * ct + src.height * st;
+  const h = src.width * st + src.height * ct;
+  const { rotation: _r, sourceViewBox: _s, ...rest } = cm;
+  return {
+    ...rest,
+    cells: cm.cells.map((cell) => ({ ...cell, membrane: turn(cell.membrane), nucleus: cell.nucleus && turn(cell.nucleus) })),
+    viewBox: to === 0 ? { ...src } : { x: cx - w / 2, y: cy - h / 2, width: w, height: h },
+    ...(to === 0 ? {} : { rotation: to, sourceViewBox: src }),
+  };
+}

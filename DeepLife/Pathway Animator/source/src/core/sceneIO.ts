@@ -73,6 +73,11 @@ function normalizeCellMap(raw: unknown): CellMap {
     });
   }
   const around = bool(raw.around, false);
+  const rotation = num(raw.rotation, 0, -180, 180);
+  const svb = isObj(raw.sourceViewBox) ? raw.sourceViewBox : null;
+  const sourceViewBox = svb && num(svb.width, 0) > 0 && num(svb.height, 0) > 0
+    ? { x: num(svb.x, 0), y: num(svb.y, 0), width: num(svb.width, 1), height: num(svb.height, 1) }
+    : null;
   const heroId = typeof raw.heroId === 'string' && cells.some((c) => c.id === raw.heroId) ? raw.heroId : '';
   return {
     enabled: bool(m.enabled, false) && (cells.length > 0 || around),
@@ -92,6 +97,7 @@ function normalizeCellMap(raw: unknown): CellMap {
     startShare: num(m.startShare, base.startShare, 0, 1),
     // Maps saved before cell variation existed keep their cells alike.
     variation: num(raw.variation, 0, 0, 1),
+    ...(rotation && sourceViewBox ? { rotation, sourceViewBox } : {}),
   };
 }
 

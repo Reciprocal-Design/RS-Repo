@@ -224,6 +224,10 @@ export interface CellMap {
    * cells show beyond it, along the canvas's short side (0: the whole map).
    */
   rings: number;
+  /** Degrees the imported map is turned (clockwise) from the SVG as uploaded; the cells and viewBox are stored turned. */
+  rotation?: number;
+  /** The viewBox as uploaded, before turning (kept while rotation is not 0). */
+  sourceViewBox?: { x: number; y: number; width: number; height: number };
   /** Derived, never saved: the part of the canvas the map is fitted into (the whole canvas when absent). */
   frame?: { x: number; y: number; w: number; h: number };
 }

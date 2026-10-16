@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react';
-import { mapCells, suggestedDetailScale } from '../core/cellMap';
+import { mapCells, rotateMap, suggestedDetailScale } from '../core/cellMap';
 import { defaultCellMap } from '../core/defaults';
 import { randomSeed } from '../core/rng';
 import { importCellMapSvg } from '../core/svgImport';
 import { Section, Slider, Toggle } from './controls';
+import { MapRotation } from './MapRotation';
 import { useApp } from './store';
 
 /** Import an SVG of a cell cluster and grow pathways in its cells. */
@@ -140,6 +141,7 @@ export function CellMapSection() {
               </p>
             </>
           )}
+          {!m.around && <MapRotation value={m.rotation ?? 0} onChange={(deg) => setCellMap((x) => rotateMap(x, deg))} />}
           <div className="row">
             {!m.around && <button
               className="btn small grow"

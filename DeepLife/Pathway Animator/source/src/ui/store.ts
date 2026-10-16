@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { makePathway } from '../core/defaults';
-import { heroCellOf, mapCellAt, mapCells, middleCellId, soloActive } from '../core/cellMap';
+import { heroCellOf, mapCellAt, mapCells, middleCellId, rotateMap, soloActive } from '../core/cellMap';
 import { defaultCellMap } from '../core/defaults';
 import { pinkCellIds } from '../core/crossTissue';
 import { buildGeometry } from '../core/geometry';
@@ -57,6 +57,8 @@ interface AppState {
   setTissueMap: (map: TissueUpload) => void;
   /** Select a cell of the uploaded tissue map, in every view. */
   setHeroCell: (id: string) => void;
+  /** Turn the shared tissue map to this many degrees from the SVG as uploaded, in every view. */
+  rotateTissueMap: (deg: number) => void;
   /** Drop the uploaded tissue map: each view goes back to its own cell or generated tissue. */
   clearTissueMap: () => void;
 }
@@ -161,6 +163,11 @@ export const useApp = create<AppState>((set) => ({
   setHeroCell: (id) =>
     set((st) => {
       const tabs = st.tabs.map((s) => withHero(s, id));
+      return { tabs, scene: tabs[st.active] };
+    }),
+  rotateTissueMap: (deg) =>
+    set((st) => {
+      const tabs = st.tabs.map((s) => (heroCellOf(s.cellMap) ? { ...s, cellMap: rotateMap(s.cellMap, deg) } : s));
       return { tabs, scene: tabs[st.active] };
     }),
   clearTissueMap: () =>
