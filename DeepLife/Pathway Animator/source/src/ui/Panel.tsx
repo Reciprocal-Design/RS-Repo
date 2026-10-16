@@ -1,5 +1,5 @@
 import { BACKGROUND_PRESETS, CANVAS_PRESETS, DEFAULT_GRADIENT } from '../core/defaults';
-import { mapActive, soloActive } from '../core/cellMap';
+import { mapActive, singleCellView, soloActive } from '../core/cellMap';
 import { buildGeometry } from '../core/geometry';
 import type { ReceptorStyle, Scene } from '../core/types';
 import { ColorAlphaField, ColorField, NumberInput, Section, Select, Slider, Toggle } from './controls';
@@ -112,6 +112,24 @@ export function Panel() {
           onChange={(decorativeReceptors) => cell({ decorativeReceptors })} />
         <Toggle label="Show decorative receptors" checked={c.showDecorativeReceptors}
           onChange={(showDecorativeReceptors) => cell({ showDecorativeReceptors })} />
+        {singleCellView(scene) && (
+          <>
+            <Toggle label="Show neighbouring cells" checked={c.neighbours.show}
+              onChange={(show) => cell({ neighbours: { ...c.neighbours, show } })} />
+            {c.neighbours.show && (
+              <>
+                <Slider label="Neighbour opacity" value={c.neighbours.opacity} min={0} max={1}
+                  onChange={(opacity) => cell({ neighbours: { ...c.neighbours, opacity } })} />
+                <Toggle label="Monochrome neighbours" checked={c.neighbours.mono}
+                  onChange={(mono) => cell({ neighbours: { ...c.neighbours, mono } })} />
+                <p className="hint">
+                  The cells round this one, outlines only, behind it; the cell keeps its size. From the tissue map when one
+                  is uploaded, otherwise generated round the cell.
+                </p>
+              </>
+            )}
+          </>
+        )}
       </Section>
 
       <Section title="Nucleus" aside={<Toggle label="Show" checked={n.visible} onChange={(visible) => nucleus({ visible })} />}>

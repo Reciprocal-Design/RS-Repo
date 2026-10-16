@@ -127,6 +127,7 @@ export function defaultScene(seed = 1234): Scene {
       color: 'rgba(255,255,255,0.35)',
       decorativeReceptors: 7,
       showDecorativeReceptors: true,
+      neighbours: { show: false, opacity: 0.35, mono: false },
       outlineStyle: 'glow',
       glowWidth: 70,
       glowColor: '#6A35D8',

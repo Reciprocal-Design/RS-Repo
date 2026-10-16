@@ -352,6 +352,49 @@ export function mapExtent(scene: Scene) {
   return { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y };
 }
 
+/** Views that show one cell: the plain animator and the single-cell modules, alone or as a map's selected cell. */
+const SINGLE_VIEWS = ['custom', 'targetId', 'moa', 'combination', 'toxicity', 'realCell'];
+export const singleCellView = (scene: Scene) =>
+  SINGLE_VIEWS.includes(scene.module.kind) && (soloActive(scene) || !mapActive(scene));
+
+const neighbourCache = new WeakMap<Scene, { cell: Outline; nucleus: Outline }[]>();
+
+/**
+ * The cells round a single cell, to draw (outlines only) as context. With a
+ * tissue map, the selected cell's real neighbours, placed with the same
+ * transform that fits the selected cell to the canvas (so the cell keeps its
+ * size and place); otherwise a tissue generated round the single cell at its
+ * full size (its centre cell is the single cell itself, and is left out).
+ * Only cells that reach onto the canvas are kept.
+ */
+export function neighbourCells(scene: Scene): { cell: Outline; nucleus: Outline }[] {
+  const hit = neighbourCache.get(scene);
+  if (hit) return hit;
+  let out: { cell: Outline; nucleus: Outline }[] = [];
+  if (soloActive(scene)) {
+    const { map } = mapTransform(scene);
+    const { width: W, height: H } = scene.canvas;
+    const heroId = scene.cellMap.heroId;
+    for (const mc of scene.cellMap.cells) {
+      if (mc.id === heroId) continue;
+      const mem = unflat(mc.membrane, map);
+      if (mem.length < 3) continue;
+      const xs = mem.map((p) => p.x), ys = mem.map((p) => p.y);
+      if (Math.max(...xs) < 0 || Math.min(...xs) > W || Math.max(...ys) < 0 || Math.min(...ys) > H) continue;
+      const c = polygonCentroid(mem);
+      const nuc = mc.nucleus && mc.nucleus.length >= 6
+        ? unflat(mc.nucleus, map)
+        : mem.map((p) => ({ x: c.x + (p.x - c.x) * NUCLEUS_RATIO, y: c.y + (p.y - c.y) * NUCLEUS_RATIO }));
+      out.push({ cell: polygonOutline(mem, 96), nucleus: polygonOutline(nuc, 64) });
+    }
+  } else {
+    const around = { ...scene, cellMap: { ...scene.cellMap, detailScale: 1, frame: undefined, cells: [] } };
+    out = tissueCells(around).slice(1).map((t) => ({ cell: t.cell, nucleus: t.nucleus }));
+  }
+  neighbourCache.set(scene, out);
+  return out;
+}
+
 /** The map cell at a canvas point, if any. */
 export function mapCellAt(scene: Scene, p: Vec2): MapCell | undefined {
   if (!mapActive(scene)) return undefined;

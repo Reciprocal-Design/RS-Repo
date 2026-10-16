@@ -60,6 +60,12 @@ export interface Scene {
     color: string;
     decorativeReceptors: number; // inactive capsules, 0–12
     showDecorativeReceptors: boolean;
+    /**
+     * Single-cell views: the neighbouring cells drawn round the cell (their
+     * outlines only), see-through and optionally in greys. From the tissue
+     * map when one is uploaded, otherwise generated round the cell.
+     */
+    neighbours: { show: boolean; opacity: number; mono: boolean };
   };
   nucleus: OutlineLook & {
     visible: boolean;

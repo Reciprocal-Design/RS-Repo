@@ -88,6 +88,12 @@ cell or generated tissue.
    the real cell up with the network. The video is held for the session only (never saved in the scene JSON);
    every exported frame waits for the video to reach its exact frame, so PNG sequences and videos are frame-exact.
 
+**Neighbouring cells.** In the single-cell views (the plain animator, tabs 1–4 and 9), "Cell membrane → Show
+neighbouring cells" draws the cells round the cell behind it, outlines only, without changing the cell's size or
+place: the selected cell's real neighbours when a tissue map is uploaded (with the same transform that fits the
+cell to the canvas), otherwise a tissue generated round the cell. "Neighbour opacity" sets how see-through they
+are, and "Monochrome neighbours" draws them in greys.
+
 Scene JSON saves the current tab, including its module settings; a file loads into the current tab and keeps the
 tab's module.
 

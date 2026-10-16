@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { buildDisplayList } from '../render/displayList';
 import { heroView, journeyScenes } from '../render/journey';
+import { neighbourCells, singleCellView } from './cellMap';
 import { buildGeometry } from './geometry';
 import { moduleScene, withHero, withoutTissueMap, withTissueMap, type TissueUpload } from './modules';
 import { ORGANIC_NAME, organicTissue } from './organic';
 import { pointInPolygon } from './polygon';
 import { parseSceneJson, serializeScene } from './sceneIO';
 import { buildSchedule } from './timeline';
-import type { MapCell, ModuleKind } from './types';
+import type { MapCell, ModuleKind, Scene } from './types';
 
 /** An n × n tissue of square cells, 96 wide on a 100 grid (near enough to touch). */
 function grid(n = 3): TissueUpload {
@@ -243,5 +244,56 @@ describe('cross-tissue communication', () => {
     // Saved and loaded.
     expect(parseSceneJson(serializeScene(picked)).module.pinkCells).toEqual(['c1', 'c5']);
     expect(parseSceneJson(serializeScene(s)).module.pinkCells).toBeNull();
+  });
+});
+
+describe('neighbouring cells round a single cell', () => {
+  const on = (s: Scene, opacity = 0.35, mono = false): Scene => ({ ...s, cell: { ...s.cell, neighbours: { show: true, opacity, mono } } });
+  const nbPrims = (s: Scene) => buildDisplayList(s, 0, { signal: false }).prims.filter((p) => p.id.startsWith('nb'));
+  const own = (s: Scene) => JSON.stringify(buildDisplayList(s, 0, { signal: false }).prims.filter((p) => !p.id.startsWith('nb')));
+
+  it('are off by default; shown, the cell itself is unchanged and they sit round it, see-through', () => {
+    const s = moduleScene('targetId', 7);
+    expect(nbPrims(s)).toHaveLength(0);
+    const shown = on(s);
+    const prims = nbPrims(shown);
+    expect(prims.length).toBeGreaterThan(0);
+    expect(own(shown)).toBe(own(s));
+    // None of them overlaps the cell: their centres are outside it.
+    const cell = buildGeometry(s).cells[0].cell.points;
+    for (const n of neighbourCells(shown)) expect(pointInPolygon(n.cell.center, cell)).toBe(false);
+    // See-through: every neighbour prim is at most the chosen opacity of its full-strength self.
+    const full = nbPrims(on(s, 1));
+    prims.forEach((p, i) => expect(p.opacity ?? 1).toBeCloseTo((full[i].opacity ?? 1) * 0.35, 9));
+  });
+
+  it('can be drawn in greys', () => {
+    const grey = nbPrims(on(moduleScene('targetId', 7), 0.5, true));
+    const strokes = grey.flatMap((p) => ('stroke' in p && typeof p.stroke === 'string' ? [p.stroke] : []));
+    expect(strokes.length).toBeGreaterThan(0);
+    for (const c of strokes) {
+      const [r, g, b] = c.match(/[\d.]+/g)!.map(Number);
+      expect(Math.abs(r - g)).toBeLessThan(1.5);
+      expect(Math.abs(g - b)).toBeLessThan(1.5);
+    }
+  });
+
+  it('with a tissue map, are the selected cell’s real neighbours at the same scale', () => {
+    const s = on(view('targetId', 'c5'));
+    const ns = neighbourCells(s);
+    expect(ns.length).toBe(8); // the 3 × 3 grid round the middle cell
+    const hero = buildGeometry(s).cells.find((c) => c.id === 'c5')!;
+    const pitch = Math.min(...ns.map((n) => Math.hypot(n.cell.center.x - hero.cell.center.x, n.cell.center.y - hero.cell.center.y)));
+    // Cells are 100 apart and 96 wide in the map, so the nearest neighbour is about one cell width (plus the gap) away.
+    const width = Math.max(...hero.cell.points.map((p) => p.x)) - Math.min(...hero.cell.points.map((p) => p.x));
+    expect(pitch / width).toBeCloseTo(100 / 96, 1);
+    expect(own(s)).toBe(own(view('targetId', 'c5')));
+  });
+
+  it('are not added to views that already show many cells', () => {
+    for (const kind of ['tissue', 'crossTissue', 'journey', 'body'] as ModuleKind[]) {
+      const s = on(moduleScene(kind, 7));
+      expect(singleCellView(s)).toBe(false);
+    }
   });
 });

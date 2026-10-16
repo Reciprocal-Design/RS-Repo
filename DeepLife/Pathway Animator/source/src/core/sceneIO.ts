@@ -160,6 +160,11 @@ export function normalizeScene(raw: unknown): Scene {
   if (s.style.gradientStops.length < 2) s.style.gradientStops = [...base.style.gradientStops];
   if (!['capsule', 'diamond', 'capsuleDiamond'].includes(s.style.receptorStyle)) s.style.receptorStyle = base.style.receptorStyle;
   s.style.idleOpacity = num(s.style.idleOpacity, base.style.idleOpacity, 0, 1);
+  s.cell.neighbours = {
+    show: bool(s.cell.neighbours?.show, false),
+    opacity: num(s.cell.neighbours?.opacity, base.cell.neighbours.opacity, 0, 1),
+    mono: bool(s.cell.neighbours?.mono, false),
+  };
   // Inactive nodes are hidden by default now; scenes saved before the setting existed showed them, and still do.
   const rawStyle = isObj(raw.style) ? raw.style : {};
   s.style.showInactiveNodes = bool(rawStyle.showInactiveNodes, true);

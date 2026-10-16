@@ -1,5 +1,6 @@
 import { bezierHead, bezierPoint, tAtDistance } from '../core/bezier';
 import { makeRamp, parseColor, rgbaString, type RGBA } from '../core/color';
+import { neighbourCells, singleCellView } from '../core/cellMap';
 import { buildGeometry } from '../core/geometry';
 import { closedSplineSegments } from '../core/outline';
 import { buildSchedule, cycleTime, ease, FADE_OUT, pulseEnvelope, since } from '../core/timeline';
@@ -267,6 +268,30 @@ export function buildDisplayList(
   // Every cell's outlines (one cell, or each cell of a map), before anything else,
   // so the canvas backend can cache them all as one static bitmap.
   const os = g.outlineScale ?? s;
+  // Single-cell views: the neighbouring cells first, behind the cell, see-through
+  // (each outline prim's opacity scaled) and, if asked, in greys.
+  const nb = scene.cell.neighbours;
+  if (nb?.show && nb.opacity > 0 && singleCellView(scene) && !g.image && !g.bodyFill) {
+    const grey = (c: string) => {
+      const [r, gr, b, a] = parseColor(c);
+      const l = 0.2126 * r + 0.7152 * gr + 0.0722 * b;
+      return rgbaString([l, l, l, a]);
+    };
+    // Monochrome greys the drawn colours themselves (the rim's glow ramp tints its layers).
+    const fade = (p: Prim): Prim => {
+      const q = { ...p, opacity: (p.opacity ?? 1) * nb.opacity } as Prim & { stroke?: string; fill?: string };
+      if (nb.mono) {
+        if (typeof q.stroke === 'string') q.stroke = grey(q.stroke);
+        if (typeof q.fill === 'string') q.fill = grey(q.fill);
+      }
+      return q;
+    };
+    neighbourCells(scene).forEach((n, i) => {
+      const prefix = `nb${i + 1}-`;
+      if (scene.cell.visible) prims.push(...outlinePrims('membrane', n.cell.points, scene.cell, os, prefix).map(fade));
+      if (scene.nucleus.visible) prims.push(...outlinePrims('nucleus', n.nucleus.points, scene.nucleus, os, prefix).map(fade));
+    });
+  }
   for (const c of g.cells) {
     const prefix = c.id ? `${c.id}-` : '';
     if (g.image) {
