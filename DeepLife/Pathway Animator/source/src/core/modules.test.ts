@@ -142,16 +142,25 @@ describe('modules', () => {
     expect(g.pathways.every((p) => p.startDelay === 0)).toBe(true);
   });
 
-  it('toxicity turns the cell red once a toxic DEG fires', () => {
+  it('toxicity blinks the cell red until the toxic DEGs fire, then holds it red with the warning', () => {
     const s = classic('toxicity', 7);
     s.module = { ...s.module, toxicDegs: 2 };
     const g = buildGeometry(s);
     expect(g.nodes.filter((n) => n.toxic).length).toBe(2);
     const sched = buildSchedule(s);
-    const fired = Math.min(...g.nodes.filter((n) => n.toxic).map((n) => sched.fire.get(n.id)!));
+    const fired = Math.max(...g.nodes.filter((n) => n.toxic).map((n) => sched.fire.get(n.id)!));
     const tint = (t: number) => buildDisplayList(s, t).underlays!.find((u) => u.id === 'membrane-toxic')!.opacity;
+    const warns = (t: number) => buildDisplayList(s, t).prims.some((p) => p.kind === 'warning');
+    // Blinking from the start: off, fully red half a blink later, off again, and no warning yet.
     expect(tint(0)).toBe(0);
+    expect(tint(0.5)).toBeCloseTo(1, 5);
+    expect(tint(1)).toBeCloseTo(0, 5);
+    expect(fired).toBeGreaterThan(1.5);
+    expect(warns(fired - 0.25)).toBe(false);
+    // Once the last toxic DEG fires: the blinking stops, the cell stays red and the warning shows.
+    expect(warns(fired + 0.1)).toBe(true);
     expect(tint(fired + 1.5)).toBe(1);
+    expect(tint(fired + 2)).toBe(1);
     // The membrane is drawn only as the two cross-faded underlays.
     expect(buildDisplayList(s, 0).prims.some((p) => p.group === 'membrane')).toBe(false);
     const svg = displayListToSvg(buildDisplayList(s, fired + 1.5));
@@ -215,7 +224,7 @@ describe('modules', () => {
     const s = classic('toxicity', 7);
     const g = buildGeometry(s);
     const sched = buildSchedule(s);
-    const fired = Math.min(...g.nodes.filter((n) => n.toxic).map((n) => sched.fire.get(n.id)!));
+    const fired = Math.max(...g.nodes.filter((n) => n.toxic).map((n) => sched.fire.get(n.id)!));
     expect(buildDisplayList(s, 0).prims.some((p) => p.kind === 'warning')).toBe(false);
     const w = buildDisplayList(s, fired + 1.5).prims.find((p) => p.kind === 'warning')!;
     expect(w).toBeTruthy();

@@ -34,7 +34,7 @@ export const MODULES: ModuleInfo[] = [
     label: 'Target combination',
     blurb: 'Several receptors targeted at once, unevenly spaced round the cell, their pathways interconnected on the way to the DEGs. Each pathway is one target.',
   },
-  { kind: 'toxicity', label: 'Target toxicity', blurb: 'When the signal reaches a toxic DEG, the cell turns red.' },
+  { kind: 'toxicity', label: 'Target toxicity', blurb: 'The cell blinks red until the signal reaches a toxic DEG; then it stays red and the warning appears.' },
   {
     kind: 'tissue',
     label: 'Tissue-level target ID',

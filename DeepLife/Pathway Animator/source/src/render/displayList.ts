@@ -81,8 +81,10 @@ const RISE = 0.3;
 const GLOW_LAYERS = 26;
 /** Seconds an uncovered node takes to pop up (MOA elucidation). */
 const POP = 0.4;
-/** Seconds the cell takes to turn red once a toxic DEG fires. */
+/** Seconds the cell takes to settle on solid red once the signal reaches the toxic DEGs. */
 const TINT_RISE = 0.8;
+/** Seconds per blink of the red outline before then. */
+const BLINK = 1;
 
 /**
  * An outline as a plain line, or as a glowing rim: a stack of strokes clipped
@@ -250,19 +252,24 @@ export function buildDisplayList(
   const fade = period ? 1 : an.loop ? Math.max(0, Math.min(1, (schedule.total - tau) / FADE_OUT)) : 1;
   const litHold = Math.max(0, an.holdAtEnd);
 
-  // Target toxicity: the cell turns red once a toxic DEG fires, and back
-  // again as the loop closes (or, in continuous mode, before it fires again).
+  // Target toxicity: the cell's outline blinks red from the start; once the
+  // signal has reached the toxic DEGs it stops blinking and stays red, with the
+  // warning (`warn`), until the loop closes (or, in continuous mode, until the
+  // cycle comes round again).
   const toxicity = scene.module.kind === 'toxicity';
   let tint = 0;
+  let warn = 0;
   if (toxicity && signal) {
-    let t0 = Infinity;
-    for (const n of g.nodes) if (n.toxic) t0 = Math.min(t0, schedule.fire.get(n.id) ?? Infinity);
+    let t0 = -Infinity;
+    for (const n of g.nodes) if (n.toxic) t0 = Math.max(t0, schedule.fire.get(n.id) ?? -Infinity);
     if (Number.isFinite(t0)) {
+      const blink = 0.5 - 0.5 * Math.cos((2 * Math.PI * tau) / BLINK);
       const x = since(tau, t0, period);
-      tint = period
-        ? Math.min(x / TINT_RISE, (period - x) / FADE_OUT)
-        : Math.min(1, x / TINT_RISE) * fade;
-      tint = Math.max(0, Math.min(1, tint));
+      if (period) warn = Math.min(x / TINT_RISE, (period - x) / FADE_OUT);
+      else if (tau >= t0) warn = Math.min(1, x / TINT_RISE);
+      warn = Math.max(0, Math.min(1, warn));
+      tint = (blink + (1 - blink) * warn) * fade;
+      warn *= fade;
     }
   }
   // In toxicity mode the membranes are cross-faded underlays instead of static prims.
@@ -650,14 +657,14 @@ export function buildDisplayList(
     prims.push({ kind: 'ring', id: `${n.id}-inner`, group: 'nodes-inactive', c: n, r: r * 0.5, stroke: st.inactiveNodeColor, width: w, ...fadeRing });
   }
 
-  // Target toxicity: a large warning badge in the middle of the cell, popping in as the cell turns.
-  if (toxicity && scene.module.warning && tint > 0) {
+  // Target toxicity: a large warning badge in the middle of the cell, popping in as the blinking stops.
+  if (toxicity && scene.module.warning && warn > 0) {
     const c = (g.cells.find((x) => x.hero) ?? g.cells[0]).cell.center;
-    const pop = 0.7 + 0.3 * Math.min(1, tint * 1.4);
+    const pop = 0.7 + 0.3 * Math.min(1, warn * 1.4);
     // Sized to the canvas, and zoomed with the cell.
     const size = 0.2 * Math.min(scene.canvas.width, scene.canvas.height) * viewZoom(scene) * Math.max(0.2, scene.module.warningSize) * pop;
-    prims.push({ kind: 'glow', id: 'warning-glow', group: 'signal', blend: 'lighter', c, r: size * 1.6, color: withAlpha(toxicRgb, 0.55), opacity: tint });
-    prims.push({ kind: 'warning', id: 'warning', group: 'signal', c, size, fill: toxicFill, mark: '#FFFFFF', opacity: tint });
+    prims.push({ kind: 'glow', id: 'warning-glow', group: 'signal', blend: 'lighter', c, r: size * 1.6, color: withAlpha(toxicRgb, 0.55), opacity: warn });
+    prims.push({ kind: 'warning', id: 'warning', group: 'signal', c, size, fill: toxicFill, mark: '#FFFFFF', opacity: warn });
   }
 
   let out = prims;

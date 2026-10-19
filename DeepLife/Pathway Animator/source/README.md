@@ -42,13 +42,13 @@ cell or generated tissue.
    signal passes and each node pops up when it is reached. The rest of the network is dimmed.
 3. **Target combination**: several ringed receptors (one per pathway) fire together through their whole
    pathways, the proteins in between included ("Receptor → DEG only" hides them).
-4. **Target toxicity**: when the signal reaches a toxic DEG (drawn red), the cell's membrane cross-fades to red,
-   and back as the loop closes.
+4. **Target toxicity**: the cell's membrane blinks red from the start; when the signal reaches the toxic DEGs
+   (drawn red) it stops blinking and stays red, the warning appears, and both fade as the loop closes.
 5. **Tissue-level target ID** (indication extension): the same cell at the centre (an exact copy of the single
    cell, scaled by "Centre cell size"), with neighbouring cells generated round it to the canvas edges
    (`src/core/tissue.ts`). Only the centre cell starts on its own; links run outward from it, so its signal relays
    on through the tissue. The tissue follows the centre cell when the seed, shape or canvas changes.
-   Target toxicity also shows a large warning badge in the middle of the cell as it turns (size adjustable).
+   Target toxicity also shows a large warning badge in the middle of the cell as the blinking stops (size adjustable).
    Target combination spaces its receptors unevenly (spacing variation up to 2) and, with crosstalk on,
    interconnects them: each receptor also reaches a few of the other targets' DEGs.
 6. **Cross-tissue communication** (`src/core/crossTissue.ts`): one tissue map, its cells split between two tissues

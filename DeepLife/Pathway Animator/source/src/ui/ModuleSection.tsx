@@ -141,7 +141,7 @@ export function ModuleSection() {
           <Slider label="Toxic DEGs" value={Math.min(m.toxicDegs, degs)} min={1} max={degs} step={1}
             onChange={(toxicDegs) => set({ toxicDegs })} />
           <ColorField label="Toxicity colour" value={m.toxicColor} onChange={(toxicColor) => set({ toxicColor })} />
-          <p className="hint">The cell turns this colour when the signal reaches a toxic DEG, and back as the loop ends.</p>
+          <p className="hint">The cell's outline blinks in this colour from the start; when the signal reaches the toxic DEGs it stops blinking and stays this colour, with the warning, until the loop ends.</p>
           <Toggle label="Warning symbol in the middle of the cell" checked={m.warning} onChange={(warning) => set({ warning })} />
           {m.warning && (
             <Slider label="Warning size" value={m.warningSize} min={0.3} max={2.5} onChange={(warningSize) => set({ warningSize })} />
