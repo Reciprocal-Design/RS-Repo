@@ -1,0 +1,1225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pixel Wave — Alpha Composition Generator</title>
+<style>
+  :root{
+    --bg: #0b0d10;
+    --panel: #14171b;
+    --line: #262b31;
+    --text: #e7ebee;
+    --muted: #8a939c;
+    --accent: #5ee6c9;
+    --accent-dim: #2c6e63;
+    --warn: #f2c46d;
+    --error: #ff8a80;
+    --mono: 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family: var(--mono);
+    display:flex;
+    min-height:100vh;
+  }
+  #stage{
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    position:relative;
+    padding:24px;
+    min-width:0;
+  }
+  #canvasWrap{
+    position:relative;
+    box-shadow:0 0 0 1px var(--line), 0 20px 60px rgba(0,0,0,0.5);
+  }
+  canvas{
+    display:block;
+    cursor:crosshair;
+    max-width:78vw;
+    max-height:78vh;
+    width:auto;
+    height:auto;
+    background-image:
+      linear-gradient(45deg, #1b1e22 25%, transparent 25%),
+      linear-gradient(-45deg, #1b1e22 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #1b1e22 75%),
+      linear-gradient(-45deg, transparent 75%, #1b1e22 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    background-color:#0e1114;
+  }
+  canvas.solid{ background:#000; }
+  #hint{
+    position:absolute; bottom:8px; left:8px;
+    font-size:10px; color:var(--muted);
+    background:rgba(0,0,0,0.5); padding:4px 8px; border-radius:3px;
+    pointer-events:none;
+  }
+  #panel{
+    width:340px;
+    background:var(--panel);
+    border-left:1px solid var(--line);
+    padding:20px;
+    display:flex;
+    flex-direction:column;
+    gap:16px;
+    overflow-y:auto;
+    max-height:100vh;
+  }
+  h1{
+    font-size:13px; letter-spacing:0.12em; text-transform:uppercase;
+    color:var(--accent); margin:0 0 4px 0;
+  }
+  .sub{ color:var(--muted); font-size:11px; line-height:1.5; margin:0 0 8px 0; }
+  .group{ border-top:1px solid var(--line); padding-top:14px; }
+  .group h2{
+    font-size:11px; text-transform:uppercase; letter-spacing:0.08em;
+    color:var(--text); margin:0 0 10px 0;
+  }
+  label{
+    display:flex; justify-content:space-between; font-size:11px; color:var(--muted);
+    margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;
+  }
+  label span.val{ color:var(--text); }
+  input[type=range]{ width:100%; accent-color:var(--accent); }
+  select, input[type=color], input[type=number], input[type=text]{
+    width:100%; background:#0e1114; border:1px solid var(--line); color:var(--text);
+    font-family:var(--mono); font-size:12px; padding:6px; border-radius:3px;
+  }
+  option:disabled{ color:#555; }
+  .row{ display:flex; gap:8px; }
+  .row > div{ flex:1; min-width:0; }
+  button{
+    background:transparent; border:1px solid var(--accent-dim); color:var(--accent);
+    font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:0.06em;
+    padding:10px; border-radius:3px; cursor:pointer; width:100%; transition:0.15s;
+  }
+  button:hover{ background:rgba(94,230,201,0.08); }
+  button:disabled{ opacity:0.4; cursor:default; }
+  button.ghost{ border-color:var(--line); color:var(--text); }
+  :focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .toggle{
+    display:flex; align-items:center; justify-content:space-between; font-size:11px;
+    color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-top:8px;
+  }
+  .toggle input{ accent-color:var(--accent); }
+  .toggle.disabled{ opacity:0.45; }
+  code{
+    display:block; background:#0e1114; border:1px solid var(--line); padding:8px;
+    border-radius:3px; font-size:10px; color:var(--accent); white-space:pre-wrap;
+    word-break:break-all; margin-top:6px;
+  }
+  .field{ margin-top:12px; }
+  .note{ font-size:10px; color:var(--muted); line-height:1.6; margin:6px 0 0; }
+  .note.warn{ color:var(--warn); }
+  .outSize{ font-size:11px; color:var(--text); margin-top:8px; line-height:1.5; }
+  .cmdRow{ display:flex; gap:6px; align-items:stretch; margin-top:6px; }
+  .cmdRow code{ flex:1; margin:0; }
+  .cmdRow button{ width:auto; padding:6px 8px; }
+  #exProgressWrap{ margin-top:10px; }
+  progress{ width:100%; height:8px; accent-color:var(--accent); }
+  #exStatus{ font-size:10px; color:var(--muted); margin-top:4px; line-height:1.5; }
+  #exError{ color:var(--error); font-size:11px; line-height:1.5; margin-top:8px; white-space:pre-wrap; }
+  #exResult a{ display:block; color:var(--accent); font-size:11px; margin-top:8px; text-decoration:underline; }
+  #exResult video, #exResult img{ width:100%; margin-top:10px; border:1px solid var(--line); border-radius:3px; }
+  .hidden{ display:none !important; }
+
+  @media (max-width: 820px){
+    body{ flex-direction:column; }
+    #panel{ width:auto; max-height:none; border-left:0; border-top:1px solid var(--line); }
+    canvas{ max-width:100%; }
+  }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="canvasWrap">
+    <canvas id="c" width="1440" height="840" class="solid"></canvas>
+    <div id="hint">Click canvas to place a point</div>
+  </div>
+</div>
+
+<div id="panel">
+  <div>
+    <h1>Pixel Wave</h1>
+    <p class="sub">Gradient-wave / clustered pixel grid with true per-cell alpha. Checkerboard = transparent.</p>
+  </div>
+
+  <div class="group">
+    <h2>Canvas size</h2>
+    <select id="resolutionPreset" aria-label="Canvas size">
+      <option value="1440x840">1440 × 840 — web hero</option>
+      <option value="1920x1080">1920 × 1080 — 16:9</option>
+      <option value="1080x1080">1080 × 1080 — square</option>
+      <option value="1080x1920">1080 × 1920 — vertical 9:16</option>
+      <option value="960x540">960 × 540 — small preview</option>
+      <option value="custom">Custom…</option>
+    </select>
+    <div id="customResWrap" class="hidden row" style="margin-top:10px;">
+      <div>
+        <label for="customWidth">Width</label>
+        <input type="number" id="customWidth" value="1440" min="100" max="3840">
+      </div>
+      <div>
+        <label for="customHeight">Height</label>
+        <input type="number" id="customHeight" value="840" min="100" max="3840">
+      </div>
+    </div>
+    <p class="sub" style="margin-top:8px;">This is the composition the preview shows. Export can use this size or another one (see Export below).</p>
+  </div>
+
+  <div class="group">
+    <h2>Pattern</h2>
+    <select id="pattern" aria-label="Pattern">
+      <option value="diagonal">Diagonal sweep</option>
+      <option value="radial">Radial pulse</option>
+      <option value="horizontal">Horizontal scan</option>
+      <option value="vertical">Vertical scan</option>
+      <option value="ripple">Dual ripple</option>
+      <option value="cluster">Randomised clusters</option>
+    </select>
+
+    <div id="clusterControls" class="hidden">
+      <label style="margin-top:12px;" for="clusterMode">Cluster centres</label>
+      <select id="clusterMode">
+        <option value="random">Random</option>
+        <option value="manual">Click to place (multiple points)</option>
+      </select>
+
+      <div id="randomClusterControls">
+        <label style="margin-top:12px;" for="clusterCount">Cluster count <span class="val" id="clusterCountVal">4</span></label>
+        <input type="range" id="clusterCount" min="1" max="10" value="4">
+        <button id="reseedBtn" class="ghost" style="margin-top:10px;">Regenerate clusters</button>
+      </div>
+
+      <div id="manualClusterControls" class="hidden">
+        <p class="sub" style="margin-top:10px;">Click anywhere on the canvas to drop a concentration point. Click as many times as you like.</p>
+        <label style="margin-top:6px;">Points placed <span class="val" id="pointCountVal">0</span></label>
+        <button id="clearPointsBtn" class="ghost" style="margin-top:6px;">Clear points</button>
+      </div>
+
+      <label style="margin-top:12px;" for="clusterSpread">Cluster spread <span class="val" id="clusterSpreadVal">0.18</span></label>
+      <input type="range" id="clusterSpread" min="5" max="45" value="18">
+      <label style="margin-top:12px;" for="sparkle">Sparkle (scattered noise) <span class="val" id="sparkleVal">0.20</span></label>
+      <input type="range" id="sparkle" min="0" max="100" value="20">
+      <label style="margin-top:12px;" for="drift">Drift <span class="val" id="driftVal">0.15</span></label>
+      <input type="range" id="drift" min="0" max="100" value="15">
+    </div>
+  </div>
+
+  <div class="group">
+    <h2>Focus</h2>
+    <select id="focusMode" aria-label="Focus mode">
+      <option value="none">Everywhere (no focus)</option>
+      <option value="concentrateCenter">Concentrate — centre</option>
+      <option value="emptyCenter">Empty — centre</option>
+      <option value="concentratePoint">Concentrate — clicked point</option>
+      <option value="emptyPoint">Empty — clicked point</option>
+    </select>
+    <label style="margin-top:12px;" for="focusRadius">Focus radius <span class="val" id="focusRadiusVal">0.45</span></label>
+    <input type="range" id="focusRadius" min="10" max="100" value="45">
+  </div>
+
+  <div class="group">
+    <h2>Cell geometry</h2>
+    <label for="cellSize">Cell size <span class="val" id="cellSizeVal">18px</span></label>
+    <input type="range" id="cellSize" min="8" max="48" value="18">
+    <label style="margin-top:12px;" for="gap">Gap <span class="val" id="gapVal">3px</span></label>
+    <input type="range" id="gap" min="0" max="12" value="3">
+
+    <label style="margin-top:12px;" for="pixelStyle">Pixel style</label>
+    <select id="pixelStyle">
+      <option value="rounded">Uniform — rounded squares</option>
+      <option value="circle">Uniform — circles</option>
+      <option value="square">Uniform — sharp squares</option>
+      <option value="mixed">Mixed random styles</option>
+    </select>
+
+    <div id="roundedWrap">
+      <label style="margin-top:12px;" for="roundedAmt">Roundedness <span class="val" id="roundedVal">22%</span></label>
+      <input type="range" id="roundedAmt" min="0" max="50" value="22">
+    </div>
+
+    <label class="toggle" for="sizeVaries" style="cursor:pointer;">
+      <span>Size varies with intensity</span>
+      <input type="checkbox" id="sizeVaries" checked>
+    </label>
+  </div>
+
+  <div class="group">
+    <h2>Wave / motion</h2>
+    <label for="speed">Speed <span class="val" id="speedVal">1.0</span></label>
+    <input type="range" id="speed" min="0" max="50" value="12">
+    <label style="margin-top:12px;" for="freq">Frequency <span class="val" id="freqVal">1.0</span></label>
+    <input type="range" id="freq" min="2" max="60" value="14">
+    <label style="margin-top:12px;" for="minAlpha">Min alpha <span class="val" id="minAlphaVal">0.00</span></label>
+    <input type="range" id="minAlpha" min="0" max="100" value="0">
+    <label style="margin-top:12px;" for="noise">Randomness (async flicker) <span class="val" id="noiseVal">0.45</span></label>
+    <input type="range" id="noise" min="0" max="100" value="45">
+  </div>
+
+  <div class="group">
+    <h2>Colour</h2>
+    <label for="color">Base colour (low intensity)</label>
+    <input type="color" id="color" value="#0b3d3a">
+    <label style="margin-top:12px;" for="peakColor">Flash / peak colour (high intensity)</label>
+    <input type="color" id="peakColor" value="#5ee6c9">
+    <label class="toggle" for="solidBg" style="cursor:pointer;">
+      <span>Preview on solid black</span>
+      <input type="checkbox" id="solidBg" checked>
+    </label>
+  </div>
+
+  <div class="group">
+    <div class="row">
+      <div><button id="playPause">Pause</button></div>
+      <div><button id="undoBtn" class="ghost">Undo</button></div>
+    </div>
+    <button id="resetBtn" class="ghost" style="margin-top:8px;">Reset all settings</button>
+  </div>
+
+  <div class="group" id="exportPanel">
+    <h2>Export</h2>
+
+    <label for="exFormat">Format</label>
+    <select id="exFormat">
+      <option value="mp4">MP4 (H.264)</option>
+      <option value="webm">WebM (VP9)</option>
+      <option value="png-seq">PNG sequence (.zip)</option>
+      <option value="png">Single frame PNG</option>
+    </select>
+    <p id="exSupport" class="note warn hidden" role="status"></p>
+
+    <label class="toggle" for="exTransparent" id="exTransparentRow" style="cursor:pointer;">
+      <span>Transparent background</span>
+      <input type="checkbox" id="exTransparent">
+    </label>
+    <p id="exAlphaNote" class="note"></p>
+    <div id="exMatteWrap" class="field">
+      <label for="exMatte">Background colour (matte)</label>
+      <input type="color" id="exMatte" value="#000000">
+    </div>
+
+    <div class="field">
+      <label for="exSize">Size</label>
+      <select id="exSize">
+        <option value="canvas">Same as canvas</option>
+        <option value="1920x1080">1080p — 1920 × 1080</option>
+        <option value="2560x1440">1440p — 2560 × 1440</option>
+        <option value="3840x2160">4K — 3840 × 2160</option>
+        <option value="1080x1080">Square — 1080 × 1080</option>
+        <option value="1080x1920">Vertical — 1080 × 1920</option>
+        <option value="custom">Custom W × H…</option>
+      </select>
+      <div id="exCustomSizeWrap" class="row hidden" style="margin-top:8px;">
+        <div><label for="exW">W</label><input type="number" id="exW" value="1920" min="16" max="7680"></div>
+        <div><label for="exH">H</label><input type="number" id="exH" value="1080" min="16" max="7680"></div>
+      </div>
+      <p class="note" id="exScaleNote"></p>
+    </div>
+
+    <div class="field">
+      <label for="exFps">Frame rate</label>
+      <select id="exFps">
+        <option value="24">24</option>
+        <option value="25">25</option>
+        <option value="30" selected>30</option>
+        <option value="50">50</option>
+        <option value="60">60</option>
+        <option value="23.976">23.976 (24000/1001)</option>
+        <option value="29.97">29.97 (30000/1001)</option>
+        <option value="custom">Custom…</option>
+      </select>
+      <div id="exFpsCustomWrap" class="hidden" style="margin-top:8px;">
+        <label for="exFpsCustom">Custom fps</label>
+        <input type="number" id="exFpsCustom" value="30" min="1" max="120" step="any">
+      </div>
+    </div>
+
+    <div id="exRangeWrap" class="field">
+      <div class="row">
+        <div><label for="exStart">Start (s)</label><input type="number" id="exStart" value="0" min="0" step="0.1"></div>
+        <div><label for="exEnd">End (s)</label><input type="number" id="exEnd" value="3" min="0.1" step="0.1"></div>
+      </div>
+      <p class="note">The animation runs endlessly, so the range sets the clip length.</p>
+    </div>
+    <p id="exStillNote" class="note hidden">Captures the frame currently shown in the preview — pause first to pick a moment.</p>
+
+    <div id="exQualityWrap" class="field">
+      <label for="exQuality">Quality</label>
+      <select id="exQuality">
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high" selected>High</option>
+        <option value="veryHigh">Very high</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="exName">Filename</label>
+      <input type="text" id="exName" spellcheck="false" autocomplete="off">
+      <p class="note">Saves as <span id="exFileOut" style="color:var(--text)"></span></p>
+    </div>
+
+    <div id="exFfmpegWrap" class="field hidden">
+      <label>ProRes 4444 with alpha (After Effects, Premiere, FCP)</label>
+      <div class="cmdRow">
+        <code id="exFfmpeg"></code>
+        <button id="exCopyFfmpeg" class="ghost" type="button" aria-label="Copy ffmpeg command">Copy</button>
+      </div>
+    </div>
+
+    <p class="outSize" id="exOutSize"></p>
+
+    <div class="row" style="margin-top:12px;">
+      <div><button id="exportBtn" type="button">Export</button></div>
+      <div id="exCancelWrap" class="hidden"><button id="exCancelBtn" class="ghost" type="button">Cancel</button></div>
+    </div>
+    <button id="exRealtimeBtn" class="ghost hidden" type="button" style="margin-top:8px;">Record WebM in real time (fallback)</button>
+
+    <div id="exProgressWrap" class="hidden">
+      <progress id="exProgress" value="0" max="1"></progress>
+      <div id="exStatus" aria-live="polite"></div>
+    </div>
+    <div id="exError" role="alert"></div>
+    <div id="exResult"></div>
+  </div>
+
+  <div class="group">
+    <h2>Good to know</h2>
+    <p class="note"><b style="color:var(--text)">MP4 has no transparency</b> — it's flattened onto the matte colour. For alpha on the web (Framer, WordPress) use WebM; for editors use the PNG sequence.</p>
+    <p class="note"><b style="color:var(--text)">Transparent WebM</b> needs Chrome or Edge to make, and won't open in QuickTime, Safari or most editors. For After Effects, Premiere, DaVinci or Final Cut export the <b style="color:var(--text)">PNG sequence</b> and convert it with the ffmpeg command shown there.</p>
+    <p class="note">Video export uses WebCodecs, so host this file over HTTPS (or localhost) rather than double-clicking it. Frame rate is constant and every frame is rendered exactly, not screen-recorded.</p>
+    <p class="note">Very long or 4K PNG sequences use a lot of memory; in Chrome you'll be asked for a folder to write frames into directly.</p>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: true });
+
+const ui = {};
+document.querySelectorAll('[id]').forEach(el => { ui[el.id] = el; });
+
+const vals = {
+  cellSize: document.getElementById('cellSizeVal'),
+  gap: document.getElementById('gapVal'),
+  speed: document.getElementById('speedVal'),
+  freq: document.getElementById('freqVal'),
+  minAlpha: document.getElementById('minAlphaVal'),
+  noise: document.getElementById('noiseVal'),
+  clusterCount: document.getElementById('clusterCountVal'),
+  clusterSpread: document.getElementById('clusterSpreadVal'),
+  sparkle: document.getElementById('sparkleVal'),
+  drift: document.getElementById('driftVal'),
+  focusRadius: document.getElementById('focusRadiusVal'),
+  rounded: document.getElementById('roundedVal'),
+};
+
+function hexToRgb(hex){
+  const v = parseInt(hex.slice(1), 16);
+  return { r: (v>>16)&255, g: (v>>8)&255, b: v&255 };
+}
+function hashNoise(a, b){
+  const x = Math.sin(a*127.1 + b*311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+// --- render state shared by the live preview and export ---
+let exporting = false;   // live loop stays out of the way while exporting
+let renderScale = 1;     // grid scale when exporting at a size other than the composition
+let exportMatte = null;  // background colour baked into exported frames (null = transparent)
+let previewT = 0;        // time currently shown in the preview (used for single-frame PNG)
+let compW = 1440, compH = 840; // composition (preview) size
+let exportUIReady = false; // export panel is wired up at the end of the script
+
+function applyResolution(){
+  const preset = ui.resolutionPreset.value;
+  let w, h;
+  if(preset === 'custom'){
+    w = +ui.customWidth.value || 1440;
+    h = +ui.customHeight.value || 840;
+  } else {
+    [w, h] = preset.split('x').map(Number);
+  }
+  compW = w; compH = h;
+  if(!exporting){
+    canvas.width = w;
+    canvas.height = h;
+  }
+  if(exportUIReady) updateExportUI();
+}
+ui.resolutionPreset.addEventListener('change', () => {
+  document.getElementById('customResWrap').classList.toggle('hidden', ui.resolutionPreset.value !== 'custom');
+  applyResolution();
+});
+ui.customWidth.addEventListener('input', applyResolution);
+ui.customHeight.addEventListener('input', applyResolution);
+applyResolution();
+
+// --- cluster state ---
+let clusters = [];
+function reseedClusters(){
+  const n = +ui.clusterCount.value;
+  clusters = [];
+  for(let i=0;i<n;i++){
+    clusters.push({
+      x: 0.15 + Math.random()*0.7,
+      y: 0.15 + Math.random()*0.7,
+      phaseX: Math.random()*Math.PI*2,
+      phaseY: Math.random()*Math.PI*2,
+      freqX: 0.3 + Math.random()*0.5,
+      freqY: 0.3 + Math.random()*0.5,
+    });
+  }
+}
+reseedClusters();
+
+// --- manually placed cluster centres (multiple points) ---
+let manualPoints = [];
+function addManualPoint(nx, ny){
+  manualPoints.push({
+    x: nx, y: ny,
+    phaseX: Math.random()*Math.PI*2, phaseY: Math.random()*Math.PI*2,
+    freqX: 0.3+Math.random()*0.5, freqY: 0.3+Math.random()*0.5,
+  });
+  document.getElementById('pointCountVal').textContent = manualPoints.length;
+}
+
+// --- focal point for Focus mask (normalised 0..1) ---
+let focal = { x: 0.5, y: 0.5 };
+
+// --- undo history (tracks canvas point placements) ---
+let history = [];
+function snapshot(){
+  history.push({
+    manualPoints: manualPoints.map(p => ({...p})),
+    focal: {...focal},
+  });
+  if(history.length > 50) history.shift();
+}
+function undo(){
+  if(history.length === 0) return;
+  const prev = history.pop();
+  manualPoints = prev.manualPoints;
+  focal = prev.focal;
+  document.getElementById('pointCountVal').textContent = manualPoints.length;
+}
+
+function updateHint(){
+  const hint = document.getElementById('hint');
+  if(ui.pattern.value === 'cluster' && ui.clusterMode.value === 'manual'){
+    hint.textContent = 'Click to add a cluster point';
+  } else if(ui.focusMode.value === 'concentratePoint' || ui.focusMode.value === 'emptyPoint'){
+    hint.textContent = 'Click to move the focus point';
+  } else {
+    hint.textContent = 'Click canvas to place a point';
+  }
+}
+
+canvas.addEventListener('click', (e) => {
+  if(exporting) return;
+  const r = canvas.getBoundingClientRect();
+  const nx = (e.clientX - r.left) / r.width;
+  const ny = (e.clientY - r.top) / r.height;
+  snapshot();
+  if(ui.pattern.value === 'cluster' && ui.clusterMode.value === 'manual'){
+    addManualPoint(nx, ny);
+  } else {
+    focal.x = nx; focal.y = ny;
+  }
+});
+
+ui.undoBtn.addEventListener('click', undo);
+
+function focusMask(nx, ny){
+  const mode = ui.focusMode.value;
+  if(mode === 'none') return 1;
+  const radius = (+ui.focusRadius.value)/100;
+  let fx = 0.5, fy = 0.5;
+  if(mode === 'concentratePoint' || mode === 'emptyPoint'){ fx = focal.x; fy = focal.y; }
+  const d = Math.hypot(nx-fx, ny-fy);
+  const g = Math.exp(-(d*d)/(2*radius*radius));
+  if(mode === 'concentrateCenter' || mode === 'concentratePoint') return g;
+  return 1-g; // empty modes
+}
+
+function clusterIntensity(nx, ny, t){
+  const spread = (+ui.clusterSpread.value)/100;
+  const driftAmt = (+ui.drift.value)/100 * 0.25;
+  const sparkleAmt = (+ui.sparkle.value)/100;
+  const manual = ui.clusterMode.value === 'manual';
+  const centres = manual ? manualPoints : clusters;
+  let v = 0;
+  for(const cl of centres){
+    const cx = cl.x + driftAmt*Math.sin(t*cl.freqX*0.3 + cl.phaseX);
+    const cy = cl.y + driftAmt*Math.cos(t*cl.freqY*0.3 + cl.phaseY);
+    const d = Math.hypot(nx-cx, ny-cy);
+    v += Math.exp(-(d*d)/(2*spread*spread));
+  }
+  v = Math.min(1, v);
+  const sparkle = hashNoise(nx*137.7, ny*91.3 + Math.floor(t*2)) * sparkleAmt * 0.6;
+  return Math.max(v, sparkle);
+}
+
+function computeIntensity(col, row, cols, rows, t, opts){
+  const { pattern, freq, speed, minA, noiseAmt } = opts;
+  const nx = col/cols, ny = row/rows;
+  let a;
+  if(pattern === 'cluster'){
+    a = clusterIntensity(nx, ny, t);
+  } else {
+    const cx = cols/2, cy = rows/2;
+    let phase;
+    switch(pattern){
+      case 'radial': { const d = Math.hypot(col-cx, row-cy); phase = d*(freq/10) - t*speed; break; }
+      case 'horizontal': phase = col*(freq/10) - t*speed; break;
+      case 'vertical': phase = row*(freq/10) - t*speed; break;
+      case 'ripple': {
+        const d1 = Math.hypot(col-cx*0.5, row-cy*0.5);
+        const d2 = Math.hypot(col-cx*1.5, row-cy*1.5);
+        phase = Math.min(d1,d2)*(freq/10) - t*speed;
+        break;
+      }
+      default: phase = (col+row)*(freq/10) - t*speed;
+    }
+    a = (Math.sin(phase)+1)/2;
+  }
+  a = minA + a*(1-minA);
+  // per-cell chaotic flicker: each pixel gets its own stable random phase & speed,
+  // so at higher "randomness" the grid breaks out of a uniform sweep into async flashing
+  const cellRand = hashNoise(col*17.13+1.7, row*23.71+5.3);
+  const chaosSpeed = 1.5 + cellRand*7;
+  const chaosPhase = cellRand*Math.PI*23.7;
+  const chaos = (Math.sin(t*chaosSpeed + chaosPhase)+1)/2;
+  a = a*(1-noiseAmt) + a*chaos*noiseAmt;
+  a *= focusMask(nx, ny);
+  a = Math.max(0, Math.min(1, a));
+  // contrast curve: push mid-tones down and peaks up for punchier on/off flashing
+  a = Math.pow(a, 1.6);
+  return a;
+}
+
+function shapeForCell(col, row){
+  const style = ui.pixelStyle.value;
+  if(style !== 'mixed') return style;
+  const r = hashNoise(col*3.1+1, row*5.7+2);
+  if(r < 0.34) return 'square';
+  if(r < 0.67) return 'circle';
+  return 'diamond_mixed';
+}
+
+function drawShape(x, y, size, shape, roundedPct){
+  ctx.beginPath();
+  if(shape === 'circle'){
+    ctx.arc(x+size/2, y+size/2, size/2, 0, Math.PI*2);
+  } else if(shape === 'diamond_mixed' || shape === 'diamond'){
+    const cx = x+size/2, cy = y+size/2, r = size/2;
+    ctx.moveTo(cx, cy-r);
+    ctx.lineTo(cx+r, cy);
+    ctx.lineTo(cx, cy+r);
+    ctx.lineTo(cx-r, cy);
+    ctx.closePath();
+  } else if(shape === 'square'){
+    ctx.rect(x, y, size, size);
+  } else { // rounded
+    const r = Math.min(size/2, size*(roundedPct/100));
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+size,y,x+size,y+size,r);
+    ctx.arcTo(x+size,y+size,x,y+size,r);
+    ctx.arcTo(x,y+size,x,y,r);
+    ctx.arcTo(x,y,x+size,y,r);
+    ctx.closePath();
+  }
+  ctx.fill();
+}
+
+// Pure function of t + current settings: the live preview and every export path call this.
+function drawFrame(t, bakeBg){
+  const cellSize = +ui.cellSize.value * renderScale;
+  const gap = +ui.gap.value * renderScale;
+  const step = cellSize + gap;
+  const cols = Math.ceil(canvas.width/step);
+  const rows = Math.ceil(canvas.height/step);
+  const rgb = hexToRgb(ui.color.value);
+  const peakRgb = hexToRgb(ui.peakColor.value);
+  const opts = {
+    pattern: ui.pattern.value,
+    freq: +ui.freq.value,
+    speed: +ui.speed.value / 5,
+    minA: (+ui.minAlpha.value)/100,
+    noiseAmt: (+ui.noise.value)/100,
+  };
+  const sizeVaries = ui.sizeVaries.checked;
+  const roundedPct = +ui.roundedAmt.value;
+  const globalStyle = ui.pixelStyle.value;
+
+  if(bakeBg){
+    ctx.fillStyle = bakeBg;
+    ctx.fillRect(0,0,canvas.width, canvas.height);
+  } else {
+    ctx.clearRect(0,0,canvas.width, canvas.height);
+  }
+
+  for(let row=0; row<rows; row++){
+    for(let col=0; col<cols; col++){
+      const a = computeIntensity(col, row, cols, rows, t, opts);
+      if(a <= 0.015) continue;
+      const cr = Math.round(rgb.r + (peakRgb.r-rgb.r)*a);
+      const cg = Math.round(rgb.g + (peakRgb.g-rgb.g)*a);
+      const cb = Math.round(rgb.b + (peakRgb.b-rgb.b)*a);
+      ctx.fillStyle = `rgba(${cr},${cg},${cb},${a.toFixed(3)})`;
+      const size = sizeVaries ? cellSize*(0.25+0.75*a) : cellSize;
+      const off = (cellSize-size)/2;
+      const x = col*step+off, y = row*step+off;
+      const shape = globalStyle === 'mixed' ? shapeForCell(col,row) : globalStyle;
+      drawShape(x, y, size, shape, roundedPct);
+    }
+  }
+}
+
+let playing = true;
+let startTime = performance.now();
+let pausedAt = 0;
+
+function loop(now){
+  if(playing && !exporting){
+    previewT = (now-startTime)/1000;
+    try{
+      drawFrame(previewT);
+    } catch(err){
+      console.error('drawFrame error (frame skipped, playback continues):', err);
+    }
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+ui.playPause.addEventListener('click', () => {
+  playing = !playing;
+  ui.playPause.textContent = playing ? 'Pause' : 'Play';
+  if(playing) startTime = performance.now() - pausedAt*1000;
+  else pausedAt = previewT;
+});
+
+ui.pattern.addEventListener('change', () => {
+  document.getElementById('clusterControls').classList.toggle('hidden', ui.pattern.value !== 'cluster');
+  updateHint();
+});
+ui.reseedBtn.addEventListener('click', reseedClusters);
+ui.pixelStyle.addEventListener('change', () => {
+  document.getElementById('roundedWrap').classList.toggle('hidden', ui.pixelStyle.value === 'circle');
+});
+ui.clusterMode.addEventListener('change', () => {
+  const manual = ui.clusterMode.value === 'manual';
+  document.getElementById('randomClusterControls').classList.toggle('hidden', manual);
+  document.getElementById('manualClusterControls').classList.toggle('hidden', !manual);
+  updateHint();
+});
+document.getElementById('clearPointsBtn').addEventListener('click', () => {
+  snapshot();
+  manualPoints = [];
+  document.getElementById('pointCountVal').textContent = '0';
+});
+ui.focusMode.addEventListener('change', updateHint);
+updateHint();
+
+const DEFAULTS = {
+  resolutionPreset:'1440x840', customWidth:1440, customHeight:840,
+  pattern:'diagonal', clusterMode:'random', clusterCount:4, clusterSpread:18, sparkle:20, drift:15,
+  focusMode:'none', focusRadius:45, cellSize:18, gap:3, pixelStyle:'rounded', roundedAmt:22,
+  sizeVaries:true, speed:12, freq:14, minAlpha:0, noise:45, color:'#0b3d3a', peakColor:'#5ee6c9', solidBg:true,
+};
+function resetAll(){
+  Object.entries(DEFAULTS).forEach(([id, val]) => {
+    const el = ui[id];
+    if(!el) return;
+    if(el.type === 'checkbox'){ el.checked = val; } else { el.value = val; }
+  });
+  applyResolution();
+  document.getElementById('customResWrap').classList.toggle('hidden', true);
+  manualPoints = [];
+  focal = { x:0.5, y:0.5 };
+  history = [];
+  document.getElementById('pointCountVal').textContent = '0';
+  reseedClusters();
+  canvas.classList.toggle('solid', DEFAULTS.solidBg);
+  document.getElementById('clusterControls').classList.toggle('hidden', true);
+  document.getElementById('randomClusterControls').classList.toggle('hidden', false);
+  document.getElementById('manualClusterControls').classList.toggle('hidden', true);
+  document.getElementById('roundedWrap').classList.toggle('hidden', false);
+  syncLabels();
+  updateHint();
+}
+ui.resetBtn.addEventListener('click', resetAll);
+
+function syncLabels(){
+  vals.cellSize.textContent = ui.cellSize.value+'px';
+  vals.gap.textContent = ui.gap.value+'px';
+  vals.speed.textContent = (+ui.speed.value/5).toFixed(1);
+  vals.freq.textContent = (+ui.freq.value/10).toFixed(1);
+  vals.minAlpha.textContent = ((+ui.minAlpha.value)/100).toFixed(2);
+  vals.noise.textContent = ((+ui.noise.value)/100).toFixed(2);
+  vals.clusterCount.textContent = ui.clusterCount.value;
+  vals.clusterSpread.textContent = ((+ui.clusterSpread.value)/100).toFixed(2);
+  vals.sparkle.textContent = ((+ui.sparkle.value)/100).toFixed(2);
+  vals.drift.textContent = ((+ui.drift.value)/100).toFixed(2);
+  vals.focusRadius.textContent = ((+ui.focusRadius.value)/100).toFixed(2);
+  vals.rounded.textContent = ui.roundedAmt.value+'%';
+}
+Object.keys(ui).forEach(id => {
+  const el = ui[id];
+  if(el.tagName === 'INPUT' && el.type === 'range'){ el.addEventListener('input', syncLabels); }
+  if(el.id === 'clusterCount'){ el.addEventListener('change', reseedClusters); }
+});
+syncLabels();
+
+ui.solidBg.addEventListener('change', () => canvas.classList.toggle('solid', ui.solidBg.checked));
+
+// =====================================================================
+// Export
+// Deterministic: every frame is drawFrame(start + i/fps), never a screen
+// recording. Video uses WebCodecs via Mediabunny; PNG zips use fflate.
+// Libraries load on demand so the generator itself works offline.
+// =====================================================================
+const MEDIABUNNY_URL = 'https://cdn.jsdelivr.net/npm/mediabunny@1.61.0/+esm';
+const FFLATE_URL = 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/+esm';
+const APP_NAME = 'pixel-wave';
+const SETTINGS_KEY = 'pixelwave.export.v1';
+const hasWebCodecs = typeof VideoEncoder !== 'undefined';
+const isChromium = !!(navigator.userAgentData && navigator.userAgentData.brands &&
+  navigator.userAgentData.brands.some(b => /Chromium/.test(b.brand)));
+
+let libsPromise = null;
+function loadLibs(){
+  if(!libsPromise){
+    libsPromise = Promise.all([import(MEDIABUNNY_URL), import(FFLATE_URL)])
+      .then(([mb, ff]) => ({ mb, ff }))
+      .catch(err => {
+        libsPromise = null;
+        throw new Error(`Couldn't load the export library from cdn.jsdelivr.net (${err.message}). Check your connection and try again.`);
+      });
+  }
+  return libsPromise;
+}
+
+const app = {
+  canvas,
+  async renderAt(t){ drawFrame(t, exportMatte); },
+  // Resize to the export size, scale the grid so it reads like the preview,
+  // set the matte. Returns a function that puts everything back.
+  beginExport({ width, height, transparent, matte }){
+    exporting = true;
+    renderScale = Math.sqrt((width*height) / (compW*compH));
+    exportMatte = transparent ? null : matte;
+    canvas.width = width;
+    canvas.height = height;
+    return () => {
+      canvas.width = compW;
+      canvas.height = compH;
+      renderScale = 1;
+      exportMatte = null;
+      exporting = false;
+      drawFrame(previewT);
+    };
+  },
+};
+
+const FPS_PRESETS = {
+  '24':[24,1], '25':[25,1], '30':[30,1], '50':[50,1], '60':[60,1],
+  '23.976':[24000,1001], '29.97':[30000,1001],
+};
+const even = n => Math.max(2, Math.round(n/2)*2);
+const tick = () => new Promise(r => setTimeout(r));
+const EXT = { mp4:'mp4', webm:'webm', 'png-seq':'zip', png:'png' };
+
+function readExportSettings(){
+  const format = ui.exFormat.value;
+  const isVideo = format === 'mp4' || format === 'webm';
+
+  let w, h;
+  const size = ui.exSize.value;
+  if(size === 'canvas'){ w = compW; h = compH; }
+  else if(size === 'custom'){ w = Math.round(+ui.exW.value); h = Math.round(+ui.exH.value); }
+  else { [w, h] = size.split('x').map(Number); }
+  const reqW = w, reqH = h;
+  if(isVideo){ w = even(w); h = even(h); }
+
+  let num, den;
+  if(ui.exFps.value === 'custom'){ num = +ui.exFpsCustom.value; den = 1; }
+  else { [num, den] = FPS_PRESETS[ui.exFps.value]; }
+  const fps = num/den;
+  const fpsLabel = den === 1 ? String(num) : String(+(num/den).toFixed(3));
+  const fpsFfmpeg = den === 1 ? String(num) : `${num}/${den}`;
+
+  const start = Math.max(0, +ui.exStart.value || 0);
+  const end = +ui.exEnd.value || 0;
+  const total = format === 'png' ? 1 : Math.max(1, Math.round((end - start) * fps));
+
+  const autoName = `${APP_NAME}_${w}x${h}_${fpsLabel}fps`;
+  const name = (ui.exName.value.trim() || autoName).replace(/[^\w.\-]+/g, '_');
+
+  let error = null;
+  if(!(w >= 16 && h >= 16) || w > 7680 || h > 7680) error = 'Size must be between 16 and 7680 px on each side.';
+  else if(!(fps > 0 && fps <= 240)) error = 'Frame rate must be between 1 and 240.';
+  else if(format !== 'png' && !(end > start)) error = 'End time must be after the start time.';
+
+  return {
+    format, isVideo, width:w, height:h, resized: w !== reqW || h !== reqH,
+    fps, fpsNum:num, fpsDen:den, fpsLabel, fpsFfmpeg, start, end, total,
+    transparent: ui.exTransparent.checked && format !== 'mp4',
+    matte: ui.exMatte.value, quality: ui.exQuality.value,
+    name, autoName, error,
+  };
+}
+
+function saveExportSettings(){
+  try{
+    const ids = ['exFormat','exTransparent','exMatte','exSize','exW','exH','exFps','exFpsCustom','exStart','exEnd','exQuality'];
+    const data = {};
+    ids.forEach(id => { data[id] = ui[id].type === 'checkbox' ? ui[id].checked : ui[id].value; });
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(data));
+  } catch(err){ /* storage unavailable — settings just won't be remembered */ }
+}
+function loadExportSettings(){
+  try{
+    const data = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null');
+    if(!data) return;
+    Object.entries(data).forEach(([id, v]) => {
+      const el = ui[id];
+      if(!el) return;
+      if(el.type === 'checkbox') el.checked = !!v;
+      else if(el.tagName === 'SELECT'){ if([...el.options].some(o => o.value === v)) el.value = v; }
+      else el.value = v;
+    });
+  } catch(err){ /* ignore corrupt or blocked storage */ }
+}
+
+let supportToken = 0;
+function updateExportUI(){
+  if(!ui.exFormat) return;
+  if(!hasWebCodecs){
+    [...ui.exFormat.options].forEach(o => { if(o.value === 'mp4' || o.value === 'webm') o.disabled = true; });
+    if(ui.exFormat.value === 'mp4' || ui.exFormat.value === 'webm') ui.exFormat.value = 'png-seq';
+  }
+  const s = readExportSettings();
+  const isMp4 = s.format === 'mp4';
+
+  ui.exTransparent.disabled = isMp4;
+  ui.exTransparentRow.classList.toggle('disabled', isMp4);
+  ui.exMatteWrap.classList.toggle('hidden', s.transparent);
+  ui.exAlphaNote.textContent =
+    isMp4 ? "MP4 can't carry transparency, so frames are flattened onto the background colour below."
+    : (s.format === 'webm' && s.transparent) ? "Transparent WebM plays in Chrome/Firefox and on the web, but not in QuickTime, Safari or most editors. Use the PNG sequence for editing."
+    : '';
+  ui.exAlphaNote.classList.toggle('hidden', !ui.exAlphaNote.textContent);
+
+  ui.exCustomSizeWrap.classList.toggle('hidden', ui.exSize.value !== 'custom');
+  ui.exFpsCustomWrap.classList.toggle('hidden', ui.exFps.value !== 'custom');
+  ui.exRangeWrap.classList.toggle('hidden', s.format === 'png');
+  ui.exStillNote.classList.toggle('hidden', s.format !== 'png');
+  ui.exQualityWrap.classList.toggle('hidden', !s.isVideo);
+  ui.exScaleNote.textContent = ui.exSize.value === 'canvas' ? '' :
+    `Canvas is ${compW} × ${compH}. The grid is scaled to match, so the export reads like the preview.`;
+
+  const ext = EXT[s.format];
+  ui.exName.placeholder = s.autoName;
+  ui.exFileOut.textContent = s.format === 'png-seq' ? `${s.name}.zip (${s.name}_00001.png …)` : `${s.name}.${ext}`;
+
+  ui.exFfmpegWrap.classList.toggle('hidden', s.format !== 'png-seq');
+  ui.exFfmpeg.textContent = `ffmpeg -framerate ${s.fpsFfmpeg} -i ${s.name}_%05d.png -c:v prores_ks -profile:v 4444 -pix_fmt yuva444p10le ${s.name}.mov`;
+
+  if(s.error){
+    ui.exOutSize.textContent = s.error;
+    ui.exOutSize.style.color = 'var(--error)';
+  } else {
+    ui.exOutSize.style.color = '';
+    const dur = s.format === 'png' ? '' : ` · ${s.total} frames · ${(s.total/s.fps).toFixed(2)}s`;
+    ui.exOutSize.textContent = `Output: ${s.width} × ${s.height} px${s.resized ? ' (rounded to even for video)' : ''}${dur}`;
+  }
+  ui.exportBtn.textContent = { mp4:'Export MP4', webm:'Export WebM', 'png-seq':'Export PNG sequence', png:'Export PNG' }[s.format];
+  ui.exportBtn.disabled = exporting || !!s.error;
+
+  ui.exRealtimeBtn.classList.toggle('hidden', hasWebCodecs);
+  checkSupport(s);
+  saveExportSettings();
+}
+
+// Warn early when the browser can't encode the chosen codec/size.
+async function checkSupport(s){
+  const token = ++supportToken;
+  const msgs = [];
+  if(!hasWebCodecs){
+    msgs.push('Video export needs a recent Chrome, Edge or Safari served over HTTPS. PNG sequence still works.');
+  } else if(s.isVideo && !s.error){
+    if(s.format === 'webm' && s.transparent && !isChromium) msgs.push('Transparent WebM is a Chrome/Edge feature. Use Chrome for this export.');
+    try{
+      const { mb } = await loadLibs();
+      const ok = await mb.canEncodeVideo(s.format === 'webm' ? 'vp9' : 'avc', {
+        width: s.width, height: s.height, frameRate: s.fps, quality: qualityFor(mb, s.quality),
+        ...(s.format === 'webm' && s.transparent ? { alpha: 'keep' } : {}),
+      });
+      if(!ok) msgs.push(encodeHelp(s.format === 'webm', s.width, s.height));
+    } catch(err){
+      msgs.push(err.message);
+    }
+  }
+  if(token !== supportToken) return;
+  ui.exSupport.textContent = msgs.join(' ');
+  ui.exSupport.classList.toggle('hidden', msgs.length === 0);
+}
+
+function qualityFor(mb, q){
+  return { low: mb.QUALITY_LOW, medium: mb.QUALITY_MEDIUM, high: mb.QUALITY_HIGH, veryHigh: mb.QUALITY_VERY_HIGH }[q] || mb.QUALITY_HIGH;
+}
+
+function encodeHelp(webm, w, h){
+  const smaller = w*h > 1920*1080 ? 'Try 1080p' : 'Try a different size';
+  return `This browser can't encode ${webm ? 'VP9' : 'H.264'} at ${w} × ${h}. ${smaller}${webm ? '' : ' or WebM'}, or use Chrome.`;
+}
+
+const canvasToPng = c => new Promise((res, rej) =>
+  c.toBlob(b => b ? res(b) : rej(new Error('PNG encode failed — the canvas may be too large for this browser.')), 'image/png'));
+
+async function exportMedia(o, onProgress, signal, dir){
+  const t0 = performance.now();
+  const progress = i => onProgress({ frame: i, total: o.total, eta: i ? ((performance.now()-t0)/i) * (o.total-i) / 1000 : null });
+  const aborted = () => new DOMException('Export cancelled', 'AbortError');
+
+  const libs = o.format === 'png' ? null : await loadLibs();
+  await document.fonts.ready;
+  const restore = app.beginExport({ width:o.width, height:o.height, transparent:o.transparent, matte:o.matte });
+  try{
+    if(o.format === 'png'){
+      await app.renderAt(previewT);
+      progress(1);
+      return { blob: await canvasToPng(app.canvas), ext:'png' };
+    }
+    if(o.format === 'png-seq') return dir ? await pngToFolder() : await pngZip();
+    return await video();
+  } finally { restore(); }
+
+  async function video(){
+    const { mb } = libs;
+    const webm = o.format === 'webm';
+    const codec = webm ? 'vp9' : 'avc';
+    const alpha = webm && o.transparent ? { alpha:'keep' } : {};
+    const quality = qualityFor(mb, o.quality);
+    if(!(await mb.canEncodeVideo(codec, { width:o.width, height:o.height, frameRate:o.fps, quality, ...alpha }))){
+      throw new Error(encodeHelp(webm, o.width, o.height));
+    }
+    const output = new mb.Output({
+      format: webm ? new mb.WebMOutputFormat() : new mb.Mp4OutputFormat({ fastStart:'in-memory' }),
+      target: new mb.BufferTarget(),
+    });
+    const source = new mb.CanvasSource(app.canvas, { codec, quality, ...alpha });
+    output.addVideoTrack(source, { frameRate: o.fps });
+    await output.start();
+    for(let i=0; i<o.total; i++){
+      if(signal.aborted){ await output.cancel(); throw aborted(); }
+      await app.renderAt(o.start + i/o.fps);
+      await source.add(i/o.fps, 1/o.fps);
+      progress(i+1);
+      if(i % 4 === 0) await tick();
+    }
+    await output.finalize();
+    return { blob: new Blob([output.target.buffer], { type: webm ? 'video/webm' : 'video/mp4' }), ext: webm ? 'webm' : 'mp4' };
+  }
+
+  async function pngZip(){
+    const { Zip, ZipPassThrough } = libs.ff;
+    const chunks = [];
+    let zipErr = null;
+    const zip = new Zip((err, chunk) => { if(err){ zipErr = err; return; } chunks.push(chunk); });
+    for(let i=0; i<o.total; i++){
+      if(signal.aborted){ zip.terminate(); throw aborted(); }
+      if(zipErr) throw zipErr;
+      await app.renderAt(o.start + i/o.fps);
+      const png = new Uint8Array(await (await canvasToPng(app.canvas)).arrayBuffer());
+      const f = new ZipPassThrough(frameName(i));
+      zip.add(f); f.push(png, true);
+      progress(i+1);
+      if(i % 4 === 0) await tick();
+    }
+    zip.end();
+    if(zipErr) throw zipErr;
+    return { blob: new Blob(chunks, { type:'application/zip' }), ext:'zip' };
+  }
+
+  // Large sequences in Chromium: write each frame straight to a folder instead of holding a zip in memory.
+  async function pngToFolder(){
+    for(let i=0; i<o.total; i++){
+      if(signal.aborted) throw aborted();
+      await app.renderAt(o.start + i/o.fps);
+      const blob = await canvasToPng(app.canvas);
+      const fh = await dir.getFileHandle(frameName(i), { create:true });
+      const w = await fh.createWritable();
+      await w.write(blob); await w.close();
+      progress(i+1);
+      if(i % 4 === 0) await tick();
+    }
+    return { blob:null, folder: dir.name };
+  }
+
+  function frameName(i){ return `${o.name}_${String(i+1).padStart(5,'0')}.png`; }
+}
+
+// Fallback only when WebCodecs is missing: records in real time, may drop frames, alpha not guaranteed.
+async function recordRealtime(o, onProgress, signal){
+  if(!canvas.captureStream || !window.MediaRecorder) throw new Error("This browser can't record video at all. Use the PNG sequence instead.");
+  const mimeType = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(m => MediaRecorder.isTypeSupported(m));
+  if(!mimeType) throw new Error("This browser can't record WebM. Use the PNG sequence instead.");
+  const duration = o.end - o.start;
+  const restore = app.beginExport({ width:o.width, height:o.height, transparent:o.transparent, matte:o.matte });
+  try{
+    const stream = canvas.captureStream(o.fps);
+    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: { low:4e6, medium:8e6, high:16e6, veryHigh:32e6 }[o.quality] });
+    const chunks = [];
+    recorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
+    const stopped = new Promise(r => recorder.onstop = r);
+    recorder.start();
+    const wasCancelled = await new Promise(resolve => {
+      const t0 = performance.now();
+      function frame(now){
+        if(signal.aborted) return resolve(true);
+        const t = Math.min((now-t0)/1000, duration);
+        drawFrame(o.start + t, exportMatte);
+        onProgress({ frame: Math.round(t*o.fps), total: o.total, eta: duration - t });
+        if(t < duration) requestAnimationFrame(frame); else resolve(false);
+      }
+      requestAnimationFrame(frame);
+    });
+    recorder.stop();
+    await stopped;
+    if(wasCancelled) throw new DOMException('Export cancelled', 'AbortError');
+    return { blob: new Blob(chunks, { type:'video/webm' }), ext:'webm' };
+  } finally { restore(); }
+}
+
+let lastUrl = null;
+function offerDownload(blob, filename, isVideo){
+  if(lastUrl) URL.revokeObjectURL(lastUrl);
+  const url = lastUrl = URL.createObjectURL(blob);
+  try{
+    const a = Object.assign(document.createElement('a'), { href:url, download:filename });
+    document.body.appendChild(a); a.click(); a.remove();
+  } catch(err){ /* the visible link below still works */ }
+
+  // Visible link in case the automatic download was blocked (e.g. embedded previews).
+  const link = Object.assign(document.createElement('a'), { href:url, download:filename, textContent:`⬇ Save ${filename} (${(blob.size/1048576).toFixed(1)} MB)` });
+  ui.exResult.appendChild(link);
+  if(isVideo){
+    const v = Object.assign(document.createElement('video'), { src:url, controls:true, loop:true, muted:true, playsInline:true });
+    ui.exResult.appendChild(v);
+  } else if(filename.endsWith('.png')){
+    ui.exResult.appendChild(Object.assign(document.createElement('img'), { src:url, alt:'Exported frame' }));
+  }
+}
+
+function explainError(err, s){
+  const msg = err && err.message ? err.message : String(err);
+  if(/can't encode|Couldn't load|PNG encode/.test(msg)) return msg;
+  if(err && (err.name === 'NotSupportedError' || /not supported|unsupported/i.test(msg))){
+    return `Export failed: ${msg}\nThis browser doesn't support that codec at ${s.width} × ${s.height}. Try a smaller size, a different format, or Chrome.`;
+  }
+  if(/memory|allocation|Array buffer/i.test(msg)){
+    return `Export failed: ${msg}\nRan out of memory. Try a shorter range, a smaller size, or (in Chrome) the PNG sequence written to a folder.`;
+  }
+  return `Export failed: ${msg}\nTry a smaller size or shorter range, or another format. Chrome has the most complete support.`;
+}
+
+let abortCtl = null;
+function setBusy(busy){
+  exporting = busy || exporting;
+  ui.exportBtn.disabled = busy;
+  ui.exRealtimeBtn.disabled = busy;
+  ui.exCancelWrap.classList.toggle('hidden', !busy);
+  ui.exportPanel.querySelectorAll('select, input').forEach(el => { el.disabled = busy; });
+  ui.resolutionPreset.disabled = busy;
+  if(!busy) updateExportUI();
+}
+function onProgress({ frame, total, eta }){
+  ui.exProgress.max = total; ui.exProgress.value = frame;
+  ui.exStatus.textContent = `Frame ${frame} / ${total}` + (eta != null && frame < total ? ` · ~${Math.ceil(eta)}s left` : '');
+}
+
+async function runExport(realtime){
+  const s = readExportSettings();
+  if(s.error){ ui.exError.textContent = s.error; return; }
+
+  // Folder picker must be requested straight from the click, before any await.
+  let dir = null;
+  if(!realtime && s.format === 'png-seq' && (s.total > 1500 || s.width*s.height >= 3840*2160) && window.showDirectoryPicker){
+    try{ dir = await window.showDirectoryPicker({ mode:'readwrite' }); }
+    catch(err){ if(err.name === 'AbortError') return; dir = null; } // blocked (e.g. in an iframe) — fall back to zip
+  }
+
+  ui.exError.textContent = '';
+  ui.exResult.innerHTML = '';
+  ui.exProgressWrap.classList.remove('hidden');
+  onProgress({ frame:0, total:s.total, eta:null });
+  setBusy(true);
+  abortCtl = new AbortController();
+  try{
+    const res = realtime ? await recordRealtime(s, onProgress, abortCtl.signal)
+                         : await exportMedia(s, onProgress, abortCtl.signal, dir);
+    if(res.folder){
+      ui.exStatus.textContent = `Done — wrote ${s.total} frames to “${res.folder}”.`;
+    } else {
+      ui.exStatus.textContent = `Done — ${s.total} frame${s.total === 1 ? '' : 's'}.` + (realtime ? ' Recorded in real time; frames may have been dropped.' : '');
+      offerDownload(res.blob, `${s.name}.${res.ext}`, res.ext === 'mp4' || res.ext === 'webm');
+    }
+  } catch(err){
+    if(err && err.name === 'AbortError'){
+      ui.exStatus.textContent = 'Export cancelled.';
+    } else {
+      console.error(err);
+      ui.exError.textContent = explainError(err, s);
+      ui.exStatus.textContent = '';
+    }
+  } finally {
+    abortCtl = null;
+    exporting = false;
+    setBusy(false);
+  }
+}
+
+ui.exportBtn.addEventListener('click', () => runExport(false));
+ui.exRealtimeBtn.addEventListener('click', () => runExport(true));
+ui.exCancelBtn.addEventListener('click', () => { if(abortCtl) abortCtl.abort(); });
+
+ui.exCopyFfmpeg.addEventListener('click', async () => {
+  const text = ui.exFfmpeg.textContent;
+  try{ await navigator.clipboard.writeText(text); }
+  catch(err){
+    const r = document.createRange(); r.selectNodeContents(ui.exFfmpeg);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    document.execCommand && document.execCommand('copy');
+  }
+  ui.exCopyFfmpeg.textContent = 'Copied';
+  setTimeout(() => { ui.exCopyFfmpeg.textContent = 'Copy'; }, 1500);
+});
+
+// Turning transparency on switches the preview to the checkerboard so you can see what's see-through.
+ui.exTransparent.addEventListener('change', () => {
+  if(ui.exTransparent.checked){ ui.solidBg.checked = false; canvas.classList.remove('solid'); }
+});
+
+['exFormat','exTransparent','exMatte','exSize','exW','exH','exFps','exFpsCustom','exStart','exEnd','exQuality','exName']
+  .forEach(id => { ui[id].addEventListener('input', updateExportUI); ui[id].addEventListener('change', updateExportUI); });
+
+loadExportSettings();
+exportUIReady = true;
+updateExportUI();
+</script>
+
+</body>
+</html>
