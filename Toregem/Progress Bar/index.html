@@ -278,6 +278,9 @@
 
       <label class="cap" for="textSize">Text size <span class="val"><span id="textSizeVal">18</span>px</span></label>
       <input type="range" id="textSize" min="8" max="60" step="1">
+
+      <label class="cap" for="hlSize">Highlighted text size <span class="val"><span id="hlSizeVal">27</span>px</span></label>
+      <input type="range" id="hlSize" min="8" max="120" step="1">
       <p class="status" id="frameNote"></p>
     </div>
 
@@ -414,6 +417,7 @@
     length: 1000,
     lineWidth: 3,
     textSize: 18,
+    hlSize: 27,   /* the name under the circle grows (or shrinks) to this */
     animIn: true,
     animOut: true,
     animStyle: "draw",
@@ -446,6 +450,9 @@
       if(saved.length >= 300 && saved.length <= 4000) state.length = saved.length;
       if(saved.lineWidth >= 1 && saved.lineWidth <= 24) state.lineWidth = saved.lineWidth;
       if(saved.textSize >= 8 && saved.textSize <= 60) state.textSize = saved.textSize;
+      /* saved before it had its own size, the highlight was 1.5× the text */
+      var hl = saved.hlSize === undefined ? Math.round(state.textSize * 1.5) : saved.hlSize;
+      if(hl >= 8 && hl <= 120) state.hlSize = hl;
       if(saved.inTime >= 0.3 && saved.inTime <= 5) state.inTime = saved.inTime;
       if(saved.outTime >= 0.3 && saved.outTime <= 5) state.outTime = saved.outTime;
       if(saved.orient === "horizontal" || saved.orient === "vertical") state.orient = saved.orient;
@@ -515,7 +522,7 @@
     var depth = r * 0.55;
     var gr = glowRadius(r);
     var labelSize = state.textSize;
-    var peak = labelSize * 1.5;   /* the label under the circle grows to this */
+    var peak = Math.max(labelSize, state.hlSize);   /* the largest a name gets */
 
     ctx.font = labelFont(peak);
     var longest = 0;
@@ -542,7 +549,7 @@
       r: r, depth: depth, spread: r * 2.4, lw: lw,
       x0: pad, x1: w - pad,
       lineY: lineY, tickTop: tickTop, labelTop: labelTop,
-      labelSize: labelSize, h: Math.ceil(h), upright: upright
+      labelSize: labelSize, hlSize: state.hlSize, h: Math.ceil(h), upright: upright
     };
     /* the frame as it comes out: the vertical one is drawn lying down, then stood up */
     geo.fw = upright ? geo.h : geo.w;
@@ -818,7 +825,7 @@
       var dist = Math.abs(kx - sx);
       if(dist < best){ best = dist; activeIdx = k; }
       var e = smooth(1 - dist / (band * 0.6));
-      var size = G.labelSize * (1 + 0.5 * e);
+      var size = G.labelSize + (G.hlSize - G.labelSize) * e;
       var alpha = sx <= kx + 1 || !state.dimAhead ? 0.5 : 0.26;
       alpha += (1 - alpha) * e;
       var lv = vis(sx);
@@ -1054,6 +1061,7 @@
   bindRange("length", "length", layout);
   bindRange("lineWidth", "lineWidth", layout);
   bindRange("textSize", "textSize", layout);
+  bindRange("hlSize", "hlSize", layout);
   bindCheck("loopChk", "loop");
   bindCheck("stepChk", "stepMode");
   bindCheck("dimChk", "dimAhead");
