@@ -277,7 +277,7 @@
       <input type="range" id="lineWidth" min="1" max="24" step="0.5">
 
       <label class="cap" for="textSize">Text size <span class="val"><span id="textSizeVal">18</span>px</span></label>
-      <input type="range" id="textSize" min="8" max="60" step="1">
+      <input type="range" id="textSize" min="8" max="80" step="1">
 
       <label class="cap" for="hlSize">Highlighted text size <span class="val"><span id="hlSizeVal">27</span>px</span></label>
       <input type="range" id="hlSize" min="8" max="120" step="1">
@@ -449,7 +449,7 @@
       if(saved.glow >= 0 && saved.glow <= 100) state.glow = saved.glow;
       if(saved.length >= 300 && saved.length <= 4000) state.length = saved.length;
       if(saved.lineWidth >= 1 && saved.lineWidth <= 24) state.lineWidth = saved.lineWidth;
-      if(saved.textSize >= 8 && saved.textSize <= 60) state.textSize = saved.textSize;
+      if(saved.textSize >= 8 && saved.textSize <= 80) state.textSize = saved.textSize;
       /* saved before it had its own size, the highlight was 1.5× the text */
       var hl = saved.hlSize === undefined ? Math.round(state.textSize * 1.5) : saved.hlSize;
       if(hl >= 8 && hl <= 120) state.hlSize = hl;
