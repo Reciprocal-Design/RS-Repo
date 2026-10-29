@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shape Mosaic</title>
+<meta name="description" content="Rebuild an image as a mosaic of one SVG shape at different sizes, with subtle looping motion. Export PNG, SVG or video.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  html { color-scheme: light dark; }
+  body { margin: 0; font-size: 14px; }
+  [hidden] { display: none !important; }
+
+  :root {
+    --bg: #eef0f2;
+    --surface: #ffffff;
+    --surface-2: #e4e8ec;
+    --border: #d3d9df;
+    --text: #15191d;
+    --text-dim: #5f6b76;
+    --accent: #0f7c86;
+    --accent-strong: #0b636b;
+    --accent-text: #f2fdfe;
+    --danger: #c2412f;
+    --shadow: rgba(18, 28, 38, 0.14);
+    --check-a: #ffffff;
+    --check-b: #e6e9ec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #101316;
+      --surface: #181c20;
+      --surface-2: #22272c;
+      --border: #30373e;
+      --text: #e9edf0;
+      --text-dim: #93a0ab;
+      --accent: #3fc2cc;
+      --accent-strong: #66d6de;
+      --accent-text: #06292c;
+      --danger: #ef7563;
+      --shadow: rgba(0, 0, 0, 0.5);
+      --check-a: #1e2226;
+      --check-b: #171a1d;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101316;
+    --surface: #181c20;
+    --surface-2: #22272c;
+    --border: #30373e;
+    --text: #e9edf0;
+    --text-dim: #93a0ab;
+    --accent: #3fc2cc;
+    --accent-strong: #66d6de;
+    --accent-text: #06292c;
+    --danger: #ef7563;
+    --shadow: rgba(0, 0, 0, 0.5);
+    --check-a: #1e2226;
+    --check-b: #171a1d;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    padding: 24px 16px 48px;
+    min-height: 100vh;
+  }
+  .app { max-width: 1320px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+  header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; }
+  h1 { margin: 0; font-size: clamp(1.6rem, 1.2rem + 1.4vw, 2.3rem); letter-spacing: -0.02em; font-weight: 600; }
+  .tagline { margin: 4px 0 0; color: var(--text-dim); max-width: 60ch; }
+  .client { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; }
+
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 20px; align-items: start; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+
+  .stage-col { display: flex; flex-direction: column; gap: 10px; position: sticky; top: 16px; }
+  @media (max-width: 900px) { .stage-col { position: static; } }
+  .stage {
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: 0 18px 44px -24px var(--shadow);
+    padding: 16px;
+    min-height: 320px;
+  }
+  .stage.drag { outline: 2px dashed var(--accent); outline-offset: -8px; }
+  .canvas-box {
+    background-color: var(--check-a);
+    background-image:
+      linear-gradient(45deg, var(--check-b) 25%, transparent 25%, transparent 75%, var(--check-b) 75%),
+      linear-gradient(45deg, var(--check-b) 25%, transparent 25%, transparent 75%, var(--check-b) 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 8px 8px;
+    line-height: 0;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  canvas#stage {
+    display: block;
+    max-width: 100%;
+    max-height: min(76vh, 900px);
+    width: auto; height: auto;
+  }
+  .stage-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+  .meta { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--text-dim); }
+  .drop-hint { font-size: 12px; color: var(--text-dim); }
+
+  .panel { display: flex; flex-direction: column; gap: 12px; }
+  details.group {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 0 14px;
+  }
+  details.group > summary {
+    cursor: pointer; list-style: none;
+    padding: 12px 0; font-weight: 600; font-size: 14px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  details.group > summary::-webkit-details-marker { display: none; }
+  details.group > summary::after { content: "+"; color: var(--text-dim); font-weight: 400; font-size: 18px; line-height: 1; }
+  details.group[open] > summary::after { content: "–"; }
+  .rows { display: flex; flex-direction: column; gap: 12px; padding-bottom: 14px; }
+
+  .row { display: flex; flex-direction: column; gap: 5px; }
+  .row-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  label, .label { font-size: 13px; color: var(--text); }
+  output { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--text-dim); }
+  .hint { font-size: 12px; color: var(--text-dim); margin: 0; }
+
+  input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
+  select, input[type="color"] {
+    font: inherit; color: var(--text); background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 8px;
+  }
+  select { padding: 7px 8px; width: 100%; }
+  input[type="color"] { width: 44px; height: 32px; padding: 2px; cursor: pointer; }
+  .inline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+  .check input { accent-color: var(--accent); margin: 0; }
+
+  button, .btn {
+    font: inherit; font-size: 13px; font-weight: 500;
+    padding: 8px 12px; border-radius: 9px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  button:hover, .btn:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button.primary:hover { background: var(--accent-strong); }
+  button.rec { color: var(--danger); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .uploads { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .upload {
+    display: flex; flex-direction: column; gap: 8px; align-items: stretch;
+    border: 1px solid var(--border); border-radius: 12px; padding: 10px; background: var(--surface-2);
+  }
+  .thumb {
+    height: 84px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+    background: var(--surface); overflow: hidden;
+  }
+  .thumb canvas, .thumb img { max-width: 100%; max-height: 100%; display: block; }
+  .upload .label { font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
+  .upload .btns { display: flex; gap: 6px; }
+  .upload .btns > * { flex: 1; padding: 6px 8px; font-size: 12px; }
+  .upload input[type="file"] { display: none; }
+
+  .exports { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .toast { font-size: 12px; color: var(--danger); min-height: 1em; margin: 0; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <div class="client">Tuari</div>
+      <h1>Shape Mosaic</h1>
+      <p class="tagline">Upload a simple SVG shape and an image. The image is rebuilt from that shape at different sizes, with a subtle loop of motion.</p>
+    </div>
+  </header>
+
+  <main>
+    <div class="stage-col">
+      <div class="stage" id="stageWrap">
+        <div class="canvas-box"><canvas id="stage" width="1080" height="1080" aria-label="Mosaic preview"></canvas></div>
+      </div>
+      <div class="stage-bar">
+        <div class="inline">
+          <button id="playBtn" class="primary" type="button">Pause</button>
+          <span class="meta" id="meta">–</span>
+        </div>
+        <span class="drop-hint">Drop an SVG for the shape, or any image for the picture.</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="uploads">
+        <div class="upload">
+          <span class="label">Shape</span>
+          <div class="thumb" id="shapeThumb"></div>
+          <div class="btns">
+            <label class="btn" for="shapeFile">Upload</label>
+            <button type="button" id="shapeReset" title="Use the built-in corner arrow">Arrow</button>
+          </div>
+          <input type="file" id="shapeFile" accept=".svg,image/svg+xml">
+        </div>
+        <div class="upload">
+          <span class="label">Image</span>
+          <div class="thumb" id="imageThumb"></div>
+          <div class="btns">
+            <label class="btn" for="imageFile">Upload</label>
+            <button type="button" id="imageReset" title="Use the generated demo protein">Demo</button>
+          </div>
+          <input type="file" id="imageFile" accept="image/*">
+        </div>
+      </div>
+      <p class="toast" id="toast" role="status"></p>
+
+      <details class="group" open>
+        <summary>Layout</summary>
+        <div class="rows">
+          <div class="row">
+            <label for="layout">Arrangement</label>
+            <select id="layout" data-key="layout" data-rebuild>
+              <option value="adaptive">Adaptive – smaller shapes where there's detail</option>
+              <option value="grid">Even grid</option>
+              <option value="brick">Offset rows</option>
+            </select>
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="cell">Cell size</label><output data-for="cell"></output></div>
+            <input type="range" id="cell" data-key="cell" data-rebuild min="6" max="140" step="1" data-unit="px">
+            <p class="hint" data-show="layout=adaptive">Largest cell. Detailed areas split down from here.</p>
+          </div>
+          <div class="row" data-show="layout=adaptive">
+            <div class="row-head"><label for="levels">Split levels</label><output data-for="levels"></output></div>
+            <input type="range" id="levels" data-key="levels" data-rebuild min="1" max="5" step="1">
+          </div>
+          <div class="row" data-show="layout=adaptive">
+            <div class="row-head"><label for="detail">Detail sensitivity</label><output data-for="detail"></output></div>
+            <input type="range" id="detail" data-key="detail" data-rebuild min="0" max="100" step="1" data-unit="%">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="jitter">Position jitter</label><output data-for="jitter"></output></div>
+            <input type="range" id="jitter" data-key="jitter" data-rebuild min="0" max="50" step="1" data-unit="%">
+          </div>
+        </div>
+      </details>
+
+      <details class="group" open>
+        <summary>Size</summary>
+        <div class="rows">
+          <div class="row">
+            <label for="sizeBy">Shape size follows</label>
+            <select id="sizeBy" data-key="sizeBy" data-rebuild>
+              <option value="dark">Darkness (light background)</option>
+              <option value="bright">Brightness (dark background)</option>
+              <option value="alpha">Opacity (transparent background)</option>
+              <option value="flat">Nothing – all the same size</option>
+            </select>
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="minSize">Smallest</label><output data-for="minSize"></output></div>
+            <input type="range" id="minSize" data-key="minSize" data-rebuild min="0" max="100" step="1" data-unit="%">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="maxSize">Largest</label><output data-for="maxSize"></output></div>
+            <input type="range" id="maxSize" data-key="maxSize" data-rebuild min="10" max="160" step="1" data-unit="%">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="gamma">Contrast</label><output data-for="gamma"></output></div>
+            <input type="range" id="gamma" data-key="gamma" data-rebuild min="0.3" max="3" step="0.05">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="cutoff">Hide below</label><output data-for="cutoff"></output></div>
+            <input type="range" id="cutoff" data-key="cutoff" data-rebuild min="0" max="60" step="1" data-unit="%">
+            <p class="hint">Cells fainter than this get no shape, so the background stays clear.</p>
+          </div>
+        </div>
+      </details>
+
+      <details class="group" open>
+        <summary>Rotation</summary>
+        <div class="rows">
+          <div class="row">
+            <label for="rotMode">Direction</label>
+            <select id="rotMode" data-key="rotMode" data-rebuild>
+              <option value="fixed">All the same</option>
+              <option value="gradient">Point along the light</option>
+              <option value="contour">Follow the contours</option>
+              <option value="random90">Random quarter turns</option>
+              <option value="random">Random</option>
+            </select>
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="rotOffset">Angle</label><output data-for="rotOffset"></output></div>
+            <input type="range" id="rotOffset" data-key="rotOffset" data-rebuild min="0" max="359" step="1" data-unit="°">
+          </div>
+          <label class="check" data-show="rotMode=gradient|contour"><input type="checkbox" id="snap" data-key="snap" data-rebuild> Snap to 90°</label>
+        </div>
+      </details>
+
+      <details class="group" open>
+        <summary>Colour</summary>
+        <div class="rows">
+          <div class="row">
+            <label for="colorMode">Fill</label>
+            <select id="colorMode" data-key="colorMode" data-rebuild>
+              <option value="stencil">Image showing through the shapes</option>
+              <option value="cell">Image colour, one per shape</option>
+              <option value="ramp">Two-colour ramp by tone</option>
+              <option value="solid">Single colour</option>
+            </select>
+          </div>
+          <div class="inline" data-show="colorMode=ramp|solid">
+            <label class="inline" for="colA"><input type="color" id="colA" data-key="colA" data-rebuild> <span data-show="colorMode=ramp">Faint</span><span data-show="colorMode=solid">Shape</span></label>
+            <label class="inline" for="colB" data-show="colorMode=ramp"><input type="color" id="colB" data-key="colB" data-rebuild> Strong</label>
+          </div>
+          <div class="inline">
+            <label class="inline" for="bg"><input type="color" id="bg" data-key="bg"> Background</label>
+            <label class="check"><input type="checkbox" id="transparent" data-key="transparent"> Transparent</label>
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="underlay">Original image underneath</label><output data-for="underlay"></output></div>
+            <input type="range" id="underlay" data-key="underlay" min="0" max="100" step="1" data-unit="%">
+          </div>
+        </div>
+      </details>
+
+      <details class="group" open>
+        <summary>Motion</summary>
+        <div class="rows">
+          <div class="row">
+            <label for="pattern">Pattern</label>
+            <select id="pattern" data-key="pattern" data-rebuild>
+              <option value="shimmer">Shimmer – each shape on its own</option>
+              <option value="wave">Wave – sweeps across</option>
+              <option value="ripple">Ripple – out from the centre</option>
+              <option value="tone">Breathe – by tone</option>
+            </select>
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="pulse">Size change</label><output data-for="pulse"></output></div>
+            <input type="range" id="pulse" data-key="pulse" min="0" max="60" step="1" data-unit="%">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="wobble">Rotation sway</label><output data-for="wobble"></output></div>
+            <input type="range" id="wobble" data-key="wobble" min="0" max="45" step="1" data-unit="°">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="loop">Loop length</label><output data-for="loop"></output></div>
+            <input type="range" id="loop" data-key="loop" min="2" max="20" step="0.5" data-unit="s">
+          </div>
+          <div class="row">
+            <div class="row-head"><label for="cycles">Pulses per loop</label><output data-for="cycles"></output></div>
+            <input type="range" id="cycles" data-key="cycles" min="1" max="6" step="1">
+          </div>
+          <div class="row" data-show="pattern=wave|ripple">
+            <div class="row-head"><label for="wavelength">Wave length</label><output data-for="wavelength"></output></div>
+            <input type="range" id="wavelength" data-key="wavelength" data-rebuild min="5" max="150" step="1" data-unit="%">
+          </div>
+        </div>
+      </details>
+
+      <details class="group" open>
+        <summary>Export</summary>
+        <div class="rows">
+          <div class="row">
+            <label for="res">Size (long side)</label>
+            <select id="res" data-key="res" data-rebuild>
+              <option value="1080">1080 px</option>
+              <option value="1920">1920 px</option>
+              <option value="2560">2560 px</option>
+              <option value="3840">3840 px</option>
+            </select>
+          </div>
+          <div class="exports">
+            <button type="button" id="pngBtn">PNG</button>
+            <button type="button" id="svgBtn">SVG</button>
+            <button type="button" id="vidBtn" class="rec">Video</button>
+          </div>
+          <p class="hint" id="exportHint">PNG and SVG save the current frame. Video records one seamless loop.</p>
+        </div>
+      </details>
+    </div>
+  </main>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------- settings ----------
+  const state = {
+    layout: "adaptive", cell: 40, levels: 3, detail: 50, jitter: 0,
+    sizeBy: "dark", minSize: 15, maxSize: 95, gamma: 1, cutoff: 6,
+    rotMode: "fixed", rotOffset: 0, snap: false,
+    colorMode: "stencil", colA: "#cfe7ea", colB: "#0f5560", bg: "#ffffff", transparent: false, underlay: 0,
+    pattern: "shimmer", pulse: 14, wobble: 0, loop: 6, cycles: 1, wavelength: 40,
+    res: "1080",
+  };
+
+  const TAU = Math.PI * 2;
+  const ANALYSIS_LONG = 480;
+  const MAX_SHAPES = 60000;
+
+  const canvas = document.getElementById("stage");
+  const ctx = canvas.getContext("2d");
+  const $ = id => document.getElementById(id);
+  const toast = msg => { $("toast").textContent = msg || ""; };
+
+  // ---------- built-in corner arrow ----------
+  const ARROW_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M14 92V30h48V12l28 26-28 26V46H30v46z" fill="#000"/></svg>`;
+
+  // ---------- source image ----------
+  let source = null;      // canvas or image element of the picture
+  let analysis = null;    // per-pixel tone & colour integrals
+  let shape = null;       // { mips, w, h, symbol }
+  let leaves = [];
+  let out = { w: 1080, h: 1080 };
+  let colorLayer = null;  // canvas the shapes are filled from
+  let sourceLayer = null; // source drawn at output size
+
+  // Demo picture: a space-filling protein-ish cluster of shaded spheres.
+  function makeDemoProtein() {
+    const S = 1200, c = document.createElement("canvas");
+    c.width = c.height = S;
+    const g = c.getContext("2d");
+    let seed = 7;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const atoms = [];
+    let p = [0, 0, 0], dir = [1, 0, 0];
+    const chains = ["#2f8fa3", "#e2674e", "#e9b44c", "#5f6fc9"];
+    for (let i = 0; i < 420; i++) {
+      // wandering chain, pulled back towards the middle so it folds up
+      dir = dir.map(v => v + (rnd() - 0.5) * 1.1);
+      dir = dir.map((v, k) => v - p[k] * 0.0045);
+      const len = Math.hypot(...dir) || 1;
+      dir = dir.map(v => v / len);
+      p = p.map((v, k) => v + dir[k] * 24);
+      atoms.push({ x: p[0], y: p[1] * 0.92, z: p[2], r: 30 + rnd() * 12, col: chains[Math.floor(i / 105) % chains.length] });
+    }
+    // fit to canvas
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const a of atoms) {
+      minX = Math.min(minX, a.x - a.r); maxX = Math.max(maxX, a.x + a.r);
+      minY = Math.min(minY, a.y - a.r); maxY = Math.max(maxY, a.y + a.r);
+      minZ = Math.min(minZ, a.z); maxZ = Math.max(maxZ, a.z);
+    }
+    const k = (S * 0.84) / Math.max(maxX - minX, maxY - minY);
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    atoms.sort((a, b) => a.z - b.z);
+    for (const a of atoms) {
+      const depth = (a.z - minZ) / (maxZ - minZ || 1);
+      const x = S / 2 + (a.x - cx) * k, y = S / 2 + (a.y - cy) * k, r = a.r * k * (0.85 + depth * 0.3);
+      const grad = g.createRadialGradient(x - r * 0.38, y - r * 0.42, r * 0.05, x, y, r);
+      grad.addColorStop(0, mix(a.col, "#ffffff", 0.75));
+      grad.addColorStop(0.35, mix(a.col, "#ffffff", 0.1));
+      grad.addColorStop(1, mix(a.col, "#0b1014", 0.55 - depth * 0.25));
+      g.fillStyle = grad;
+      g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+      // shade the far atoms a little
+      g.fillStyle = `rgba(10,16,22,${(1 - depth) * 0.28})`;
+      g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+    }
+    return c;
+  }
+
+  // ---------- colour helpers ----------
+  function hexToRgb(h) {
+    const n = parseInt(h.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  const toHex = (r, g, b) => "#" + [r, g, b].map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("");
+  function mix(a, b, t) {
+    const A = hexToRgb(a), B = hexToRgb(b);
+    return toHex(A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t);
+  }
+  function hash(x, y) {
+    let h = Math.imul(Math.round(x * 97) ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(Math.round(y * 131) + 0x27d4eb2f, 0xc2b2ae35);
+    h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d); h ^= h >>> 12;
+    return (h >>> 0) / 4294967296;
+  }
+
+  // ---------- image analysis ----------
+  function setSource(img) {
+    source = img;
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    const k = ANALYSIS_LONG / Math.max(iw, ih);
+    const w = Math.max(1, Math.round(iw * k)), h = Math.max(1, Math.round(ih * k));
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const g = c.getContext("2d", { willReadFrequently: true });
+    g.drawImage(img, 0, 0, w, h);
+    analysis = { w, h, data: g.getImageData(0, 0, w, h).data, aspect: iw / ih };
+    autoSizeBy();
+    drawThumb($("imageThumb"), img);
+    sourceLayer = null;
+    computeTone();
+    rebuild();
+  }
+
+  // Guess what the picture's background is from its border.
+  function autoSizeBy() {
+    const { w, h, data } = analysis;
+    let a = 0, l = 0, n = 0;
+    const sample = (x, y) => {
+      const i = (y * w + x) * 4;
+      a += data[i + 3] / 255;
+      l += (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
+      n++;
+    };
+    for (let x = 0; x < w; x += 4) { sample(x, 0); sample(x, h - 1); }
+    for (let y = 0; y < h; y += 4) { sample(0, y); sample(w - 1, y); }
+    a /= n; l /= n;
+    // transparent or light surround: size by darkness; dark surround: by brightness
+    state.sizeBy = a >= 0.5 && l < 0.4 ? "bright" : "dark";
+    if (a >= 0.5) {
+      let r = 0, g = 0, b = 0, m = 0;
+      for (let x = 0; x < w; x += 4) for (const y of [0, h - 1]) {
+        const i = (y * w + x) * 4;
+        r += data[i]; g += data[i + 1]; b += data[i + 2]; m++;
+      }
+      state.bg = toHex(r / m, g / m, b / m);
+      state.transparent = false;
+    }
+    syncControls();
+  }
+
+  // Tone per pixel (0 = no shape, 1 = full size) plus summed-area tables
+  // so any cell's mean, spread, colour and slope are O(1).
+  function computeTone() {
+    const { w, h, data } = analysis;
+    const W = w + 1, N = W * (h + 1);
+    const T = new Float64Array(N), T2 = new Float64Array(N);
+    const R = new Float64Array(N), G = new Float64Array(N), B = new Float64Array(N), A = new Float64Array(N);
+    for (let y = 0; y < h; y++) {
+      let st = 0, st2 = 0, sr = 0, sg = 0, sb = 0, sa = 0;
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        const a = data[i + 3] / 255;
+        const lum = (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
+        let t;
+        switch (state.sizeBy) {
+          case "bright": t = lum * a; break;
+          case "alpha": t = a; break;
+          case "flat": t = 1; break;
+          default: t = a * (1 - lum);
+        }
+        st += t; st2 += t * t;
+        sr += data[i] * a; sg += data[i + 1] * a; sb += data[i + 2] * a; sa += a;
+        const o = (y + 1) * W + x + 1, u = y * W + x + 1;
+        T[o] = T[u] + st; T2[o] = T2[u] + st2;
+        R[o] = R[u] + sr; G[o] = G[u] + sg; B[o] = B[u] + sb; A[o] = A[u] + sa;
+      }
+    }
+    Object.assign(analysis, { T, T2, R, G, B, A, W, tone: state.sizeBy });
+  }
+
+  function areaSum(S, x0, y0, x1, y1) {
+    const W = analysis.W;
+    return S[y1 * W + x1] - S[y0 * W + x1] - S[y1 * W + x0] + S[y0 * W + x0];
+  }
+
+  // Stats for a rectangle given in output pixels.
+  function regionStats(ox, oy, os, full) {
+    const k = analysis.w / out.w;
+    let x0 = Math.floor(ox * k), y0 = Math.floor(oy * k);
+    let x1 = Math.ceil((ox + os) * k), y1 = Math.ceil((oy + os) * k);
+    x0 = Math.max(0, Math.min(analysis.w - 1, x0)); y0 = Math.max(0, Math.min(analysis.h - 1, y0));
+    x1 = Math.max(x0 + 1, Math.min(analysis.w, x1)); y1 = Math.max(y0 + 1, Math.min(analysis.h, y1));
+    const n = (x1 - x0) * (y1 - y0);
+    const mean = areaSum(analysis.T, x0, y0, x1, y1) / n;
+    const variance = Math.max(0, areaSum(analysis.T2, x0, y0, x1, y1) / n - mean * mean);
+    const res = { mean, std: Math.sqrt(variance) };
+    if (!full) return res;
+    const a = areaSum(analysis.A, x0, y0, x1, y1);
+    res.rgb = a > 1e-6
+      ? [areaSum(analysis.R, x0, y0, x1, y1) / a, areaSum(analysis.G, x0, y0, x1, y1) / a, areaSum(analysis.B, x0, y0, x1, y1) / a]
+      : [255, 255, 255];
+    // slope of tone across the cell, from its halves
+    const mx = Math.max(x0 + 1, (x0 + x1) >> 1), my = Math.max(y0 + 1, (y0 + y1) >> 1);
+    const mean2 = (a0, b0, a1, b1) => (a1 > a0 && b1 > b0) ? areaSum(analysis.T, a0, b0, a1, b1) / ((a1 - a0) * (b1 - b0)) : 0;
+    res.gx = x1 - x0 > 1 ? mean2(mx, y0, x1, y1) - mean2(x0, y0, mx, y1) : 0;
+    res.gy = y1 - y0 > 1 ? mean2(x0, my, x1, y1) - mean2(x0, y0, x1, my) : 0;
+    return res;
+  }
+
+  // ---------- shape ----------
+  async function setShapeFromText(text, name) {
+    const doc = new DOMParser().parseFromString(text, "image/svg+xml");
+    const svg = doc.documentElement;
+    if (doc.querySelector("parsererror") || svg.nodeName.toLowerCase() !== "svg") throw new Error("That file isn't a readable SVG.");
+    const num = v => { const n = parseFloat(v); return isFinite(n) && !/%$/.test(v || "") ? n : 0; };
+    let vb = (svg.getAttribute("viewBox") || "").trim().split(/[\s,]+/).map(Number);
+    if (vb.length !== 4 || vb.some(v => !isFinite(v)) || vb[2] <= 0 || vb[3] <= 0) {
+      vb = [0, 0, num(svg.getAttribute("width")) || 100, num(svg.getAttribute("height")) || 100];
+    }
+    const [vx, vy, vw, vh] = vb;
+    const RENDER = 1024;
+    const f = RENDER / Math.max(vw, vh);
+    const rw = Math.max(1, Math.round(vw * f)), rh = Math.max(1, Math.round(vh * f));
+    svg.setAttribute("viewBox", vb.join(" "));
+    svg.setAttribute("width", rw);
+    svg.setAttribute("height", rh);
+    svg.setAttribute("preserveAspectRatio", "none");
+    if (!svg.getAttribute("xmlns")) svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    const markup = new XMLSerializer().serializeToString(svg);
+
+    const img = await loadImage(URL.createObjectURL(new Blob([markup], { type: "image/svg+xml" })), true);
+    const big = document.createElement("canvas");
+    big.width = rw; big.height = rh;
+    const g = big.getContext("2d", { willReadFrequently: true });
+    g.drawImage(img, 0, 0, rw, rh);
+    // silhouette: every painted pixel becomes white, keeping its alpha
+    g.globalCompositeOperation = "source-in";
+    g.fillStyle = "#fff";
+    g.fillRect(0, 0, rw, rh);
+
+    // trim to the painted area so the shape sits centred in its cell
+    const px = g.getImageData(0, 0, rw, rh).data;
+    let x0 = rw, y0 = rh, x1 = -1, y1 = -1;
+    for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) {
+      if (px[(y * rw + x) * 4 + 3] > 8) {
+        if (x < x0) x0 = x; if (x > x1) x1 = x;
+        if (y < y0) y0 = y; if (y > y1) y1 = y;
+      }
+    }
+    if (x1 < 0) throw new Error("The SVG didn't draw anything visible.");
+    x1++; y1++;
+    const cw = x1 - x0, ch = y1 - y0;
+
+    // mip chain, so small shapes stay crisp instead of shimmering
+    const mips = [];
+    let long = 512, prev = null;
+    while (long >= 8) {
+      const s = long / Math.max(cw, ch);
+      const m = document.createElement("canvas");
+      m.width = Math.max(1, Math.round(cw * s)); m.height = Math.max(1, Math.round(ch * s));
+      const mg = m.getContext("2d");
+      mg.imageSmoothingQuality = "high";
+      if (prev) mg.drawImage(prev, 0, 0, m.width, m.height);
+      else mg.drawImage(big, x0, y0, cw, ch, 0, 0, m.width, m.height);
+      mips.push({ canvas: m, long, w: m.width, h: m.height });
+      prev = m; long /= 2;
+    }
+
+    shape = {
+      mips, aspect: cw / ch, name,
+      symbol: {
+        viewBox: [vx + x0 / f, vy + y0 / f, cw / f, ch / f].map(v => +v.toFixed(3)).join(" "),
+        body: recolourForExport(svg),
+      },
+    };
+    drawThumb($("shapeThumb"), mips[1].canvas, true);
+    rebuild();
+  }
+
+  // The shape's markup with every paint set to currentColor, wrapped in a
+  // group that keeps the root's inherited presentation attributes.
+  function recolourForExport(svg) {
+    const skip = new Set(["xmlns", "xmlns:xlink", "width", "height", "viewBox", "version", "x", "y", "preserveAspectRatio", "id", "class", "baseProfile"]);
+    const attrs = [];
+    for (const a of svg.attributes) if (!skip.has(a.name) && !a.name.startsWith("xmlns")) attrs.push(`${a.name}="${a.value.replace(/"/g, "&quot;")}"`);
+    if (!svg.hasAttribute("fill")) attrs.push(`fill="currentColor"`);
+    const inner = Array.from(svg.childNodes).map(n => new XMLSerializer().serializeToString(n)).join("");
+    const g = `<g ${attrs.join(" ")}>${inner}</g>`;
+    return g
+      .replace(/(^|[^\w-])(fill|stroke)\s*=\s*"(?!\s*none)[^"]*"/g, `$1$2="currentColor"`)
+      .replace(/(^|[^\w-])(fill|stroke)\s*:\s*(?!\s*none)[^;"'}]+/g, `$1$2:currentColor`)
+      .replace(/\sxmlns="[^"]*"/g, "");
+  }
+
+  function loadImage(url, revoke) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => { if (revoke) URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { if (revoke) URL.revokeObjectURL(url); reject(new Error("Couldn't read that image.")); };
+      img.src = url;
+    });
+  }
+
+  function drawThumb(box, img, tinted) {
+    const c = document.createElement("canvas");
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    const k = Math.min(160 / iw, 84 / ih);
+    c.width = Math.max(1, Math.round(iw * k * 2)); c.height = Math.max(1, Math.round(ih * k * 2));
+    c.style.width = c.width / 2 + "px";
+    const g = c.getContext("2d");
+    g.drawImage(img, 0, 0, c.width, c.height);
+    if (tinted) {
+      g.globalCompositeOperation = "source-in";
+      g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--text").trim() || "#000";
+      g.fillRect(0, 0, c.width, c.height);
+    }
+    box.replaceChildren(c);
+  }
+
+  // ---------- building the mosaic ----------
+  function rebuild() {
+    if (!analysis || !shape) return;
+    if (analysis.tone !== state.sizeBy) computeTone();
+    const long = +state.res;
+    if (analysis.aspect >= 1) out = { w: long, h: Math.max(1, Math.round(long / analysis.aspect)) };
+    else out = { w: Math.max(1, Math.round(long * analysis.aspect)), h: long };
+    if (canvas.width !== out.w || canvas.height !== out.h) {
+      canvas.width = out.w; canvas.height = out.h;
+      sourceLayer = null;
+    }
+    const scale = long / 1080; // sizes are set at 1080 so exports keep the look
+    const cell = state.cell * scale;
+    const levels = state.layout === "adaptive" ? state.levels : 1;
+    const top = cell;
+    const minCell = Math.max(3 * scale, cell / Math.pow(2, levels - 1));
+    const threshold = 0.32 * Math.pow(1 - state.detail / 100, 1.6) + 0.008;
+
+    const cells = [];
+    const split = (x, y, s) => {
+      if (cells.length > MAX_SHAPES) return;
+      if (s / 2 >= minCell - 1e-6 && regionStats(x, y, s).std > threshold) {
+        const h = s / 2;
+        split(x, y, h); split(x + h, y, h); split(x, y + h, h); split(x + h, y + h, h);
+      } else cells.push([x, y, s]);
+    };
+    const cols = Math.ceil(out.w / top), rows = Math.ceil(out.h / top);
+    const ox = (out.w - cols * top) / 2, oy = (out.h - rows * top) / 2;
+    for (let r = 0; r < rows; r++) {
+      const shift = state.layout === "brick" && r % 2 ? top / 2 : 0;
+      const extra = shift ? 1 : 0;
+      for (let c = -extra; c < cols; c++) {
+        const x = ox + c * top + shift, y = oy + r * top;
+        if (x + top <= 0 || x >= out.w) continue;
+        if (state.layout === "adaptive") split(x, y, top);
+        else cells.push([x, y, top]);
+      }
+    }
+
+    const minS = state.minSize / 100, maxS = state.maxSize / 100;
+    const cut = state.cutoff / 100;
+    const off = state.rotOffset * Math.PI / 180;
+    const wl = Math.max(out.w, out.h) * state.wavelength / 100;
+    const wd = 35 * Math.PI / 180;
+    const A = hexToRgb(state.colA), B = hexToRgb(state.colB);
+    leaves = [];
+    for (const [x, y, s] of cells) {
+      const st = regionStats(x, y, s, true);
+      if (st.mean < cut || st.mean <= 0.002) continue;
+      const tone = Math.pow(Math.min(1, st.mean), state.gamma);
+      const cx = x + s / 2, cy = y + s / 2;
+      const r1 = hash(cx, cy), r2 = hash(cy + 17.3, cx - 4.1), r3 = hash(cx * 1.7 + 3, cy * 0.7 - 9);
+
+      let ang = off;
+      if (state.rotMode === "gradient" || state.rotMode === "contour") {
+        const mag = Math.hypot(st.gx, st.gy);
+        let a = mag > 0.004 ? Math.atan2(st.gy, st.gx) : 0;
+        if (state.rotMode === "contour") a += Math.PI / 2;
+        if (state.snap) a = Math.round(a / (Math.PI / 2)) * (Math.PI / 2);
+        ang += a;
+      } else if (state.rotMode === "random") ang += r1 * TAU;
+      else if (state.rotMode === "random90") ang += Math.floor(r1 * 4) * Math.PI / 2;
+
+      const jx = (r2 - 0.5) * s * state.jitter / 100, jy = (r3 - 0.5) * s * state.jitter / 100;
+      const px = cx + jx, py = cy + jy;
+
+      let ph;
+      switch (state.pattern) {
+        case "wave": ph = (px * Math.cos(wd) + py * Math.sin(wd)) / wl + r2 * 0.08; break;
+        case "ripple": ph = Math.hypot(px - out.w / 2, py - out.h / 2) / wl + r2 * 0.08; break;
+        case "tone": ph = tone * 0.9 + r2 * 0.1; break;
+        default: ph = r2;
+      }
+
+      let rgb;
+      if (state.colorMode === "ramp") rgb = [0, 1, 2].map(k => A[k] + (B[k] - A[k]) * tone);
+      else if (state.colorMode === "solid") rgb = A;
+      else rgb = st.rgb;
+
+      leaves.push({ x: px, y: py, s, size: s * (minS + (maxS - minS) * tone), ang, ph, rgb });
+    }
+    buildColorLayer();
+    updateMeta();
+    if (!playing) draw(currentTime());
+  }
+
+  function getSourceLayer() {
+    if (sourceLayer && sourceLayer.width === out.w && sourceLayer.height === out.h) return sourceLayer;
+    sourceLayer = document.createElement("canvas");
+    sourceLayer.width = out.w; sourceLayer.height = out.h;
+    const g = sourceLayer.getContext("2d");
+    g.imageSmoothingQuality = "high";
+    g.drawImage(source, 0, 0, out.w, out.h);
+    return sourceLayer;
+  }
+
+  function buildColorLayer() {
+    if (state.colorMode === "stencil") { colorLayer = getSourceLayer(); return; }
+    if (state.colorMode === "solid") { colorLayer = null; return; }
+    // each cell painted its own colour; shapes pick it up from the cell they sit in
+    const c = document.createElement("canvas");
+    c.width = out.w; c.height = out.h;
+    const g = c.getContext("2d");
+    for (const l of leaves) {
+      g.fillStyle = `rgb(${l.rgb[0] | 0},${l.rgb[1] | 0},${l.rgb[2] | 0})`;
+      g.fillRect(l.x - l.s, l.y - l.s, l.s * 2, l.s * 2);
+    }
+    // repaint each cell exactly, smallest last, so overspill only fills gaps
+    const order = leaves.slice().sort((a, b) => b.s - a.s);
+    for (const l of order) {
+      g.fillStyle = `rgb(${l.rgb[0] | 0},${l.rgb[1] | 0},${l.rgb[2] | 0})`;
+      g.fillRect(l.x - l.s / 2, l.y - l.s / 2, l.s, l.s);
+    }
+    colorLayer = c;
+  }
+
+  function updateMeta() {
+    $("meta").textContent = `${leaves.length.toLocaleString()} shapes · ${out.w}×${out.h}`;
+  }
+
+  // ---------- drawing ----------
+  function shapeAt(l, u) {
+    const w = TAU * (u - l.ph);
+    const size = l.size * (1 + (state.pulse / 100) * Math.sin(w));
+    const ang = l.ang + (state.wobble * Math.PI / 180) * Math.sin(w + 1.1);
+    return { size, ang };
+  }
+
+  function pickMip(size) {
+    const m = shape.mips;
+    for (let i = m.length - 1; i >= 0; i--) if (m[i].long >= size * 1.1) return m[i];
+    return m[0];
+  }
+
+  function draw(t, opts = {}) {
+    if (!shape || !analysis) return;
+    const g = ctx;
+    const u = (t / state.loop) * state.cycles;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = "source-over";
+    g.globalAlpha = 1;
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = "medium";
+    g.clearRect(0, 0, out.w, out.h);
+
+    for (const l of leaves) {
+      const { size, ang } = shapeAt(l, u);
+      if (size < 0.35) continue;
+      const m = pickMip(size);
+      const k = size / m.long, c = Math.cos(ang) * k, s = Math.sin(ang) * k;
+      g.setTransform(c, s, -s, c, l.x, l.y);
+      g.drawImage(m.canvas, -m.w / 2, -m.h / 2);
+    }
+
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = "source-in";
+    if (colorLayer) g.drawImage(colorLayer, 0, 0);
+    else { g.fillStyle = state.colA; g.fillRect(0, 0, out.w, out.h); }
+
+    g.globalCompositeOperation = "destination-over";
+    if (state.underlay > 0) {
+      g.globalAlpha = state.underlay / 100;
+      g.drawImage(getSourceLayer(), 0, 0);
+      g.globalAlpha = 1;
+    }
+    if (!state.transparent || opts.forceBg) {
+      g.fillStyle = state.bg;
+      g.fillRect(0, 0, out.w, out.h);
+    }
+    g.globalCompositeOperation = "source-over";
+  }
+
+  // ---------- animation clock ----------
+  let playing = true, startAt = performance.now(), pausedAt = 0, recording = null;
+  const currentTime = () => ((playing ? performance.now() - startAt : pausedAt) / 1000) % state.loop;
+
+  function frame() {
+    if (playing) draw(recording ? Math.min((performance.now() - recording.start) / 1000, state.loop) : currentTime(), { forceBg: !!recording });
+    requestAnimationFrame(frame);
+  }
+
+  $("playBtn").addEventListener("click", () => {
+    if (recording) return;
+    if (playing) { pausedAt = performance.now() - startAt; playing = false; }
+    else { startAt = performance.now() - pausedAt; playing = true; }
+    $("playBtn").textContent = playing ? "Pause" : "Play";
+    if (!playing) draw(currentTime());
+  });
+
+  // ---------- controls ----------
+  const controls = Array.from(document.querySelectorAll("[data-key]"));
+  function fmt(el) {
+    const v = state[el.dataset.key];
+    const unit = el.dataset.unit || "";
+    return (typeof v === "number" && !Number.isInteger(v) ? v.toFixed(2).replace(/0$/, "") : v) + unit;
+  }
+  function syncControls() {
+    for (const el of controls) {
+      const v = state[el.dataset.key];
+      if (el.type === "checkbox") el.checked = !!v;
+      else el.value = v;
+      const o = document.querySelector(`output[data-for="${el.id}"]`);
+      if (o) o.textContent = fmt(el);
+    }
+    for (const el of document.querySelectorAll("[data-show]")) {
+      const [key, vals] = el.dataset.show.split("=");
+      el.hidden = !vals.split("|").includes(String(state[key]));
+    }
+  }
+  let rebuildQueued = false;
+  const queueRebuild = () => {
+    if (rebuildQueued) return;
+    rebuildQueued = true;
+    requestAnimationFrame(() => { rebuildQueued = false; rebuild(); });
+  };
+  for (const el of controls) {
+    el.addEventListener("input", () => {
+      const key = el.dataset.key;
+      state[key] = el.type === "checkbox" ? el.checked : el.type === "range" ? +el.value : el.value;
+      if (key === "sizeBy" && analysis) computeTone();
+      syncControls();
+      if (el.hasAttribute("data-rebuild")) queueRebuild();
+      else if (!playing) draw(currentTime());
+    });
+  }
+
+  // ---------- uploads ----------
+  async function handleFile(file, kind) {
+    toast("");
+    try {
+      const isSvg = file.type === "image/svg+xml" || /\.svg$/i.test(file.name);
+      if (!kind) kind = isSvg ? "shape" : "image";
+      if (kind === "shape") {
+        if (!isSvg) throw new Error("The shape needs to be an SVG file.");
+        await setShapeFromText(await file.text(), file.name);
+      } else {
+        setSource(await loadImage(URL.createObjectURL(file), false));
+      }
+    } catch (err) {
+      toast(err.message || String(err));
+    }
+  }
+  $("shapeFile").addEventListener("change", e => { const f = e.target.files[0]; if (f) handleFile(f, "shape"); e.target.value = ""; });
+  $("imageFile").addEventListener("change", e => { const f = e.target.files[0]; if (f) handleFile(f, "image"); e.target.value = ""; });
+  $("shapeReset").addEventListener("click", () => setShapeFromText(ARROW_SVG, "corner-arrow").catch(e => toast(e.message)));
+  $("imageReset").addEventListener("click", () => setSource(makeDemoProtein()));
+
+  const wrap = $("stageWrap");
+  ["dragenter", "dragover"].forEach(ev => wrap.addEventListener(ev, e => { e.preventDefault(); wrap.classList.add("drag"); }));
+  ["dragleave", "drop"].forEach(ev => wrap.addEventListener(ev, e => { e.preventDefault(); wrap.classList.remove("drag"); }));
+  wrap.addEventListener("drop", e => {
+    for (const f of e.dataTransfer.files) handleFile(f);
+  });
+  for (const id of ["shapeThumb", "imageThumb"]) {
+    const box = $(id), kind = id === "shapeThumb" ? "shape" : "image";
+    box.addEventListener("dragover", e => e.preventDefault());
+    box.addEventListener("drop", e => { e.preventDefault(); e.stopPropagation(); const f = e.dataTransfer.files[0]; if (f) handleFile(f, kind); });
+  }
+
+  // ---------- export ----------
+  const baseName = () => `mosaic-${out.w}x${out.h}`;
+  function download(blob, name) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+
+  $("pngBtn").addEventListener("click", () => {
+    draw(currentTime());
+    canvas.toBlob(b => b && download(b, baseName() + ".png"), "image/png");
+  });
+
+  $("svgBtn").addEventListener("click", () => {
+    const u = (currentTime() / state.loop) * state.cycles;
+    const n = v => +v.toFixed(2);
+    const parts = [
+      `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${out.w}" height="${out.h}" viewBox="0 0 ${out.w} ${out.h}">`,
+      `<defs><symbol id="tile" viewBox="${shape.symbol.viewBox}" overflow="visible">${shape.symbol.body}</symbol></defs>`,
+    ];
+    if (!state.transparent) parts.push(`<rect width="100%" height="100%" fill="${state.bg}"/>`);
+    for (const l of leaves) {
+      const { size, ang } = shapeAt(l, u);
+      if (size < 0.35) continue;
+      const w = shape.aspect >= 1 ? size : size * shape.aspect;
+      const h = shape.aspect >= 1 ? size / shape.aspect : size;
+      const col = state.colorMode === "solid" ? state.colA : toHex(...l.rgb);
+      parts.push(`<use href="#tile" xlink:href="#tile" x="${n(-w / 2)}" y="${n(-h / 2)}" width="${n(w)}" height="${n(h)}" transform="translate(${n(l.x)} ${n(l.y)}) rotate(${n(ang * 180 / Math.PI)})" color="${col}"/>`);
+    }
+    parts.push(`</svg>`);
+    download(new Blob([parts.join("\n")], { type: "image/svg+xml" }), baseName() + ".svg");
+    if (state.colorMode === "stencil") toast("SVG uses one colour per shape (the image can't show through vector tiles).");
+  });
+
+  $("vidBtn").addEventListener("click", () => {
+    if (recording) return;
+    if (!canvas.captureStream || typeof MediaRecorder === "undefined") { toast("This browser can't record video."); return; }
+    const types = ["video/mp4;codecs=avc1.640033", "video/mp4", "video/webm;codecs=vp9", "video/webm"];
+    const mimeType = types.find(t => MediaRecorder.isTypeSupported(t));
+    if (!mimeType) { toast("This browser can't record video."); return; }
+    const stream = canvas.captureStream(60);
+    const rec = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: Math.round(out.w * out.h * 60 * 0.15) });
+    const chunks = [];
+    rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+    rec.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      download(new Blob(chunks, { type: mimeType }), baseName() + (mimeType.includes("mp4") ? ".mp4" : ".webm"));
+      recording = null;
+      $("vidBtn").disabled = false; $("vidBtn").textContent = "Video";
+      $("playBtn").disabled = false;
+      startAt = performance.now();
+    };
+    if (!playing) { playing = true; $("playBtn").textContent = "Pause"; }
+    $("vidBtn").disabled = true; $("vidBtn").textContent = "Recording…";
+    $("playBtn").disabled = true;
+    toast(state.transparent ? "Video can't be transparent, so it uses the background colour." : "");
+    recording = { start: performance.now() };
+    rec.start(250);
+    setTimeout(() => rec.stop(), state.loop * 1000 + 120);
+  });
+
+  // ---------- start ----------
+  syncControls();
+  setShapeFromText(ARROW_SVG, "corner-arrow")
+    .then(() => setSource(makeDemoProtein()))
+    .catch(e => toast(e.message));
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

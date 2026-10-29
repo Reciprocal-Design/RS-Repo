@@ -12,4 +12,5 @@ window.RS_META = {
   "RS/MindLab": { description: "Pixel wave generator with alpha: MP4, transparent WebM and PNG sequence export", status: "wip" },
   "RS/Protein Hero": { description: "Next.js hero: studio-lit interactive protein, drag to spin, leans to the cursor", status: "wip" },
   "Toregem/Progress Bar": { description: "Animated tooth growth stages, a circle denting the line as it travels", status: "wip" },
+  "Tuari/Shape Mosaic": { description: "Rebuild an image from one SVG shape at different sizes, with subtle looping motion", status: "wip" },
 };
