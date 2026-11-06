@@ -256,6 +256,7 @@
       <div class="toggle"><input type="checkbox" id="stepChk"><label for="stepChk">Pause at each stage</label></div>
       <div class="toggle"><input type="checkbox" id="dimChk"><label for="dimChk">Dim the path ahead</label></div>
       <div class="toggle"><input type="checkbox" id="vertChk"><label for="vertChk">Vertical labels</label></div>
+      <div class="toggle"><input type="checkbox" id="revChk"><label for="revChk">Reverse direction</label></div>
     </div>
 
     <div class="field">
@@ -338,6 +339,7 @@
             <option value="webm">WebM (VP9)</option>
             <option value="png">PNG sequence (ZIP)</option>
             <option value="mp4">MP4 (H.264)</option>
+            <option value="jsx">After Effects script (.jsx)</option>
           </select>
           <div class="toggle"><input type="checkbox" id="transChk"><label for="transChk">Transparent background</label></div>
         </div>
@@ -398,7 +400,8 @@
   var FORMATS = {
     webm: { codec: "vp9", ext: "webm", mime: "video/webm", label: "WebM (VP9)", alpha: true },
     png: { ext: "zip", mime: "application/zip", label: "PNG sequence", alpha: true },
-    mp4: { codec: "avc", ext: "mp4", mime: "video/mp4", label: "MP4 (H.264)", alpha: false }
+    mp4: { codec: "avc", ext: "mp4", mime: "video/mp4", label: "MP4 (H.264)", alpha: false },
+    jsx: { ext: "jsx", mime: "text/plain", label: "After Effects script", alpha: true }
   };
   var SCALES = [1, 2, 3, 4];
   var FPS = [24, 25, 30, 50, 60];
@@ -426,6 +429,7 @@
     stepMode: true,
     dimAhead: true,
     vertical: true,
+    reverse: true,   /* the circle starts at the far end (right, or the top when vertical) and travels back */
     orient: "horizontal",   /* the tab: "vertical" runs the line bottom to top, names beside it */
     loop: true,
     transparent: true,
@@ -454,7 +458,7 @@
       if(HEX.test(saved.colorB)) state.colorB = saved.colorB;
       if(HEX.test(saved.bg)) state.bg = saved.bg;
       if(HEX.test(saved.circle)) state.circle = saved.circle;
-      ["stepMode","dimAhead","vertical","loop","transparent","animIn","animOut"].forEach(function(k){
+      ["stepMode","dimAhead","vertical","reverse","loop","transparent","animIn","animOut"].forEach(function(k){
         if(typeof saved[k] === "boolean") state[k] = saved[k];
       });
       if(FORMATS[saved.format]) state.format = saved.format;
@@ -647,7 +651,10 @@
     var cur = mixRgb(A, B, p);
 
     var r = G.r, x0 = G.x0, x1 = G.x1, L = x1 - x0;
-    var kx = x0 + p * L, ly = G.lineY;
+    /* rev: the run starts at x1 and travels back to x0. at(u) places a point u (0..L) along the run. */
+    var rev = state.reverse;
+    function at(u){ return rev ? x1 - u : x0 + u; }
+    var kx = at(p * L), ly = G.lineY;
     var depth = G.depth, spread = G.spread;
     function dent(x){
       var d = Math.abs(x - kx);
@@ -682,8 +689,10 @@
         var cs = clamp(show / 0.3, 0, 1);
         circleS = F.out ? easeInOut(cs) : Math.max(0, easeOutBack(cs));
         var reachS = easeInOut(clamp((show - 0.15) / 0.85, 0, 1)) * (L + FADE);
-        if(F.out){ lineFrom = x1 - reachS; lineTo = x1 + FADE; }
-        else{ lineFrom = x0 - FADE; lineTo = x0 + reachS; }
+        /* in grows from the run's start; out draws back into its end */
+        var fromStart = rev ? F.out : !F.out;
+        if(fromStart){ lineFrom = x0 - FADE; lineTo = x0 + reachS; }
+        else{ lineFrom = x1 - reachS; lineTo = x1 + FADE; }
         vis = function(x){
           return smooth(clamp((lineTo - x) / FADE, 0, 1)) * smooth(clamp((x - lineFrom) / FADE, 0, 1));
         };
@@ -752,7 +761,7 @@
     for(var i = 0; i <= total; i++){
       var tx = x0 + L * i / total;
       var major = i % minorPer === 0;
-      var ahead = tx > kx + 1;
+      var ahead = rev ? tx < kx - 1 : tx > kx + 1;
       var a = major ? 0.75 : 0.32;
       if(ahead && state.dimAhead) a *= 0.55;
       var tv = vis(tx);
@@ -770,9 +779,9 @@
     var lg = c.createLinearGradient(x0, 0, x1, 0);
     var fade = (spread * 0.9) / L;
     for(var s = 0; s <= 48; s++){
-      var t = s / 48;
-      var col = mixRgb(A, B, t);
-      if(state.dimAhead) col = mixRgb(col, dim, smooth((t - p) / fade));
+      var t = s / 48, u = rev ? 1 - t : t;   /* u: how far along the run this stop is */
+      var col = mixRgb(A, B, u);
+      if(state.dimAhead) col = mixRgb(col, dim, smooth((u - p) / fade));
       lg.addColorStop(t, css(col));
     }
     c.save();
@@ -798,8 +807,8 @@
     if(g > 0){
       var hg = c.createLinearGradient(x0, 0, x1, 0);
       for(var hs = 0; hs <= 48; hs++){
-        var ht = hs / 48;
-        hg.addColorStop(ht, css(mixRgb(A, B, ht), state.dimAhead ? 1 - smooth((ht - p) / fade) : 1));
+        var ht = hs / 48, hu = rev ? 1 - ht : ht;
+        hg.addColorStop(ht, css(mixRgb(A, B, hu), state.dimAhead ? 1 - smooth((hu - p) / fade) : 1));
       }
       c.save();
       c.shadowColor = css(cur, 0.9);
@@ -814,12 +823,13 @@
     /* stage labels: the one nearest the circle swells and drops into the dent */
     var band = L / n, activeIdx = 0, best = 1e9;
     for(var k = 0; k <= n; k++){
-      var sx = x0 + band * k;
+      var sx = at(band * k);
       var dist = Math.abs(kx - sx);
       if(dist < best){ best = dist; activeIdx = k; }
       var e = smooth(1 - dist / (band * 0.6));
       var size = G.labelSize * (1 + 0.5 * e);
-      var alpha = sx <= kx + 1 || !state.dimAhead ? 0.5 : 0.26;
+      var passed = rev ? sx >= kx - 1 : sx <= kx + 1;
+      var alpha = passed || !state.dimAhead ? 0.5 : 0.26;
       alpha += (1 - alpha) * e;
       var lv = vis(sx);
       alpha *= lv;
@@ -1058,6 +1068,7 @@
   bindCheck("stepChk", "stepMode");
   bindCheck("dimChk", "dimAhead");
   bindCheck("vertChk", "vertical", layout);
+  bindCheck("revChk", "reverse");
   /* the Horizontal and Vertical tabs share every setting; only the way the bar runs changes */
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
   function orientChanged(){
@@ -1150,7 +1161,7 @@
       run: run, span: span, frames: frames,
       transparent: state.transparent && FORMATS[state.format].alpha,
       maxSide: maxSide(),
-      tooBig: width > maxSide() || height > maxSide(),
+      tooBig: state.format !== "jsx" && (width > maxSide() || height > maxSide()),
       /* animation time (ms) of frame i */
       msAt: function(i){
         return ((i * span / frames) % run) * 1000;
@@ -1168,7 +1179,7 @@
       $("exportInfo").textContent = text;
       $("runLen").textContent = P.run.toFixed(1) + " s each";
       if(!exportJob){
-        var supported = state.format === "png" || videoSupported;
+        var supported = state.format === "png" || state.format === "jsx" || videoSupported;
         $("btnExport").disabled = !supported || P.tooBig;
         if(!supported) exportStatus("This browser can't encode video. Use a recent Chrome, Edge, Safari (17+) or Firefox (130+).", true);
         else if(P.tooBig) exportStatus("Too large: at most " + P.maxSide + " px per side. Pick a smaller size.", true);
@@ -1215,9 +1226,12 @@
     setExportUI(true);
     $("exportProgress").value = 0;
     try{
-      var result = state.format === "png" ? await exportPngSequence(P, job) : await exportVideo(P, job);
+      var result = state.format === "png" ? await exportPngSequence(P, job)
+        : state.format === "jsx" ? exportAEScript(P)
+        : await exportVideo(P, job);
       downloadBlob(result.blob, result.filename);
-      exportStatus("Saved " + result.filename + " (" + (result.blob.size / 1048576).toFixed(1) + " MB)." + (result.note || ""));
+      var size = result.blob.size < 1048576 ? Math.max(1, Math.round(result.blob.size / 1024)) + " KB" : (result.blob.size / 1048576).toFixed(1) + " MB";
+      exportStatus("Saved " + result.filename + " (" + size + ")." + (result.note || ""));
     }catch(err){
       if(err && err.name === "AbortError") exportStatus("Export cancelled.");
       else exportStatus((err && err.message) || "Export failed.", true);
@@ -1303,6 +1317,446 @@
       if(output && output.state !== "finalized") await output.cancel().catch(function(){});
       throw err;
     }
+  }
+
+  /* ---------- After Effects script ---------- */
+
+  /* Writes an ExtendScript (.jsx) that rebuilds the current animation as native,
+     editable After Effects layers instead of rendered frames: the dented line,
+     ticks, stage names, circle and glow are shape and text layers driven by
+     expressions from three keyframed sliders on a "Controller" null:
+       Progress  0..1, where the circle is along the run (retime these keys freely)
+       Show      0..1, how far the scene is built (the animate in / out)
+       Out       0 during the in, 1 during the out
+     A vertical layout is the same scene comp turned a quarter, as in the preview. */
+
+  function aeConfig(P){
+    var G = P.G, S = state.scale;
+    var bg = rgb(state.bg), A = rgb(state.colorA), B = rgb(state.colorB);
+    var darkBg = luminance(bg) < 0.5;
+    var text = darkBg ? [236,236,234] : [27,27,26];
+    var dim = mixRgb(bg, darkBg ? [255,255,255] : [0,0,0], darkBg ? 0.22 : 0.18);
+    var body = state.circle ? rgb(state.circle) : bg;
+    var darkBody = luminance(body) < 0.5;
+    var ph = phases();
+    var g = state.glow / 100;
+    var n = state.names.length - 1;
+    var unit = function(c){ return [c[0] / 255, c[1] / 255, c[2] / 255]; };
+    var num = function(v){ return Math.round(v * 1000) / 1000; };
+
+    var r = G.r * S, x0 = G.x0 * S, x1 = G.x1 * S, L = x1 - x0;
+    var W = Math.round(G.w * S), H = Math.round(G.h * S);
+    var ly = G.lineY * S, depth = G.depth * S, spread = G.spread * S, lw = G.lw * S;
+    var ky = (G.lineY + G.depth - G.r - G.r * 0.2 - 0.5 - G.lw / 2) * S;
+    var gr = glowRadius(G.r) * S;
+
+    /* shared head of every expression: where the circle is, the dent, and how much
+       of the scene is drawn (the same maths as the preview) */
+    var PRE = [
+      'var C = thisComp.layer("Controller");',
+      'var p = C.effect("Progress")(1).value, show = C.effect("Show")(1).value, isOut = C.effect("Out")(1).value > 0.5;',
+      "var x0 = " + num(x0) + ", x1 = " + num(x1) + ", L = x1 - x0, ly = " + num(ly) + ", depth = " + num(depth) + ", spread = " + num(spread) + ";",
+      "var REV = " + state.reverse + ", DRAW = " + (state.animStyle === "draw") + ", DIM = " + state.dimAhead + ", S = " + S + ";",
+      "var A = " + JSON.stringify(unit(A)) + ", B = " + JSON.stringify(unit(B)) + ";",
+      "function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }",
+      "function smooth(t) { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); }",
+      "function eio(t) { return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }",
+      "function eob(t) { var k = 1.70158; t -= 1; return 1 + (k + 1) * t * t * t + k * t * t; }",
+      "var kx = REV ? x1 - p * L : x0 + p * L;",
+      "function dent(x) { var d = Math.abs(x - kx); return d >= spread ? 0 : depth * (1 + Math.cos(Math.PI * d / spread)) / 2; }",
+      "var cur = [A[0] + (B[0] - A[0]) * p, A[1] + (B[1] - A[1]) * p, A[2] + (B[2] - A[2]) * p, 1];",
+      "var circleS = 1, lineFrom = -1e9, lineTo = 1e9, FADE = 40 * S;",
+      "if (show < 1) {",
+      "  if (DRAW) {",
+      "    var cs = clamp(show / 0.3, 0, 1);",
+      "    circleS = isOut ? eio(cs) : Math.max(0, eob(cs));",
+      "    var reach = eio(clamp((show - 0.15) / 0.85, 0, 1)) * (L + FADE);",
+      "    var fromStart = REV ? isOut : !isOut;",
+      "    if (fromStart) { lineFrom = x0 - FADE; lineTo = x0 + reach; } else { lineFrom = x1 - reach; lineTo = x1 + FADE; }",
+      "  } else { circleS = 0.85 + 0.15 * eio(show); }",
+      "}",
+      "function vis(x) { return smooth(clamp((lineTo - x) / FADE, 0, 1)) * smooth(clamp((x - lineFrom) / FADE, 0, 1)); }"
+    ].join("\n");
+
+    var LINE_PATH = PRE + "\n" + [
+      "var xs = [x0], a = Math.max(x0, kx - spread), b = Math.min(x1, kx + spread);",
+      "if (b > a) { for (var i = 0; i <= 48; i++) xs.push(a + (b - a) * i / 48); }",
+      "xs.push(x1); xs.sort(function (m, q) { return m - q; });",
+      "var pts = [];",
+      "for (var j = 0; j < xs.length; j++) { if (j > 0 && xs[j] - xs[j - 1] < 0.01) continue; pts.push([xs[j], ly + dent(xs[j])]); }",
+      "createPath(pts, [], [], false);"
+    ].join("\n");
+    /* draw-on: the visible stretch of the line, as trim percentages */
+    var TRIM_START = PRE + "\nclamp((Math.max(lineFrom, x0) - x0) / L * 100, 0, 100);";
+    var TRIM_END = PRE + "\nclamp((Math.min(lineTo, x1) - x0) / L * 100, 0, 100);";
+    /* the lit stretch, from the run's start to just past the circle, feathered */
+    var LIT_MASK = PRE + "\n" + [
+      "var edge = kx + (REV ? -1 : 1) * spread * 0.45;",
+      "var a = REV ? edge : -50, b = REV ? " + (W + 50) + " : edge;",
+      "createPath([[a, -50], [b, -50], [b, " + (H + 50) + "], [a, " + (H + 50) + "]], [], [], true);"
+    ].join("\n");
+    /* the pool of glow is kept below the line only, released past either end */
+    var f = G.r * 1.6 * S * 0.75;
+    var GLOW_CUT = PRE + "\n" + [
+      "var pts = [[-10, -10], [x0 - " + num(f) + ", -10], [x0 - " + num(f) + ", ly + dent(x0)]];",
+      "var a = Math.max(x0, kx - spread), b = Math.min(x1, kx + spread);",
+      "pts.push([x0, ly + dent(x0)]);",
+      "if (b > a) { for (var i = 0; i <= 48; i++) { var x = a + (b - a) * i / 48; pts.push([x, ly + dent(x)]); } }",
+      "pts.push([x1, ly + dent(x1)], [x1 + " + num(f) + ", ly + dent(x1)], [x1 + " + num(f) + ", -10]);",
+      "pts.push([" + (W + 10) + ", -10], [" + (W + 10) + ", " + (H + 10) + "], [-10, " + (H + 10) + "]);",
+      "createPath(pts, [], [], true);"
+    ].join("\n");
+    var CUR_COLOR = PRE + "\ncur;";
+    var GLOW_POS = PRE + "\n[kx, ly + depth];";
+    var GLOW_OPACITY = PRE + "\n" + num(62 * g) + " * clamp(circleS, 0, 1);";
+    var CIRCLE_POS = PRE + "\n[kx, " + num(ky) + "];";
+    var CIRCLE_SCALE = PRE + "\n[circleS * 100, circleS * 100];";
+    var DOT_GLOW_OPACITY = PRE + "\n95 * clamp(circleS, 0, 1);";
+
+    /* ticks: a major on every stage, minors between; they sink with the dent */
+    var minorPer = clamp(Math.floor(((G.x1 - G.x0) / n) / 14), 1, 6), total = n * minorPer, ticks = [];
+    for(var i = 0; i <= total; i++){
+      var tx = x0 + L * i / total, major = i % minorPer === 0;
+      ticks.push({
+        major: major,
+        path: PRE + "\nvar tx = " + num(tx) + ", tv = vis(tx), ty = " + num(G.tickTop * S) + " + dent(tx) * 0.75;\n" +
+          "createPath([[tx, ty], [tx, ty + " + (major ? 24 : 16) + " * S * (0.4 + 0.6 * tv)]], [], [], false);",
+        opacity: PRE + "\nvar tx = " + num(tx) + ", a = " + (major ? 75 : 32) + ";\n" +
+          "var ahead = REV ? tx < kx - 1 : tx > kx + 1;\nif (ahead && DIM) a *= 0.55;\na * vis(tx);"
+      });
+    }
+
+    /* stage names: the one nearest the circle swells and drops into the dent */
+    var band = L / n, labels = [];
+    var mode = G.upright ? "upright" : (state.vertical ? "vertical" : "across");
+    for(var k = 0; k <= n; k++){
+      var sx = state.reverse ? x1 - band * k : x0 + band * k;
+      var LPRE = PRE + "\nvar sx = " + num(sx) + ", band = " + num(band) + ";\n" +
+        "var e = smooth(1 - Math.abs(kx - sx) / (band * 0.6)), lv = vis(sx);";
+      var anchor = mode === "upright" ? "[r.left, r.top + r.height / 2]"
+        : mode === "vertical" ? "[r.left + r.width, r.top + r.height / 2]"
+        : "[r.left + r.width / 2, r.top]";
+      var fit = mode === "across" && k > 0 && k < n
+        ? "var rr = sourceRectAtTime(time, false); var f = Math.min(1, (band - 12 * S) / Math.max(1, rr.width * (1 + 0.5 * e)));"
+        : "var f = 1;";
+      labels.push({
+        name: state.names[k] || "",
+        rotation: mode === "upright" ? 90 : (mode === "vertical" ? -90 : 0),
+        anchor: "var r = sourceRectAtTime(time, false);\n" + anchor + ";",
+        position: LPRE + "\n[sx, " + num(G.labelTop * S) + " + dent(sx) * 0.9 + e * 6 * S + (1 - lv) * 10 * S];",
+        scale: LPRE + "\n" + fit + "\nvar s = 100 * (1 + 0.5 * e) * f;\n[s, s];",
+        opacity: LPRE + "\nvar passed = REV ? sx >= kx - 1 : sx <= kx + 1;\n" +
+          "var alpha = passed || !DIM ? 0.5 : 0.26;\nalpha += (1 - alpha) * e;\nalpha * lv * 100;"
+      });
+    }
+
+    /* keyframes for the three sliders */
+    var I = ph.I / 1000, D = ph.D / 1000, Hd = ph.H / 1000, O = ph.O / 1000, T = ph.total / 1000;
+    var progress = [];
+    if(state.stepMode){
+      progress.push([I, 0]);
+      for(var leg = 0; leg < n; leg++){
+        var t0 = I + D * leg / n, t1 = I + D * (leg + 1) / n;
+        progress.push([t0 + (t1 - t0) * 0.38, leg / n], [t1, (leg + 1) / n]);
+      }
+    }else progress.push([I, 0], [I + D, 1]);
+    var showKeys = [];
+    if(I > 0) showKeys.push([0, 0], [I, 1]); else showKeys.push([0, 1]);
+    if(O > 0) showKeys.push([I + D + Hd, 1], [T, 0]);
+
+    /* "Fade" style moves and fades the whole scene; sampled into keyframes */
+    var fade = [];
+    if(state.animStyle === "fade"){
+      for(var fi = 0; fi <= 12; fi++){
+        if(I > 0){ var ft = I * fi / 12; fade.push([ft, easeInOut(fi / 12)]); }
+      }
+      if(O > 0) for(var fo = 0; fo <= 12; fo++){
+        var tt2 = I + D + Hd + O * fo / 12; fade.push([tt2, easeInOut(1 - fo / 12)]);
+      }
+    }
+
+    var light = mixRgb(body, [255,255,255], darkBody ? 0.1 : 0.7), dark = mixRgb(body, [0,0,0], darkBody ? 0.28 : 0.08);
+    return {
+      w: W, h: H, fw: Math.round(G.fw * S), fh: Math.round(G.fh * S), upright: G.upright,
+      fps: state.fps, total: num(T), S: S,
+      transparent: P.transparent, bg: unit(bg),
+      x0: num(x0), x1: num(x1), lw: num(lw), r: num(r), gr: num(gr), glow: g,
+      reverse: state.reverse, dimAhead: state.dimAhead,
+      colorA: unit(A), colorB: unit(B), dim: unit(dim), text: unit(text),
+      body: unit(mixRgb(light, dark, 0.5)), inner: unit(mixRgb(body, [0,0,0], darkBody ? 0.12 : 0.04)),
+      innerStroke: unit(mixRgb(body, [255,255,255], darkBody ? 0.07 : 0.5)),
+      shadowOpacity: darkBg ? 0.6 : 0.22,
+      dot: num(Math.max(2.5 * S, r * 0.16)), labelSize: num(G.labelSize * S), fade: fade,
+      progress: progress, show: showKeys, outAt: num(I + D + Hd), hasOut: O > 0,
+      ticks: ticks, labels: labels,
+      expr: {
+        line: LINE_PATH, trimStart: TRIM_START, trimEnd: TRIM_END, litMask: LIT_MASK, glowCut: GLOW_CUT,
+        cur: CUR_COLOR, glowPos: GLOW_POS, glowOpacity: GLOW_OPACITY,
+        circlePos: CIRCLE_POS, circleScale: CIRCLE_SCALE, dotGlowOpacity: DOT_GLOW_OPACITY
+      }
+    };
+  }
+
+  /* The ExtendScript half. It never runs in the browser: its source is written into
+     the .jsx with the settings above, so it must stay ES3 (no let, arrows or templates). */
+  function AE_BUILD(CFG){
+    function easeDims(prop){
+      var t = prop.propertyValueType;
+      if(t === PropertyValueType.TwoD) return 2;
+      if(t === PropertyValueType.ThreeD) return 3;
+      return 1;
+    }
+    function K(prop, time, val, inf){
+      prop.setValueAtTime(time, val);
+      var i = prop.nearestKeyIndex(time), n = easeDims(prop), a = [], d;
+      for(d = 0; d < n; d++) a.push(new KeyframeEase(0, inf || 33.33));
+      prop.setTemporalEaseAtKey(i, a, a);
+    }
+    function linear(prop){
+      for(var i = 1; i <= prop.numKeys; i++) prop.setInterpolationTypeAtKey(i, KeyframeInterpolationType.LINEAR, KeyframeInterpolationType.LINEAR);
+    }
+    /* shapes: always re-fetch from the layer root, since AE invalidates sibling
+       references whenever a property is added */
+    function rootV(l){ return l.property("ADBE Root Vectors Group"); }
+    function grp(l, gi){ return rootV(l).property(gi).property("ADBE Vectors Group"); }
+    function addGroup(l, name){ rootV(l).addProperty("ADBE Vector Group"); var gi = rootV(l).numProperties; rootV(l).property(gi).name = name; return gi; }
+    function gxf(l, gi){ return rootV(l).property(gi).property("ADBE Vector Transform Group"); }
+    function addPathExpr(l, gi, expr){
+      grp(l, gi).addProperty("ADBE Vector Shape - Group");
+      grp(l, gi).property("ADBE Vector Shape - Group").property("ADBE Vector Shape").expression = expr;
+    }
+    function addEllipse(l, gi, d){
+      grp(l, gi).addProperty("ADBE Vector Shape - Ellipse");
+      grp(l, gi).property("ADBE Vector Shape - Ellipse").property("ADBE Vector Ellipse Size").setValue([d, d]);
+    }
+    function addFill(l, gi, color){
+      grp(l, gi).addProperty("ADBE Vector Graphic - Fill");
+      grp(l, gi).property("ADBE Vector Graphic - Fill").property("ADBE Vector Fill Color").setValue(color);
+      return grp(l, gi).property("ADBE Vector Graphic - Fill").property("ADBE Vector Fill Color");
+    }
+    function addStroke(l, gi, color, width){
+      grp(l, gi).addProperty("ADBE Vector Graphic - Stroke");
+      var s = grp(l, gi).property("ADBE Vector Graphic - Stroke");
+      s.property("ADBE Vector Stroke Color").setValue(color);
+      s.property("ADBE Vector Stroke Width").setValue(width);
+      s.property("ADBE Vector Stroke Line Cap").setValue(2);
+      s.property("ADBE Vector Stroke Line Join").setValue(2);
+      return grp(l, gi).property("ADBE Vector Graphic - Stroke");
+    }
+    function addTrim(l, gi){
+      grp(l, gi).addProperty("ADBE Vector Filter - Trim");
+      var t = grp(l, gi).property("ADBE Vector Filter - Trim");
+      t.property("ADBE Vector Trim Start").expression = CFG.expr.trimStart;
+      grp(l, gi).property("ADBE Vector Filter - Trim").property("ADBE Vector Trim End").expression = CFG.expr.trimEnd;
+    }
+    function addBlur(l, amount){
+      l.Effects.addProperty("ADBE Gaussian Blur 2");
+      l.Effects.property(l.Effects.numProperties).property("ADBE Gaussian Blur 2-0001").setValue(amount);
+    }
+    function shape(comp, name){
+      var l = comp.layers.addShape();
+      l.name = name;
+      l.transform.anchorPoint.setValue([0, 0]);
+      l.transform.position.setValue([0, 0]);
+      return l;
+    }
+    function matte(layer, matteLayer){
+      if(typeof layer.setTrackMatte === "function"){ layer.setTrackMatte(matteLayer, TrackMatteType.ALPHA); matteLayer.enabled = false; }
+      else layer.trackMatteType = TrackMatteType.ALPHA;   /* the matte sits directly above */
+    }
+    /* the line as a stroked shape, drawn on with trim paths */
+    function lineLayer(comp, name, color, width){
+      var l = shape(comp, name), gi = addGroup(l, "Line");
+      addPathExpr(l, gi, CFG.expr.line);
+      addTrim(l, gi);
+      addStroke(l, gi, color, width);
+      return l;
+    }
+    function litMask(l){
+      if(!CFG.dimAhead) return;
+      l.Masks.addProperty("ADBE Mask Atom");
+      var m = l.Masks.property(1);
+      m.property("ADBE Mask Shape").expression = CFG.expr.litMask;
+      l.Masks.property(1).property("ADBE Mask Feather").setValue([CFG.r * 2.4 * 0.9, 0]);   /* the dim fade past the circle */
+    }
+
+    app.beginUndoGroup("Toregem Progress Bar");
+    try{ app.project.expressionEngine = "javascript-1.0"; }catch(e){}
+    var folder = app.project.items.addFolder("Toregem Progress Bar");
+    var scene = app.project.items.addComp("Progress Bar - Scene", CFG.w, CFG.h, 1, CFG.total, CFG.fps);
+    scene.parentFolder = folder;
+    scene.bgColor = CFG.bg;
+
+    /* ---- pool of glow under the dent, kept below the line ---- */
+    if(CFG.glow > 0){
+      var glow = shape(scene, "Pool Glow"), gg = addGroup(glow, "Glow");
+      addEllipse(glow, gg, CFG.gr * 0.9);
+      addFill(glow, gg, CFG.colorA).expression = CFG.expr.cur;
+      gxf(glow, gg).property("ADBE Vector Position").expression = CFG.expr.glowPos;
+      gxf(glow, gg).property("ADBE Vector Scale").setValue([135, 100]);
+      addBlur(glow, CFG.gr * 0.6);
+      glow.transform.opacity.expression = CFG.expr.glowOpacity;
+      var cut = shape(scene, "Pool Glow Cut"), cg = addGroup(cut, "Cut");
+      addPathExpr(cut, cg, CFG.expr.glowCut);
+      addFill(cut, cg, [1, 1, 1]);
+      addBlur(cut, 3 * CFG.S);
+      matte(glow, cut);
+    }
+
+    /* ---- ticks ---- */
+    var ticks = shape(scene, "Ticks");
+    for(var i = 0; i < CFG.ticks.length; i++){
+      var tk = CFG.ticks[i], ti = addGroup(ticks, "Tick " + (i + 1));
+      addPathExpr(ticks, ti, tk.path);
+      addStroke(ticks, ti, CFG.text, (tk.major ? 1.6 : 1.1) * CFG.S);
+      grp(ticks, ti).property("ADBE Vector Graphic - Stroke").property("ADBE Vector Stroke Opacity").expression = tk.opacity;
+    }
+
+    /* ---- the line: dim path, gradient lit stretch, halo ---- */
+    if(CFG.dimAhead) lineLayer(scene, "Line Dim", CFG.dim, CFG.lw);
+    var grad = scene.layers.addSolid([1, 1, 1], "Line Gradient", CFG.w, CFG.h, 1, CFG.total);
+    grad.Effects.addProperty("ADBE Ramp");
+    var ramp = grad.Effects.property(1);
+    ramp.property("ADBE Ramp-0001").setValue([CFG.reverse ? CFG.x1 : CFG.x0, 0]);
+    grad.Effects.property(1).property("ADBE Ramp-0002").setValue([CFG.colorA[0], CFG.colorA[1], CFG.colorA[2], 1]);
+    grad.Effects.property(1).property("ADBE Ramp-0003").setValue([CFG.reverse ? CFG.x0 : CFG.x1, 0]);
+    grad.Effects.property(1).property("ADBE Ramp-0004").setValue([CFG.colorB[0], CFG.colorB[1], CFG.colorB[2], 1]);
+    litMask(grad);
+    var lineMatte = lineLayer(scene, "Line Matte", [1, 1, 1], CFG.lw);
+    matte(grad, lineMatte);
+    if(CFG.glow > 0){
+      var halo = lineLayer(scene, "Line Halo", CFG.colorA, CFG.lw);
+      grp(halo, 1).property("ADBE Vector Graphic - Stroke").property("ADBE Vector Stroke Color").expression = CFG.expr.cur;
+      litMask(halo);
+      addBlur(halo, 16 * CFG.glow * CFG.S);
+      halo.transform.opacity.setValue(90);
+    }
+
+    /* ---- stage names ---- */
+    for(var k = 0; k < CFG.labels.length; k++){
+      var lb = CFG.labels[k];
+      var t = scene.layers.addText(lb.name);
+      t.name = "Stage " + (k + 1) + " - " + lb.name;
+      var src = t.property("ADBE Text Properties").property("ADBE Text Document");
+      var td = src.value;
+      td.resetCharStyle();
+      td.text = lb.name;
+      try{ td.font = "Inter-Light"; }catch(e){}
+      td.fontSize = CFG.labelSize;
+      td.applyFill = true;
+      td.fillColor = CFG.text;
+      td.applyStroke = false;
+      td.justification = ParagraphJustification.LEFT_JUSTIFY;
+      src.setValue(td);
+      t.transform.anchorPoint.expression = lb.anchor;
+      t.transform.position.expression = lb.position;
+      t.transform.scale.expression = lb.scale;
+      t.transform.rotation.setValue(lb.rotation);
+      t.transform.opacity.expression = lb.opacity;
+    }
+
+    /* ---- the circle ---- */
+    if(CFG.glow > 0){
+      var dg = shape(scene, "Circle Dot Glow"), dgi = addGroup(dg, "Glow");
+      addEllipse(dg, dgi, CFG.dot * 2.4);
+      addFill(dg, dgi, CFG.colorA).expression = CFG.expr.cur;
+      dg.transform.position.expression = CFG.expr.circlePos;
+      dg.transform.scale.expression = CFG.expr.circleScale;
+      addBlur(dg, CFG.r * 0.8 * CFG.glow);
+      dg.transform.opacity.expression = CFG.expr.dotGlowOpacity;
+    }
+    var circle = shape(scene, "Circle");
+    var c1 = addGroup(circle, "Centre Dot");
+    addEllipse(circle, c1, CFG.dot * 2);
+    addFill(circle, c1, CFG.colorA).expression = CFG.expr.cur;
+    var c2 = addGroup(circle, "Inner Disc");
+    addEllipse(circle, c2, CFG.r * 0.74 * 2);
+    addFill(circle, c2, CFG.inner);
+    addStroke(circle, c2, CFG.innerStroke, 1 * CFG.S);
+    var c3 = addGroup(circle, "Body");
+    addEllipse(circle, c3, CFG.r * 2);
+    addFill(circle, c3, CFG.body);
+    circle.Effects.addProperty("ADBE Drop Shadow");
+    try{
+      var ds = circle.Effects.property(1);
+      ds.property("ADBE Drop Shadow-0002").setValue(CFG.shadowOpacity * 255);
+      circle.Effects.property(1).property("ADBE Drop Shadow-0003").setValue(180);
+      circle.Effects.property(1).property("ADBE Drop Shadow-0004").setValue(CFG.r * 0.22);
+      circle.Effects.property(1).property("ADBE Drop Shadow-0005").setValue(CFG.r * 0.9);
+    }catch(e){}
+    circle.transform.position.expression = CFG.expr.circlePos;
+    circle.transform.scale.expression = CFG.expr.circleScale;
+
+    /* ---- controller: the three sliders every expression reads ---- */
+    var ctrl = scene.layers.addNull(CFG.total);
+    ctrl.name = "Controller";
+    var names = ["Progress", "Show", "Out"];
+    for(var s = 0; s < names.length; s++){
+      ctrl.Effects.addProperty("ADBE Slider Control");
+      ctrl.Effects.property(ctrl.Effects.numProperties).name = names[s];
+    }
+    var prog = ctrl.Effects.property("Progress").property(1);
+    for(var pk = 0; pk < CFG.progress.length; pk++) K(prog, CFG.progress[pk][0], CFG.progress[pk][1], 75);
+    if(CFG.progress.length === 2) linear(prog);
+    var show = ctrl.Effects.property("Show").property(1);
+    if(CFG.show.length === 1) show.setValue(CFG.show[0][1]);
+    else{ for(var sk = 0; sk < CFG.show.length; sk++) show.setValueAtTime(CFG.show[sk][0], CFG.show[sk][1]); linear(show); }
+    var out = ctrl.Effects.property("Out").property(1);
+    out.setValue(0);
+    if(CFG.hasOut){
+      out.setValueAtTime(0, 0);
+      out.setValueAtTime(CFG.outAt, 1);
+      for(var ok = 1; ok <= out.numKeys; ok++) out.setInterpolationTypeAtKey(ok, KeyframeInterpolationType.HOLD, KeyframeInterpolationType.HOLD);
+    }
+    ctrl.moveToBeginning();
+
+    /* ---- the comp to use: the scene, turned for a vertical layout ---- */
+    var main = app.project.items.addComp("Toregem Progress Bar", CFG.fw, CFG.fh, 1, CFG.total, CFG.fps);
+    main.parentFolder = folder;
+    main.bgColor = CFG.bg;
+    if(!CFG.transparent){
+      var bgl = main.layers.addSolid(CFG.bg, "Background", CFG.fw, CFG.fh, 1, CFG.total);
+      bgl.moveToEnd();
+    }
+    var sl = main.layers.add(scene);
+    sl.transform.anchorPoint.setValue([0, 0]);
+    var base = CFG.upright ? [0, CFG.w] : [0, 0];
+    sl.transform.position.setValue(base);
+    if(CFG.upright) sl.transform.rotation.setValue(-90);
+    for(var fk = 0; fk < CFG.fade.length; fk++){
+      var fe = CFG.fade[fk][1], d = (1 - fe) * 14 * CFG.S;
+      sl.transform.opacity.setValueAtTime(CFG.fade[fk][0], fe * 100);
+      sl.transform.position.setValueAtTime(CFG.fade[fk][0], CFG.upright ? [base[0] + d, base[1]] : [base[0], base[1] + d]);
+    }
+    main.openInViewer();
+    app.endUndoGroup();
+  }
+
+  function exportAEScript(P){
+    var cfg = aeConfig(P);
+    var head = [
+      "/*",
+      "  Toregem – Stages of tooth growth (After Effects)",
+      "  Made by the Toregem Progress Bar page. Run it with File > Scripts > Run Script File…",
+      "",
+      "  It builds a \"Toregem Progress Bar\" folder with two comps:",
+      "    Toregem Progress Bar    the one to use (" + cfg.fw + " x " + cfg.fh + ", " + cfg.fps + " fps, " + cfg.total + " s" + (cfg.transparent ? ", transparent" : "") + ")",
+      "    Progress Bar - Scene    the layers, laid out horizontally" + (cfg.upright ? " (turned upright in the main comp)" : ""),
+      "",
+      "  Everything is driven by three sliders on the scene's \"Controller\" null:",
+      "    Progress  where the circle is along the line, 0 to 1. Move its keys to retime the stages.",
+      "    Show      how far the scene is built, 0 to 1 (the animate in and out).",
+      "    Out       0 while animating in, 1 while animating out.",
+      "  Stage names are text layers you can edit directly. Font: Inter Light.",
+      "*/",
+      ""
+    ].join("\n");
+    var body = "(" + AE_BUILD.toString() + ")(" + JSON.stringify(cfg, null, 1) + ");\n";
+    return {
+      blob: new Blob([head + body], { type: "text/plain" }),
+      filename: baseName(P).replace(/-\d+x\d+/, "") + "-after-effects.jsx",
+      note: " In After Effects: File > Scripts > Run Script File… and pick it."
+    };
   }
 
   /* ---------- PNG sequence ---------- */
@@ -1439,7 +1893,8 @@
   var FORMAT_HINTS = {
     webm: "",
     png: "Downloads a ZIP of numbered PNG frames with full transparency, ready for After Effects.",
-    mp4: "MP4 has no transparency, so the background is always included."
+    mp4: "MP4 has no transparency, so the background is always included.",
+    jsx: "Downloads a script that rebuilds this animation as editable After Effects layers (shapes, text and keyframes) at the size and frame rate chosen here. One run; retime it in AE with the Progress slider's keys."
   };
 
   /* transparency needs WebM or PNG: MP4 (H.264) has no alpha channel */
@@ -1448,7 +1903,8 @@
     if(!FORMATS[f].alpha) state.transparent = false;
     $("format").value = f;
     $("transChk").checked = state.transparent;
-    $("quality").disabled = f === "png";   /* PNGs are lossless */
+    $("quality").disabled = f === "png" || f === "jsx";   /* PNGs are lossless; a script has no encoding */
+    $("runs").disabled = f === "jsx";   /* the script builds one run */
     $("formatHint").textContent = FORMAT_HINTS[f];
     canvas.classList.toggle("checker", state.transparent);
     save();
