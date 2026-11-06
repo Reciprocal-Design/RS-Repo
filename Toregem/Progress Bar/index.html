@@ -256,6 +256,7 @@
       <div class="toggle"><input type="checkbox" id="stepChk"><label for="stepChk">Pause at each stage</label></div>
       <div class="toggle"><input type="checkbox" id="dimChk"><label for="dimChk">Dim the path ahead</label></div>
       <div class="toggle"><input type="checkbox" id="vertChk"><label for="vertChk">Vertical labels</label></div>
+      <div class="toggle"><input type="checkbox" id="downChk"><label for="downChk">Vertical: top to bottom</label></div>
     </div>
 
     <div class="field">
@@ -430,7 +431,8 @@
     stepMode: true,
     dimAhead: true,
     vertical: true,
-    orient: "horizontal",   /* the tab: "vertical" runs the line bottom to top, names beside it */
+    orient: "horizontal",   /* the tab: "vertical" stands the line up, names beside it */
+    downward: true,         /* vertical runs top to bottom; off, bottom to top */
     loop: true,
     transparent: true,
     format: "webm",
@@ -461,7 +463,7 @@
       if(HEX.test(saved.colorB)) state.colorB = saved.colorB;
       if(HEX.test(saved.bg)) state.bg = saved.bg;
       if(HEX.test(saved.circle)) state.circle = saved.circle;
-      ["stepMode","dimAhead","vertical","loop","transparent","animIn","animOut"].forEach(function(k){
+      ["stepMode","dimAhead","vertical","downward","loop","transparent","animIn","animOut"].forEach(function(k){
         if(typeof saved[k] === "boolean") state[k] = saved[k];
       });
       if(FORMATS[saved.format]) state.format = saved.format;
@@ -549,7 +551,8 @@
       r: r, depth: depth, spread: r * 2.4, lw: lw,
       x0: pad, x1: w - pad,
       lineY: lineY, tickTop: tickTop, labelTop: labelTop,
-      labelSize: labelSize, hlSize: state.hlSize, h: Math.ceil(h), upright: upright
+      labelSize: labelSize, hlSize: state.hlSize, h: Math.ceil(h), upright: upright,
+      down: upright && state.downward
     };
     /* the frame as it comes out: the vertical one is drawn lying down, then stood up */
     geo.fw = upright ? geo.h : geo.w;
@@ -631,13 +634,14 @@
   function easeOutBack(t){ var k = 1.70158; t -= 1; return 1 + (k + 1) * t * t * t + k * t * t; }
 
   /* Paints the frame at run time ms into context c, laid out by geometry G. The vertical
-     frame is the same scene turned a quarter anticlockwise: the line runs bottom to top,
-     the circle rides on its left and the names sit on its right, turned back so they
-     read normally. */
+     frame is the same scene stood on end: mirrored across its diagonal to run top to
+     bottom, or turned a quarter anticlockwise to run bottom to top. Either way the circle
+     rides on the line's left and the names sit on its right, turned back to read normally. */
   function draw(c, G, ms, transparent){
     if(!G.upright) return paint(c, G, ms, transparent);
     c.save();
-    c.transform(0, -1, 1, 0, 0, G.w);
+    if(G.down) c.transform(0, 1, 1, 0, 0, 0);
+    else c.transform(0, -1, 1, 0, 0, G.w);
     var idx = paint(c, G, ms, transparent);
     c.restore();
     return idx;
@@ -839,7 +843,9 @@
       c.font = labelFont(size);
       c.translate(sx, y);
       if(G.upright){
-        c.rotate(Math.PI / 2);   /* turned back to read across */
+        /* turned back to read across */
+        if(G.down) c.transform(0, 1, 1, 0, 0, 0);
+        else c.rotate(Math.PI / 2);
         c.textAlign = "left";
         c.textBaseline = "middle";
       }else if(state.vertical){
@@ -871,7 +877,7 @@
     c.shadowBlur = r * 0.9;
     c.shadowOffsetY = r * 0.22;
     /* lit from the top left of the frame, whichever way the scene is turned */
-    var og = G.upright ? c.createLinearGradient(kx + r, ky - r, kx - r, ky + r)
+    var og = G.upright && !G.down ? c.createLinearGradient(kx + r, ky - r, kx - r, ky + r)
                        : c.createLinearGradient(kx - r, ky - r, kx + r, ky + r);
     og.addColorStop(0, css(mixRgb(body, [255,255,255], darkBody ? 0.1 : 0.7)));
     og.addColorStop(1, css(mixRgb(body, [0,0,0], darkBody ? 0.28 : 0.08)));
@@ -1066,6 +1072,7 @@
   bindCheck("stepChk", "stepMode");
   bindCheck("dimChk", "dimAhead");
   bindCheck("vertChk", "vertical", layout);
+  bindCheck("downChk", "downward", layout);
   /* the Horizontal and Vertical tabs share every setting; only the way the bar runs changes */
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
   function orientChanged(){
@@ -1076,6 +1083,7 @@
       if(on) stageBox.setAttribute("aria-labelledby", t.id);
     });
     $("vertChk").disabled = state.orient === "vertical";   /* vertical names always read across */
+    $("downChk").disabled = state.orient !== "vertical";
     layout();
   }
   function pickTab(t){
