@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildDisplayList } from '../render/displayList';
-import { heroView, journeyScenes, journeyState, neighbourFade, tissueView } from '../render/journey';
+import { heroView, journeyScenes, journeyState, neighbourFade, tissueDot, tissueView } from '../render/journey';
 import { displayListToSvg } from '../render/svg';
 import { ORGANS, organCenter } from './body';
 import { buildGeometry } from './geometry';
@@ -90,7 +90,6 @@ describe('journey', () => {
     const end = journeyState(s, 5 * L - 1e-6);
     expect(end.body.zoom).toBe(1);
     expect(end.body.alpha).toBe(1);
-    expect(end.tissue.alpha).toBe(0);
     expect(end.body.at).toEqual(organCenter(s, s.module.organ));
     // Continuous across every section boundary.
     for (let b = 1; b < 5; b++) {
@@ -101,8 +100,40 @@ describe('journey', () => {
         expect(c[key].at.x).toBeCloseTo(a[key].at.x, 2);
         expect(c[key].at.y).toBeCloseTo(a[key].at.y, 2);
       }
+      expect(c.tissue.origin.x).toBeCloseTo(a.tissue.origin.x, 2);
+      expect(c.tissue.origin.y).toBeCloseTo(a.tissue.origin.y, 2);
       expect(c.tissue.neighbours).toBeCloseTo(a.tissue.neighbours, 3);
     }
+  });
+
+  it('shrinks the whole tissue into one dot of the body, and keeps it there', () => {
+    const s = moduleScene('journey', 7);
+    const L = s.module.sectionLength;
+    const dot = tissueDot(s);
+    // The dot starts larger than the frame, so nothing of the tissue section is cut.
+    const first = journeyState(s, 3 * L + 1e-6);
+    expect(first.dot.r).toBeGreaterThan(Math.hypot(s.canvas.width, s.canvas.height) / 2);
+    // From halfway through the section the whole tissue fits inside the dot.
+    for (const u of [0.5, 0.75, 1]) {
+      const st = journeyState(s, (3 + u) * L - 1e-6);
+      expect(dot.tissueRadius * st.tissue.zoom).toBeLessThan(st.dot.r);
+    }
+    const end = journeyState(s, 5 * L - 1e-6);
+    expect(end.tissue.alpha).toBe(1);
+    expect(end.dot).toMatchObject({ at: dot.c, r: dot.r, alpha: 1 });
+    expect(end.tissue.at).toEqual(dot.c);
+    expect(end.tissue.origin).toEqual(dot.tissueCenter);
+  });
+
+  it('can draw the body without the lines between its dots, the dots still firing', () => {
+    const { body } = journeyScenes(moduleScene('journey', 7));
+    const t = buildSchedule(body).total * 0.5;
+    const on = buildDisplayList(body, t).prims, off = buildDisplayList(body, t, { lines: false }).prims;
+    const line = (p: (typeof on)[number]) => p.group === 'edges' || p.group === 'crosstalk' || p.kind === 'trail';
+    expect(on.some(line)).toBe(true);
+    expect(off.some(line)).toBe(false);
+    const dots = (l: typeof on) => l.filter((p) => p.group === 'nodes-active').map((p) => p.id);
+    expect(dots(off)).toEqual(dots(on));
   });
 });
 

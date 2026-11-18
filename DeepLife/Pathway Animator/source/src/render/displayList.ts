@@ -229,6 +229,8 @@ export function buildDisplayList(
     discovered?: number;
     /** Fades the cell's outlines (the virtual cell giving way to a real one). */
     outlineAlpha?: number;
+    /** False leaves out the lines between nodes and the signals along them; the nodes still fire on time. */
+    lines?: boolean;
   } = {},
 ): DisplayList {
   const g = buildGeometry(scene);
@@ -243,6 +245,7 @@ export function buildDisplayList(
   const color = (d: number) => rgbaString(ramp(d));
   const prims: Prim[] = [];
   const signal = opts.signal ?? true;
+  const lines = opts.lines ?? true;
   const schedule = buildSchedule(scene);
   const tau = cycleTime(scene, t);
   const period = schedule.period;
@@ -391,7 +394,7 @@ export function buildDisplayList(
   // MOA focus: the network off the traced route rests faint and grey.
   const dimA = Math.max(0, Math.min(1, scene.module.dimOpacity));
 
-  for (const e of g.edges) {
+  for (const e of lines ? g.edges : []) {
     // A route being uncovered is drawn only as the signal travels it.
     if (e.reveal && signal) continue;
     // A discovered edge grows in from its start.
@@ -432,7 +435,7 @@ export function buildDisplayList(
       }
       if (a > 0.005) act.set(pid, a); // below that it is invisible: skip drawing it
     }
-    for (const e of g.edges) {
+    for (const e of lines ? g.edges : []) {
       const a = act.get(e.pathwayId) ?? 0;
       if (a <= 0 || e.dim || shownBy(e.discoverAt) < 1) continue;
       prims.push({
@@ -450,7 +453,7 @@ export function buildDisplayList(
     const cometW = Math.max(0.5, an.cometSize) * s;
     // Progress along each edge: raw (linear in time, runs on past 1 while the
     // trail catches up) and eased (position of the head along the curve).
-    const along = schedule.edges.map((et) => {
+    const along = (lines ? schedule.edges : []).map((et) => {
       const x = since(tau, et.start, period);
       // Continuous or grey idle: how lit the edge still is, x seconds after its
       // comet left (otherwise lit edges stay lit until the loop's closing fade).
@@ -720,8 +723,8 @@ export function buildDisplayList(
     staticCount: staticOut,
     staticKey: g,
     // The static layer differs with fades and discovery: its cached bitmap must too.
-    ...(linkAlpha < 1 || others || outlineAlpha < 1 || (g.discoverSpan !== undefined && disc < 1)
-      ? { staticTag: `links-${linkAlpha.toFixed(3)}-${others ? `${others.keep}-${others.alpha.toFixed(3)}-${others.outlineAlpha.toFixed(3)}-${others.mono.toFixed(3)}` : ''}-o${outlineAlpha.toFixed(3)}-d${disc.toFixed(4)}` }
+    ...(!lines || linkAlpha < 1 || others || outlineAlpha < 1 || (g.discoverSpan !== undefined && disc < 1)
+      ? { staticTag: `${lines ? '' : 'no-lines-'}links-${linkAlpha.toFixed(3)}-${others ? `${others.keep}-${others.alpha.toFixed(3)}-${others.outlineAlpha.toFixed(3)}-${others.mono.toFixed(3)}` : ''}-o${outlineAlpha.toFixed(3)}-d${disc.toFixed(4)}` }
       : {}),
     ...(underlays.length ? { underlays } : {}),
   };

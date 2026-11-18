@@ -206,12 +206,11 @@ const makeNode = (id: string, p: Vec2): NodeGeom => ({
 
 const lobeKey = (o: OrganSpec, i: number) => (o.lobes.length > 1 ? `${o.id}${i}` : o.id);
 
-/** The organ hub a journey zooms out of (canvas pixels). */
+/** The organ hub a journey zooms out of (canvas pixels): the first lobe's, where the organ has two. */
 export function organCenter(scene: Scene, organ: OrganId): Vec2 {
   const spec = ORGANS.find((o) => o.id === organ) ?? ORGANS[2];
-  const { map } = bodyTransform(scene);
-  const n = spec.lobes.length;
-  return map(spec.lobes.reduce((a, l) => a + l.c[0], 0) / n, spec.lobes.reduce((a, l) => a + l.c[1], 0) / n);
+  const [x, y] = spec.lobes[0].c;
+  return bodyTransform(scene).map(x, y);
 }
 
 const PARTICLES = 2600;

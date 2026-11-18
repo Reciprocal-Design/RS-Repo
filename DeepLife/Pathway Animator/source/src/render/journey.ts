@@ -1,4 +1,4 @@
-import { organCenter } from '../core/body';
+import { bodyTransform, organCenter } from '../core/body';
 import { heroCellOf, mapExtent, middleCellId } from '../core/cellMap';
 import { buildGeometry } from '../core/geometry';
 import { pointInPolygon, polygonArea } from '../core/polygon';
@@ -14,9 +14,11 @@ import { buildDisplayList } from './displayList';
 //                    the single cell's size; neighbours hidden
 //   2 Cell → tissue  the camera pulls back and the neighbours fade in
 //   3 Tissue         the tissue round the cell
-//   4 Tissue → body  the camera keeps pulling back: the tissue shrinks into
-//                    the chosen organ and fades, as the body fades in round it
-//   5 Body           the body, organs and their firing lines
+//   4 Tissue → body  the camera keeps pulling back: the whole tissue shrinks
+//                    into one dot of the body, on the chosen organ, as the
+//                    body fades in round it
+//   5 Body           the body and its dots, firing without lines between
+//                    them, the tissue still alive inside its dot
 //
 // Each layer (tissue, body) is its own scene, drawn with its own signal and
 // a camera transform, into an offscreen layer that is faded onto the frame.
@@ -30,8 +32,12 @@ import { buildDisplayList } from './displayList';
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
 export const JOURNEY_SECTIONS = ['Cell', 'Cell → tissue', 'Tissue', 'Tissue → body', 'Body'];
-/** How far into its organ the body starts, at the beginning of section 4. */
-const BODY_ZOOM = 8;
+/** The dot that holds the tissue: its radius as a share of the body's height. */
+const DOT_SIZE = 0.03;
+/** The whole tissue's radius as a share of the dot's, once it is inside. */
+const DOT_FILL = 0.94;
+/** Share of section 4 by which the whole tissue has come inside the dot. */
+const DOT_SETTLE = 0.5;
 
 const scenes = new WeakMap<Scene, { tissue: Scene; body: Scene }>();
 /** A portrait canvas: the cell and tissue are turned 90° onto it. */
@@ -75,6 +81,8 @@ export interface JourneyState {
   section: number;
   tissue: Camera & { neighbours: number };
   body: Camera;
+  /** The dot round the tissue, on screen (none before section 4). */
+  dot: { at: Vec2; r: number; alpha: number };
 }
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
@@ -180,12 +188,27 @@ export function tissueView(scene: Scene): { center: Vec2; zoom: number } {
   return view;
 }
 
+/** The body's dot that holds the tissue, and the tissue's centre and radius as it sits inside. */
+export function tissueDot(scene: Scene) {
+  const { tissue } = journeyScenes(scene);
+  const e = mapExtent(tissue);
+  return {
+    c: organCenter(scene, scene.module.organ),
+    r: DOT_SIZE * bodyTransform(scene).h,
+    tissueCenter: { x: e.x + e.w / 2, y: e.y + e.h / 2 },
+    tissueRadius: Math.max(e.w, e.h) / 2,
+  };
+}
+
 /** Cameras and fades at journey time tau (seconds from the start). Pure. */
 export function journeyState(scene: Scene, tau: number): JourneyState {
   const L = sectionLength(scene);
   // C: the frame's centre.
   const C = { x: scene.canvas.width / 2, y: scene.canvas.height / 2 };
-  const A = organCenter(scene, scene.module.organ);
+  const dot = tissueDot(scene);
+  const A = dot.c;
+  // Section 4 starts with the dot just larger than the frame, so the tissue is already inside it.
+  const startZoom = (1.05 * Math.hypot(C.x, C.y)) / dot.r;
   const hero = heroView(scene);
   // The tissue section's camera: zoomed in so tissue fills the frame.
   const tv = tissueView(scene);
@@ -193,7 +216,8 @@ export function journeyState(scene: Scene, tau: number): JourneyState {
   const u = clamp01((tau - section * L) / L);
 
   const tissue = { at: C, origin: tv.center, zoom: tv.zoom, alpha: 1, neighbours: 1, turn: isPortrait(scene) };
-  const body = { at: C, origin: A, zoom: BODY_ZOOM, alpha: 0 };
+  const body = { at: C, origin: A, zoom: startZoom, alpha: 0 };
+  const ring = { at: C, r: dot.r * startZoom, alpha: 0 };
   if (section === 0) {
     // The centre cell alone, centred, at the single cell's size.
     tissue.origin = hero.center;
@@ -206,22 +230,30 @@ export function journeyState(scene: Scene, tau: number): JourneyState {
     tissue.neighbours = smooth(0.1, 0.8, u);
   } else if (section === 3) {
     const e = ease(u);
-    body.zoom = BODY_ZOOM ** (1 - e);
+    body.zoom = startZoom ** (1 - e);
     body.at = lerp(C, A, e);
     body.alpha = smooth(0.1, 0.6, u);
-    tissue.zoom = (tv.zoom * body.zoom) / BODY_ZOOM;
+    ring.at = body.at;
+    ring.r = dot.r * body.zoom;
+    ring.alpha = smooth(0.05, 0.35, u);
+    // The tissue pulls back inside the dot, then rides it down to its place in the body.
+    const v = ease(u / DOT_SETTLE);
+    const from = (tv.zoom * dot.tissueRadius) / (dot.r * startZoom);
+    tissue.origin = lerp(tv.center, dot.tissueCenter, v);
+    tissue.zoom = (from * (DOT_FILL / from) ** v * ring.r) / dot.tissueRadius;
     tissue.at = body.at;
-    tissue.alpha = 1 - smooth(0.15, 0.6, u);
   } else if (section === 4) {
     body.zoom = 1;
     body.at = A;
     body.alpha = 1;
-    // Faded out, but where section 4 left it.
-    tissue.zoom = tv.zoom / BODY_ZOOM;
+    ring.at = A;
+    ring.r = dot.r;
+    ring.alpha = 1;
+    tissue.origin = dot.tissueCenter;
+    tissue.zoom = (DOT_FILL * dot.r) / dot.tissueRadius;
     tissue.at = A;
-    tissue.alpha = 0;
   }
-  return { section, tissue, body };
+  return { section, tissue, body, dot: ring };
 }
 
 /** Reused offscreen layers, one per role, at the output's device size. */
@@ -243,15 +275,21 @@ const cameraMatrix = (base: DOMMatrix, cam: Camera) =>
 /** Share of the tissue's half-size (centre to edge) that stays fully visible before its edge fades out. */
 const EDGE_FADE_START = 0.62;
 
+/** A circle on screen, and whether a layer keeps only what is inside it or loses it. */
+type Disc = { at: Vec2; r: number; keep: boolean };
+
 /**
  * One layer: the scene drawn through its camera onto a transparent offscreen
  * bitmap. With `edge`, the layer fades out towards that rectangle's edges
  * (an elliptical vignette, in scene coordinates, so it moves with the camera).
+ * With `disc`, it is cut to that circle, or the circle is cut out of it.
  */
 function drawLayer(
   role: string, ctx: Ctx, scene: Scene, t: number, m: DOMMatrix, linkAlpha = 1,
   edge?: { x: number; y: number; w: number; h: number },
   others?: { keep: string; alpha: number },
+  disc?: Disc & { base: DOMMatrix },
+  lines = true,
 ) {
   const { width, height } = ctx.canvas;
   const c = layer(role, width, height);
@@ -259,7 +297,7 @@ function drawLayer(
   off.setTransform(1, 0, 0, 1, 0, 0);
   off.clearRect(0, 0, width, height);
   off.setTransform(m);
-  drawDisplayList(off, buildDisplayList(scene, t, { linkAlpha, others }), { transparent: true });
+  drawDisplayList(off, buildDisplayList(scene, t, { linkAlpha, others, lines }), { transparent: true });
   if (edge) {
     off.save();
     off.setTransform(m.translate(edge.x + edge.w / 2, edge.y + edge.h / 2).scale((edge.w / 2) * 1.15, (edge.h / 2) * 1.15));
@@ -270,6 +308,16 @@ function drawLayer(
     off.globalCompositeOperation = 'destination-in';
     off.fillStyle = g;
     off.fillRect(-4, -4, 8, 8);
+    off.restore();
+  }
+  if (disc) {
+    off.save();
+    off.setTransform(disc.base);
+    off.globalCompositeOperation = disc.keep ? 'destination-in' : 'destination-out';
+    off.fillStyle = '#000';
+    off.beginPath();
+    off.arc(disc.at.x, disc.at.y, disc.r, 0, Math.PI * 2);
+    off.fill();
     off.restore();
   }
   return c;
@@ -303,20 +351,39 @@ export function drawJourney(ctx: Ctx, scene: Scene, t: number, opts: CanvasDrawO
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
+  // The body first, with a hole where the dot is: the tissue shows through it.
+  const dotted = st.dot.alpha > 0;
+  if (st.body.alpha > 0.001) {
+    const hole = { at: st.dot.at, r: st.dot.r, keep: false, base };
+    const img = drawLayer('body', ctx, body, t, cameraMatrix(base, st.body), 1, undefined, undefined, hole, false);
+    ctx.globalAlpha = st.body.alpha;
+    ctx.drawImage(img, 0, 0);
+  }
   if (st.tissue.alpha > 0.001) {
     // The centre cell alone at first: the other cells, and the links to them,
     // fade in with the neighbours.
     const hero = buildGeometry(tissue).cells.find((c) => c.hero);
     const n = st.tissue.neighbours;
     const img = drawLayer('tissue', ctx, tissue, t, cameraMatrix(base, st.tissue), n, mapExtent(tissue),
-      hero && n < 1 ? neighbourFade(scene, hero.id, n) : undefined);
+      hero && n < 1 ? neighbourFade(scene, hero.id, n) : undefined,
+      dotted ? { at: st.dot.at, r: st.dot.r, keep: true, base } : undefined);
     ctx.globalAlpha = st.tissue.alpha;
     ctx.drawImage(img, 0, 0);
   }
-  if (st.body.alpha > 0.001) {
-    const img = drawLayer('body', ctx, body, t, cameraMatrix(base, st.body));
-    ctx.globalAlpha = st.body.alpha;
-    ctx.drawImage(img, 0, 0);
+  if (dotted) {
+    // The dot's rim: a soft glow under a fine bright line, in the membrane's colours.
+    const w = 0.0022 * Math.min(scene.canvas.width, scene.canvas.height);
+    ctx.setTransform(base);
+    ctx.beginPath();
+    ctx.arc(st.dot.at.x, st.dot.at.y, st.dot.r, 0, Math.PI * 2);
+    ctx.strokeStyle = scene.cell.glowColor;
+    ctx.globalAlpha = 0.35 * st.dot.alpha;
+    ctx.lineWidth = w * 3.5;
+    ctx.stroke();
+    ctx.strokeStyle = scene.cell.edgeColor;
+    ctx.globalAlpha = st.dot.alpha;
+    ctx.lineWidth = w;
+    ctx.stroke();
   }
   ctx.restore();
 }

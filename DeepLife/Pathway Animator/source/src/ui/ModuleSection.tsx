@@ -369,7 +369,7 @@ export function ModuleSection() {
             At 1× the tissue section is zoomed in just enough that tissue fills the frame, with no edge of the cell layer
             showing. Lower pulls back towards the whole tissue; higher goes closer (never closer than the cell shot).
           </p>
-          {organ('Zoom out of')}
+          {organ('Tissue becomes a dot on')}
           <div className="sections">
             {JOURNEY_SECTIONS.map((label, i) => {
               const L = sectionLength(scene);
