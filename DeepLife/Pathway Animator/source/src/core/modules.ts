@@ -292,12 +292,6 @@ export function applyModule(scene: Scene, g: SceneGeom): SceneGeom {
     // A pathway's own receptor, not a relay receptor or a decorative one.
     const own = (r: ReceptorGeom) => r.pathwayId !== null && r.id === `receptor-${r.pathwayId}`;
     receptors = receptors.map((r) => (own(r) ? { ...r, target: true } : r));
-    // The combination's second receptor takes the place of any decorative one it lands on.
-    if (kind === 'combination') {
-      const clear = 1.6 * scene.style.receptorSize.length * g.scale;
-      const targets = receptors.filter((r) => r.target);
-      receptors = receptors.filter((r) => r.pathwayId !== null || targets.every((t) => Math.hypot(t.center.x - r.center.x, t.center.y - r.center.y) >= clear));
-    }
   }
 
   return { ...g, nodes, edges, receptors, nodeById: new Map(nodes.map((n) => [n.id, n])) };

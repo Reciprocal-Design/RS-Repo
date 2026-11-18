@@ -39,6 +39,14 @@ const bbox = (pts: { x: number; y: number }[]) => {
 };
 
 describe('a shared tissue map', () => {
+  it('keeps the unconnected receptors in the same places on tabs 1–3, on the selected cell of a map', () => {
+    const unconnected = (kind: ModuleKind) =>
+      buildGeometry(view(kind)).receptors.filter((r) => r.pathwayId === null).map((r) => [r.id, r.center, r.angle]);
+    expect(unconnected('moa').length).toBeGreaterThan(0);
+    expect(unconnected('combination')).toEqual(unconnected('moa'));
+    expect(unconnected('toxicity')).toEqual(unconnected('moa'));
+  });
+
   it('shows the pathway of tab 1 unchanged in tab 2, on the selected cell of a map', () => {
     const shape = (s: Scene) => JSON.stringify(buildGeometry(s).edges.filter((e) => e.pathwayId === 'p1').map((e) => [e.id, e.bezier]));
     expect(shape(view('combination'))).toBe(shape(view('moa')));

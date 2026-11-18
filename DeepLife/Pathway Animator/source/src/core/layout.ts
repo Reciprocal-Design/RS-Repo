@@ -17,6 +17,8 @@ const COMBINATION_WIDTH = 0.62;
 const COMBINATION_APART = (48 * Math.PI) / 180;
 /** Target combination: the gap the added pathway's proteins want from the first's (× cell radius). */
 const COMBINATION_CLEAR = 0.1;
+/** Target combination: the second receptor's least distance from an unconnected one (× receptor length). */
+const COMBINATION_RECEPTOR_GAP = 1.6;
 
 /** The views (tabs 1–3) that can zoom out round their centre cell. */
 export const ZOOM_VIEWS: ModuleKind[] = ['moa', 'combination', 'toxicity'];
@@ -94,8 +96,13 @@ export function receptorAt(frame: CellFrame, scene: Scene, phi: number, id: stri
   };
 }
 
-/** Decorative receptors fill the gaps between pathways, evenly with a little seeded jitter. */
-export function decorativeReceptors(frame: CellFrame, scene: Scene): ReceptorGeom[] {
+/**
+ * Decorative receptors fill the gaps between pathways, evenly with a little
+ * seeded jitter. Target combination places them as for its first pathway alone,
+ * so they sit in the same places on tabs 1–3.
+ */
+export function decorativeReceptors(frame: CellFrame, sceneIn: Scene): ReceptorGeom[] {
+  const scene = sceneIn.module.kind === 'combination' ? { ...sceneIn, pathwayCount: 1 } : sceneIn;
   const n = Math.max(1, scene.pathwayCount);
   const total = Math.max(0, Math.round(scene.cell.decorativeReceptors));
   const out: ReceptorGeom[] = [];
@@ -153,11 +160,15 @@ function secondReceptorAngle(frame: CellFrame, scene: Scene, pathway: Pathway, i
   const bearing = (phi: number) => angleOf(N, polar(cell.center, cell.radiusAt(phi), phi));
   const apart = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
   const axis = bearing(start);
+  // The unconnected receptors stay where they are on tabs 1–3: this one goes between them.
+  const others = decorativeReceptors(frame, scene);
+  const clear = COMBINATION_RECEPTOR_GAP * scene.style.receptorSize.length * frame.scale;
   let best = start + COMBINATION_GAP * TAU, bestScore = -Infinity;
-  for (let deg = 0; deg < 360; deg += 6) {
+  for (let deg = 0; deg < 360; deg += 3) {
     const phi = start + (deg * Math.PI) / 180;
     if (apart(bearing(phi), axis) < COMBINATION_APART) continue;
     const q = onOutline(cell, phi);
+    if (others.some((r) => dist(r.center, q) < clear)) continue;
     const depth = dist(N, q) - nucleus.radiusAt(angleOf(N, q));
     const nodes = layoutPathway(frame, scene, pathway, index, phi).nodes.filter((n) => n.active);
     // The two meet at the DEGs, so only the way there has to stay clear.

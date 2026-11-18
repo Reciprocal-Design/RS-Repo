@@ -131,6 +131,20 @@ describe('modules', () => {
     expect(moduleScene('tissue', 1234).style.edgeWidth).toBe(defaultScene(1234).style.edgeWidth);
   });
 
+  it('keeps the unconnected receptors in the same places on tabs 1–3, clear of the second receptor', () => {
+    const unconnected = (kind: ModuleKind) =>
+      buildGeometry(moduleScene(kind, 1234)).receptors.filter((r) => r.pathwayId === null).map((r) => [r.id, r.center, r.angle]);
+    expect(unconnected('moa').length).toBeGreaterThan(0);
+    expect(unconnected('combination')).toEqual(unconnected('moa'));
+    expect(unconnected('toxicity')).toEqual(unconnected('moa'));
+    const s = moduleScene('combination', 1234);
+    const g = buildGeometry(s);
+    const second = g.receptors.find((r) => r.id === 'receptor-p2')!;
+    for (const r of g.receptors.filter((x) => x.pathwayId === null)) {
+      expect(Math.hypot(r.center.x - second.center.x, r.center.y - second.center.y)).toBeGreaterThan(s.style.receptorSize.length * g.scale);
+    }
+  });
+
   it('keeps the pathway of tab 1 in tab 2 whatever is changed in tab 1', () => {
     const shape = (s: Scene) => {
       const g = buildGeometry(s);
