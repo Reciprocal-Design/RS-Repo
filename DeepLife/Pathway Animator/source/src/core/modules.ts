@@ -2,7 +2,8 @@ import { middleCellId, suggestedDetailScale } from './cellMap';
 import { defaultCellMap, defaultModule, defaultScene, makePathway } from './defaults';
 import { ZOOM_VIEWS } from './layout';
 import { organicTissue } from './organic';
-import { rngFor, type Rng } from './rng';
+import { withStructureOf } from './layers';
+import { hash, rngFor, type Rng } from './rng';
 import type { CellMap, EdgeGeom, ModuleKind, NodeGeom, ReceptorGeom, Scene, SceneGeom } from './types';
 
 /** A tissue built round the single cell: the same cell at the centre, neighbours relaying its signal on. */
@@ -69,6 +70,9 @@ export const moduleInfo = (kind: ModuleKind): ModuleInfo =>
 /** The views that show one cell on its own (and, with an uploaded map, only its selected cell). */
 /** The tabs that trace routes through the network. */
 export const TRACED: ModuleKind[] = ['moa', 'combination', 'toxicity'];
+/** The traced tabs' pulse size and line thickness, in px. */
+export const TRACED_COMET_SIZE = 6.5;
+export const TRACED_LINE_WIDTH = 3.55;
 
 export const SINGLE_CELL: ModuleKind[] = ['moa', 'combination', 'toxicity', 'realCell'];
 
@@ -146,6 +150,10 @@ export function moduleScene(kind: ModuleKind, seed = 1234): Scene {
     s.module.zoom = DEFAULT_ZOOM[kind] ?? 1;
     if (kind !== 'tissue') s.cell.neighbours = { ...s.cell.neighbours, show: true };
   }
+  if (TRACED.includes(kind)) {
+    s.animation = { ...s.animation, cometSize: TRACED_COMET_SIZE };
+    s.style = { ...s.style, edgeWidth: TRACED_LINE_WIDTH };
+  }
   if (kind === 'combination') {
     // Tab 1's pathway and one more, hit together.
     s.pathwayCount = 2;
@@ -182,6 +190,35 @@ export function shareScene(from: Scene, to: Scene): Scene {
       ...from.pathways.map((p, i) => ({ ...p, startDelay: to.pathways[i]?.startDelay ?? p.startDelay })),
       ...to.pathways.slice(from.pathways.length),
     ],
+  };
+}
+
+/**
+ * Keep a traced tab (1–3) in step with the one being edited: the same cell,
+ * look, motion and first pathway, so tab 2 always shows tab 1's pathway. The
+ * tab keeps what makes it its own: any added pathway and its toxicity colour.
+ */
+export function linkTraced(from: Scene, to: Scene): Scene {
+  const first = from.pathways[0];
+  const added = to.pathways.slice(1).map((p, i) => ({
+    ...p,
+    seed: from.seed !== to.seed && !p.locked ? hash(from.seed, 'pathway', i + 1) : p.seed,
+    layers: from.sameLayersForAll ? withStructureOf(p.layers, first.layers) : p.layers,
+  }));
+  const { zoom, focusDeg, routes, trips, markTargets, targetColor } = from.module;
+  return {
+    ...to,
+    seed: from.seed,
+    canvas: from.canvas,
+    cell: from.cell,
+    nucleus: from.nucleus,
+    style: from.style,
+    animation: from.animation,
+    rotation: from.rotation,
+    sameLayersForAll: from.sameLayersForAll,
+    cellMap: from.cellMap,
+    pathways: [{ ...first, startDelay: to.pathways[0].startDelay }, ...added],
+    module: { ...to.module, zoom, focusDeg, routes, trips, markTargets, targetColor },
   };
 }
 

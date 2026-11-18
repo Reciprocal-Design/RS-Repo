@@ -40,7 +40,8 @@ cell or generated tissue.
    layer) from the receptor to a chosen DEG are always on in the gradient, with nothing greyed out behind them. A pulse
    runs back and forth between the receptor and the nucleus ("Back-and-forth trips"), and the loop closes seamlessly.
 2. **Target combination**: the pathway of tab 1, unchanged, and one more: two ringed receptors, each with its own
-   always-on route to the nucleus, pulsing together. The second sits to the side and stays shallower, so the two never cross.
+   always-on route to the nucleus, pulsing together. Tabs 1–3 stay in step: the cell, look, motion and first pathway
+   changed in one (Regenerate included) change in the others. They start with a 6.5 px comet and 3.55 px lines. The second sits to the side and stays shallower, so the two never cross.
 3. **Target toxicity**: the receptor of tab 1 with a different always-on pathway, ending at a different dot in the
    nucleus. That dot is larger, red, and radiates rings for the whole loop; nothing else on screen is red.
 4. **Tissue-level target ID** (indication extension): the same cell at the centre (an exact copy of the single

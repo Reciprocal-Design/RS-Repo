@@ -7,7 +7,7 @@ import { buildGeometry } from '../core/geometry';
 import { pointInPolygon } from '../core/polygon';
 import { withStructureOf } from '../core/layers';
 import { onBodyImage } from '../core/bodyImage';
-import { MODULES, moduleScene, shareScene, withHero, withoutTissueMap, withTissueMap, type TissueUpload } from '../core/modules';
+import { linkTraced, MODULES, moduleScene, shareScene, TRACED, withHero, withoutTissueMap, withTissueMap, type TissueUpload } from '../core/modules';
 import { hash, randomSeed } from '../core/rng';
 import type { CellMap, LayerSpec, Pathway, Scene, Vec2 } from '../core/types';
 
@@ -63,8 +63,14 @@ interface AppState {
   clearTissueMap: () => void;
 }
 
-/** State with the current tab's scene replaced. */
-const put = (st: AppState, scene: Scene) => ({ scene, tabs: st.tabs.map((s, i) => (i === st.active ? scene : s)) });
+/** State with the current tab's scene replaced; tabs 1–3 stay in step with each other. */
+const put = (st: AppState, scene: Scene) => {
+  const traced = (s: Scene) => TRACED.includes(s.module.kind);
+  return {
+    scene,
+    tabs: st.tabs.map((s, i) => (i === st.active ? scene : traced(scene) && traced(s) ? linkTraced(scene, s) : s)),
+  };
+};
 
 export const useApp = create<AppState>((set) => ({
   tabs: TABS,

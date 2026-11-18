@@ -4,7 +4,7 @@ import { displayListToSvg } from '../render/svg';
 import { defaultScene } from './defaults';
 import { neighbourCells } from './cellMap';
 import { buildGeometry } from './geometry';
-import { MODULES, moduleScene, shareScene } from './modules';
+import { linkTraced, MODULES, moduleScene, shareScene, TRACED } from './modules';
 import { parseSceneJson, serializeScene } from './sceneIO';
 import { buildSchedule } from './timeline';
 import type { ModuleKind, Scene } from './types';
@@ -111,6 +111,42 @@ describe('modules', () => {
       const receptor = g.nodes.find((n) => n.pathwayId === pid && n.layer === 0)!;
       expect(sched.fire.has(receptor.id)).toBe(true);
     }
+  });
+
+  it('tabs 1–3 share one pulse size and line thickness', () => {
+    for (const kind of TRACED) {
+      const s = moduleScene(kind, 1234);
+      expect(s.animation.cometSize).toBe(6.5);
+      expect(s.style.edgeWidth).toBe(3.55);
+    }
+    expect(moduleScene('tissue', 1234).style.edgeWidth).toBe(defaultScene(1234).style.edgeWidth);
+  });
+
+  it('keeps the pathway of tab 1 in tab 2 whatever is changed in tab 1', () => {
+    const shape = (s: Scene) => {
+      const g = buildGeometry(s);
+      return JSON.stringify(g.edges.filter((e) => e.pathwayId === 'p1').map((e) => [e.id, e.bezier]));
+    };
+    const tab1 = moduleScene('moa', 1234);
+    const tab2 = moduleScene('combination', 1234);
+    expect(shape(tab2)).toBe(shape(tab1));
+    // Regenerated, re-routed and restyled in tab 1.
+    const edited: Scene = {
+      ...tab1, seed: 555,
+      pathways: [{ ...tab1.pathways[0], seed: 987 }],
+      style: { ...tab1.style, edgeWidth: 2 },
+      module: { ...tab1.module, routes: 2, focusDeg: 2 },
+    };
+    const linked = linkTraced(edited, tab2);
+    expect(shape(linked)).toBe(shape(edited));
+    expect(shape(linked)).not.toBe(shape(tab2));
+    expect(linked.style.edgeWidth).toBe(2);
+    // Tab 2 keeps its second pathway, and edits there come back to tab 1.
+    expect(linked.pathwayCount).toBe(2);
+    expect(linked.pathways).toHaveLength(2);
+    expect(buildGeometry(linked).edges.some((e) => e.pathwayId === 'p2')).toBe(true);
+    expect(shape(linkTraced(linked, edited))).toBe(shape(linked));
+    expect(linkTraced(edited, moduleScene('toxicity', 1234)).module.toxicColor).toBe(moduleScene('toxicity', 1234).module.toxicColor);
   });
 
   it('toxicity keeps the receptor, takes a different pathway to a different dot, and that dot pulses red', () => {
