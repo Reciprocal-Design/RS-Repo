@@ -23,7 +23,6 @@ export function drawDisplayList(ctx: Ctx, list: DisplayList, opts: CanvasDrawOpt
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   const prims = list.prims;
-  for (const u of list.underlays ?? []) if (u.opacity > 0) drawCachedLayer(ctx, u.prims, u.prims, u.prims.length, u.opacity);
   // The static layer (outlines with their glowing rims, receptors, base edges;
   // for a cell map, every cell's) is the same in every frame of a scene: draw
   // it once to a bitmap at device resolution and reuse it during playback.
@@ -196,37 +195,6 @@ function drawPrim(ctx: Ctx, p: Prim): void {
       ctx.strokeStyle = p.stroke;
       ctx.lineWidth = p.width;
       ctx.stroke();
-      break;
-    }
-    case 'warning': {
-      // Rounded triangle: a filled path stroked in the same colour with round joins.
-      const h = p.size, w = h * 1.12;
-      const r = h * 0.12;
-      ctx.save();
-      ctx.translate(p.c.x, p.c.y);
-      ctx.beginPath();
-      ctx.moveTo(0, -h / 2 + r);
-      ctx.lineTo(w / 2 - r, h / 2 - r);
-      ctx.lineTo(-w / 2 + r, h / 2 - r);
-      ctx.closePath();
-      ctx.fillStyle = p.fill;
-      ctx.strokeStyle = p.fill;
-      ctx.lineJoin = 'round';
-      ctx.lineWidth = 2 * r;
-      ctx.fill();
-      ctx.stroke();
-      ctx.strokeStyle = p.mark;
-      ctx.fillStyle = p.mark;
-      ctx.lineCap = 'round';
-      ctx.lineWidth = h * 0.1;
-      ctx.beginPath();
-      ctx.moveTo(0, -h * 0.17);
-      ctx.lineTo(0, h * 0.13);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(0, h * 0.29, h * 0.06, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
       break;
     }
     case 'diamond': {

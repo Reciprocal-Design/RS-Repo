@@ -10,7 +10,7 @@ import { parseSceneJson, serializeScene } from './sceneIO';
 import { buildSchedule } from './timeline';
 import type { MapCell, ModuleKind, Scene } from './types';
 
-/** A tab as it started before tabs 1–5 went square and zoomed out: 1920 × 1080, zoom 1, no neighbours. */
+/** A tab as it started before tabs 1–4 went square and zoomed out: 1920 × 1080, zoom 1, no neighbours. */
 const classic = (kind: ModuleKind, seed = 7): Scene => {
   const s = moduleScene(kind, seed);
   return {
@@ -40,7 +40,7 @@ const bbox = (pts: { x: number; y: number }[]) => {
 
 describe('a shared tissue map', () => {
   it('shows only the selected cell, as the single cell, in the single-cell views', () => {
-    for (const kind of ['targetId', 'moa', 'combination', 'toxicity'] as const) {
+    for (const kind of ['moa', 'combination', 'toxicity'] as const) {
       const s = view(kind);
       const g = buildGeometry(s);
       expect(g.cells).toHaveLength(1);
@@ -60,16 +60,12 @@ describe('a shared tissue map', () => {
   });
 
   it('keeps each view its own treatment of that cell', () => {
-    const last = moduleScene('targetId', 7).pathways[0].layers.length - 1;
-    // Target ID: receptor and DEGs only.
-    expect(buildGeometry(view('targetId')).nodes.every((n) => n.layer === 0 || n.layer === last)).toBe(true);
-    // MOA: a route to uncover; toxicity: a toxic DEG and the cell turning.
+    // Target identification and MOA: a route to uncover; toxicity: one toxic DEG.
     expect(buildGeometry(view('moa')).nodes.some((n) => n.reveal)).toBe(true);
     const tox = view('toxicity');
-    expect(buildGeometry(tox).nodes.some((n) => n.toxic)).toBe(true);
-    expect(buildDisplayList(tox, 0).underlays!.length).toBe(2);
-    // Combination: three targets on the one cell.
-    expect(buildGeometry(view('combination')).receptors.filter((r) => r.target).length).toBe(3);
+    expect(buildGeometry(tox).nodes.filter((n) => n.toxic)).toHaveLength(1);
+    // Combination: two targets on the one cell.
+    expect(buildGeometry(view('combination')).receptors.filter((r) => r.target).length).toBe(2);
   });
 
   it('shows the whole map in the tissue view, the selected cell in the middle and starting the signal', () => {
@@ -87,13 +83,13 @@ describe('a shared tissue map', () => {
   });
 
   it('selects another cell everywhere, and goes back to each view\'s own cell', () => {
-    const a = buildGeometry(view('targetId', 'c5')).cells[0].cell.points[0];
-    const moved = withHero(view('targetId', 'c5'), 'c2');
+    const a = buildGeometry(view('moa', 'c5')).cells[0].cell.points[0];
+    const moved = withHero(view('moa', 'c5'), 'c2');
     expect(moved.cellMap.heroId).toBe('c2');
     expect(buildGeometry(moved).cells).toHaveLength(1);
     expect(withHero(moved, 'nope').cellMap.heroId).toBe('c2');
     expect(a).toBeDefined();
-    expect(withoutTissueMap(view('targetId')).cellMap.cells).toHaveLength(0);
+    expect(withoutTissueMap(view('moa')).cellMap.cells).toHaveLength(0);
     expect(withoutTissueMap(view('tissue')).cellMap.around).toBe(true);
     // Saved and loaded with the selection.
     const loaded = parseSceneJson(serializeScene(view('moa', 'c3')));
@@ -264,7 +260,7 @@ describe('neighbouring cells round a single cell', () => {
   const own = (s: Scene) => JSON.stringify(buildDisplayList(s, 0, { signal: false }).prims.filter((p) => !p.id.startsWith('nb')));
 
   it('can be off; shown, the cell itself is unchanged and they sit round it, see-through', () => {
-    const s = classic('targetId');
+    const s = classic('moa');
     expect(nbPrims(s)).toHaveLength(0);
     const shown = on(s);
     const prims = nbPrims(shown);
@@ -279,7 +275,7 @@ describe('neighbouring cells round a single cell', () => {
   });
 
   it('can be drawn in greys', () => {
-    const grey = nbPrims(on(moduleScene('targetId', 7), 0.5, true));
+    const grey = nbPrims(on(moduleScene('moa', 7), 0.5, true));
     const strokes = grey.flatMap((p) => ('stroke' in p && typeof p.stroke === 'string' ? [p.stroke] : []));
     expect(strokes.length).toBeGreaterThan(0);
     for (const c of strokes) {
@@ -290,7 +286,7 @@ describe('neighbouring cells round a single cell', () => {
   });
 
   it('with a tissue map, are the selected cell’s real neighbours at the same scale', () => {
-    const s = on(view('targetId', 'c5'));
+    const s = on(view('moa', 'c5'));
     const ns = neighbourCells(s);
     expect(ns.length).toBe(8); // the 3 × 3 grid round the middle cell
     const hero = buildGeometry(s).cells.find((c) => c.id === 'c5')!;
@@ -298,7 +294,7 @@ describe('neighbouring cells round a single cell', () => {
     // Cells are 100 apart and 96 wide in the map, so the nearest neighbour is about one cell width (plus the gap) away.
     const width = Math.max(...hero.cell.points.map((p) => p.x)) - Math.min(...hero.cell.points.map((p) => p.x));
     expect(pitch / width).toBeCloseTo(100 / 96, 1);
-    expect(own(s)).toBe(own(view('targetId', 'c5')));
+    expect(own(s)).toBe(own(view('moa', 'c5')));
   });
 
   it('are not added to views that already show many cells', () => {

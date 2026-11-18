@@ -58,7 +58,7 @@ function VideoExport({ busy, setBusy, setMessage }: { busy: boolean; setBusy: (b
   };
 
   // Tabs 1–6 (the client modules), each as its own video with these settings.
-  const BATCH = 6;
+  const BATCH = 5;
   const batch = tabs.slice(0, BATCH).map((sc, i) => ({ scene: sc, number: i + 1 }));
   const batchSizeError = batch.map((b) => {
     const v = videoSize(b.scene, scale);

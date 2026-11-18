@@ -214,7 +214,7 @@ export function buildMapGeometry(scene: Scene, opts: MapBuildOptions = {}): Scen
   const pre = opts.prefix ?? '';
   // A solo view is the single cell: full-size detail. Zoomed in on the
   // selected cell, detail grows with the cells (up to full size). The view's
-  // own zoom (tabs 1–5) then scales it with everything else.
+  // own zoom (tabs 1–4) then scales it with everything else.
   const detail = (soloActive(scene) ? 1 : Math.min(1, Math.max(0.05, cm.detailScale) * mapTransform(scene).zoom)) * viewZoom(scene);
   const scale = (Math.min(scene.canvas.width, scene.canvas.height) / REFERENCE_SHORT_SIDE) * detail;
   const count = Math.max(1, scene.pathwayCount);
@@ -356,7 +356,7 @@ export function mapExtent(scene: Scene) {
 }
 
 /** Views that show one cell: the plain animator and the single-cell modules, alone or as a map's selected cell. */
-const SINGLE_VIEWS = ['custom', 'targetId', 'moa', 'combination', 'toxicity', 'realCell'];
+const SINGLE_VIEWS = ['custom', 'moa', 'combination', 'toxicity', 'realCell'];
 export const singleCellView = (scene: Scene) =>
   SINGLE_VIEWS.includes(scene.module.kind) && (soloActive(scene) || !mapActive(scene));
 

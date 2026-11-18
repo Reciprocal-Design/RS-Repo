@@ -6,11 +6,17 @@ import type { ModuleKind, NodeGeom, Outline, Pathway, ReceptorGeom, Scene, Vec2 
 export const REFERENCE_SHORT_SIDE = 1080;
 
 const TAU = Math.PI * 2;
+/** Target combination: how far round the cell the second receptor sits from the first (a share of a full turn). */
+const COMBINATION_GAP = 0.3;
+/** Target combination: how deep into the nucleus the added pathway reaches, relative to the first. */
+const COMBINATION_DEPTH = 0.3;
+/** Target combination: how wide the added pathway's rows are, relative to the first. */
+const COMBINATION_WIDTH = 0.55;
 
-/** The views (tabs 1–5) that can zoom out round their centre cell. */
-export const ZOOM_VIEWS: ModuleKind[] = ['targetId', 'moa', 'combination', 'toxicity', 'tissue'];
+/** The views (tabs 1–4) that can zoom out round their centre cell. */
+export const ZOOM_VIEWS: ModuleKind[] = ['moa', 'combination', 'toxicity', 'tissue'];
 
-/** The scene's zoom about its centre cell: the module's zoom in tabs 1–5, otherwise 1. */
+/** The scene's zoom about its centre cell: the module's zoom in tabs 1–4, otherwise 1. */
 export const viewZoom = (scene: Scene): number =>
   ZOOM_VIEWS.includes(scene.module.kind) ? Math.max(0.05, scene.module.zoom ?? 1) : 1;
 const polar = (c: Vec2, r: number, th: number): Vec2 => ({ x: c.x + Math.cos(th) * r, y: c.y + Math.sin(th) * r });
@@ -28,6 +34,8 @@ const dist = (a: Vec2, b: Vec2) => Math.hypot(a.x - b.x, a.y - b.y);
 export function pathwayGaps(scene: Scene): number[] {
   const n = Math.max(1, scene.pathwayCount);
   if (n === 1) return [TAU];
+  // Target combination: the second receptor to the side of the first, so their pathways never cross.
+  if (scene.module.kind === 'combination' && n === 2) return [COMBINATION_GAP * TAU, (1 - COMBINATION_GAP) * TAU];
   const v = Math.max(0, Math.min(2, scene.spacingVariation ?? 0));
   const raw = Array.from({ length: n }, (_, i) => Math.max(0.2, 1 + v * signed(rngFor(scene.seed, 'spread', n, i), 0.5)));
   const sum = raw.reduce((a, b) => a + b, 0);
@@ -137,7 +145,8 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
   const rows = new Array<number>(L).fill(rhoReceptor);
   const stepC = (rhoReceptor - rhoNucEdge) / (cytoIdx.length + 1);
   cytoIdx.forEach((li, k) => (rows[li] = rhoReceptor - stepC * (k + 1)));
-  const n = Math.max(1, scene.pathwayCount);
+  // Target combination: each pathway is laid out as it is on its own, so the first is the same one tab 1 shows.
+  const n = scene.module.kind === 'combination' ? 1 : Math.max(1, scene.pathwayCount);
   // Angular room on each side: half the gap to the previous / next pathway.
   const gaps = pathwayGaps(scene);
   const roomPrev = gaps[(index - 1 + n) % n] / 2, roomNext = gaps[index % n] / 2;
@@ -153,7 +162,8 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
   // several, it spans from the nucleus edge down to the deepest row that still
   // fits a typical (6-node) row in its wedge, so pathways never knot together
   // at the centre. Both depend only on the pathway count, never on node counts.
-  const depth = Math.max(0.1, Math.min(0.97, scene.nucleus.layerDepth));
+  const added = scene.module.kind === 'combination' && index > 0;
+  const depth = Math.max(0.1, Math.min(0.97, scene.nucleus.layerDepth)) * (added ? COMBINATION_DEPTH : 1);
   let lastRho = rhoNucEdge - depth * (rhoNucEdge + 0.75 * nucleus.radiusAt(thAxis + Math.PI));
   if (n > 1) {
     const floor = (5 * 1.1 * minSpacingN) / evenSpan;
@@ -178,7 +188,7 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
   // nucleus-centred one, so they bend gently instead of curling round the
   // centre. With more, rows stay concentric so each keeps to its own wedge.
   const minArc = n === 1 ? 0.5 * R : n === 2 ? 0.25 * R : 0;
-  const baseSpacing = (n === 1 ? 0.2 : 0.15) * R;
+  const baseSpacing = (n === 1 ? 0.2 : 0.15) * R * (added ? COMBINATION_WIDTH : 1);
   const pad = 0.035 * R + scene.style.haloRadius * scale;
 
   const out: NodeGeom[][] = [];

@@ -53,13 +53,6 @@ export function displayListToSvg(list: DisplayList, opts: SvgOptions = {}): stri
   const clips = new Set<string>();
   const groups = new Map<Group, string[]>(GROUP_ORDER.map((g) => [g, []]));
 
-  // Underlays (a membrane cross-fading to another colour) come first in their group, each as one faded group.
-  for (const u of list.underlays ?? []) {
-    if (u.opacity <= 0.001) continue;
-    const els = u.prims.map((p) => primToSvg(p, defs, clips)).filter((el): el is string => !!el);
-    if (!els.length) continue;
-    groups.get(u.prims[0].group)!.push(`<g id="${safeId(u.id)}"${opacityAttr('opacity', u.opacity)}>\n${els.join('\n')}\n</g>`);
-  }
   for (const p of list.prims) {
     const el = primToSvg(p, defs, clips);
     if (el) groups.get(p.group)!.push(el);
@@ -158,14 +151,6 @@ function primToSvg(p: Prim, defs: string[], clips: Set<string>): string | null {
       let d = '';
       for (let i = 0; i < p.pts.length; i += 4) d += `M${n(p.pts[i])},${n(p.pts[i + 1])}L${n(p.pts[i + 2])},${n(p.pts[i + 3])}`;
       return `<path id="${id}" d="${d}" fill="none" ${strokeAttrs(p.stroke)} stroke-width="${n(p.width)}" stroke-linecap="round"${opacity}/>`;
-    }
-    case 'warning': {
-      const h = p.size, w = h * 1.12, r = h * 0.12;
-      const tri = `${n(0)},${n(-h / 2 + r)} ${n(w / 2 - r)},${n(h / 2 - r)} ${n(-w / 2 + r)},${n(h / 2 - r)}`;
-      return `<g id="${id}" transform="translate(${n(p.c.x)} ${n(p.c.y)})"${opacity}>`
-        + `<polygon points="${tri}" ${fillAttrs(p.fill)} ${strokeAttrs(p.fill)} stroke-width="${n(2 * r)}" stroke-linejoin="round"/>`
-        + `<line x1="0" y1="${n(-h * 0.17)}" x2="0" y2="${n(h * 0.13)}" ${strokeAttrs(p.mark)} stroke-width="${n(h * 0.1)}" stroke-linecap="round"/>`
-        + `<circle cx="0" cy="${n(h * 0.29)}" r="${n(h * 0.06)}" ${fillAttrs(p.mark)}/></g>`;
     }
     case 'glow': {
       const gid = `grad-${id}`;

@@ -101,7 +101,7 @@ function normalizeCellMap(raw: unknown): CellMap {
   };
 }
 
-const MODULE_KINDS: ModuleKind[] = ['targetId', 'moa', 'combination', 'toxicity', 'tissue', 'crossTissue', 'custom', 'body', 'journey', 'realCell'];
+const MODULE_KINDS: ModuleKind[] = ['moa', 'combination', 'toxicity', 'tissue', 'crossTissue', 'custom', 'body', 'journey', 'realCell'];
 const ORGAN_IDS: OrganId[] = ['brain', 'lungs', 'heart', 'liver', 'stomach', 'kidneys', 'intestines', 'bladder'];
 
 /** Scenes saved before modules existed show their pathway unchanged ('custom'). */
@@ -114,9 +114,8 @@ function normalizeModule(raw: unknown): ModuleSettings {
     kind,
     focusDeg: Math.round(num(m.focusDeg, base.focusDeg, 0, 10)),
     routes: Math.round(num(m.routes, base.routes, 1, 3)),
+    trips: Math.round(num(m.trips, base.trips, 1, 4)),
     dimOpacity: num(m.dimOpacity, base.dimOpacity, 0, 1),
-    toxicDegs: Math.round(num(m.toxicDegs, base.toxicDegs, 0, 10)),
-    warningSize: num(m.warningSize, base.warningSize, 0.2, 3),
     organ: ORGAN_IDS.includes(m.organ) ? m.organ : base.organ,
     sectionLength: num(m.sectionLength, base.sectionLength, 0.5, 30),
     tissueZoom: num(m.tissueZoom, base.tissueZoom, 0.3, 3),

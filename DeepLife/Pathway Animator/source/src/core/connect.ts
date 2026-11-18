@@ -41,6 +41,13 @@ export function makeEdge(scene: Scene, a: NodeGeom, b: NodeGeom, crosstalk: bool
   };
 }
 
+/** The same edge run the other way: from its end back to its start. */
+export function reverseEdge(e: EdgeGeom): EdgeGeom {
+  const bezier = [...e.bezier].reverse() as Bezier;
+  const lut = arcLengthLut(bezier);
+  return { ...e, from: e.to, to: e.from, bezier, lut, length: lut[lut.length - 1], depthFrom: e.depthTo, depthTo: e.depthFrom };
+}
+
 /** Pick up to k distinct indices, weighted, without replacement. */
 function weightedPick(rng: Rng, weights: number[], k: number): number[] {
   const keyed = weights.map((w, i) => ({ i, key: w > 0 ? rng() ** (1 / w) : -1 }));

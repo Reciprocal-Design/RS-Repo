@@ -42,7 +42,6 @@ export function ModuleSection() {
   const scene = useApp((s) => s.scene);
   const active = useApp((s) => s.active);
   const setScene = useApp((s) => s.setScene);
-  const setPathwayCount = useApp((s) => s.setPathwayCount);
   const setTime = useApp((s) => s.setTime);
   const setPlaying = useApp((s) => s.setPlaying);
   const shareToAllTabs = useApp((s) => s.shareToAllTabs);
@@ -68,8 +67,20 @@ export function ModuleSection() {
       {m.markTargets && <ColorField label="Target ring colour" value={m.targetColor} onChange={(targetColor) => set({ targetColor })} />}
     </>
   );
-  const direct = (
-    <Toggle label="Receptor → DEG only" checked={m.directOnly} onChange={(directOnly) => set({ directOnly })} />
+  const tracing = (
+    <>
+      <Slider label="Routes" value={m.routes} min={1} max={3} step={1} onChange={(routes) => set({ routes })} />
+      <Slider label="Back-and-forth trips" value={m.trips} min={1} max={4} step={1} onChange={(trips) => set({ trips })} />
+      <Slider label="Other proteins" value={m.dimOpacity} min={0} max={1} onChange={(dimOpacity) => set({ dimOpacity })} />
+    </>
+  );
+  const tracedDeg = (
+    <>
+      <Slider label="Traced DEG" value={Math.min(m.focusDeg, degs)} min={0} max={degs} step={1}
+        onChange={(focusDeg) => set({ focusDeg })} />
+      <p className="hint">Numbered left to right across the DEG row; 0 shows every route.</p>
+      {m.focusDeg > 0 && tracing}
+    </>
   );
   const organ = (label: string) => (
     <Select<OrganId>
@@ -95,57 +106,27 @@ export function ModuleSection() {
         </>
       )}
 
-      {m.kind === 'targetId' && (
-        <>
-          {direct}
-          {targets}
-        </>
-      )}
-
       {m.kind === 'moa' && (
         <>
-          <Slider label="Traced DEG" value={Math.min(m.focusDeg, degs)} min={0} max={degs} step={1}
-            onChange={(focusDeg) => set({ focusDeg })} />
-          <p className="hint">Numbered left to right across the DEG row; 0 shows every route.</p>
-          {m.focusDeg > 0 && (
-            <>
-              <Slider label="Routes" value={m.routes} min={1} max={3} step={1} onChange={(routes) => set({ routes })} />
-              <Slider label="Other proteins" value={m.dimOpacity} min={0} max={1} onChange={(dimOpacity) => set({ dimOpacity })} />
-            </>
-          )}
+          {tracedDeg}
+          {targets}
         </>
       )}
 
       {m.kind === 'combination' && (
         <>
-          <Slider label="Targets" value={scene.pathwayCount} min={1} max={5} step={1}
-            onChange={(n) => {
-              setPathwayCount(n);
-              // Targets in a combination are hit together.
-              setScene((s) => ({ ...s, pathways: s.pathways.map((p) => ({ ...p, startDelay: 0 })) }));
-            }} />
-          <Slider label="Spacing randomness" value={scene.spacingVariation} min={0} max={2}
-            onChange={(spacingVariation) => setScene((s) => ({ ...s, spacingVariation }))} />
           <Slider label="Turn" value={scene.rotation} min={-180} max={180} step={1} unit="°"
             onChange={(rotation) => setScene((s) => ({ ...s, rotation }))} />
-          <Slider label="Interconnection" value={scene.crosstalk.enabled ? scene.crosstalk.amount : 0} min={0} max={1}
-            onChange={(amount) => setScene((s) => ({ ...s, crosstalk: { enabled: amount > 0, amount } }))} />
-          <p className="hint">Links between the targets' networks: each receptor also reaches DEGs of the others (crosstalk).</p>
-          {direct}
+          {tracedDeg}
           {targets}
         </>
       )}
 
       {m.kind === 'toxicity' && (
         <>
-          <Slider label="Toxic DEGs" value={Math.min(m.toxicDegs, degs)} min={1} max={degs} step={1}
-            onChange={(toxicDegs) => set({ toxicDegs })} />
           <ColorField label="Toxicity colour" value={m.toxicColor} onChange={(toxicColor) => set({ toxicColor })} />
-          <p className="hint">The cell's outline blinks in this colour from the start; when the signal reaches the toxic DEGs it stops blinking and stays this colour, with the warning, until the loop ends.</p>
-          <Toggle label="Warning symbol in the middle of the cell" checked={m.warning} onChange={(warning) => set({ warning })} />
-          {m.warning && (
-            <Slider label="Warning size" value={m.warningSize} min={0.3} max={2.5} onChange={(warningSize) => set({ warningSize })} />
-          )}
+          <p className="hint">The dot this pathway ends at, in the nucleus, pulses gently in this colour for the whole loop.</p>
+          {tracing}
           {targets}
         </>
       )}

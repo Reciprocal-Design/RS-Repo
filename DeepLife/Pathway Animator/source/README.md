@@ -21,44 +21,41 @@ The built files one level up are what GitHub Pages serves, so rebuild and commit
 
 ## Module tabs
 
-Six tabs across the top, one per client module, each with its own scene. All start from the same seed, so they show
+Tabs across the top, one per client module, each with its own scene. All start from the same seed, so they show
 the same pathway; "Use this look and pathway in all tabs" copies the current tab's seed, pathway, cell, style and
 animation to the others (each keeps its module settings, pathway count, start delays and cell map). The modules are
 a preset scene plus a pure transform of the geometry (`src/core/modules.ts`):
 
-**One tissue map for every cell view.** "Tissue map → Upload SVG tissue map…" (on tabs 1–6 and the journey) takes
-one SVG of the tissue and applies it everywhere; click a cell in the thumbnail (or in the preview on tab 5) to
+**One tissue map for every cell view.** "Tissue map → Upload SVG tissue map…" (on tabs 1–5 and the journey) takes
+one SVG of the tissue and applies it everywhere; click a cell in the thumbnail (or in the preview on tab 4) to
 select it. "↺ 90°" / "↻ 90°" and "Rotation" (any angle, −180° to 180°) turn the map in every view, about its
-middle; "Reset" puts it back as uploaded. Tabs 1–4 then show only the selected cell, as the single cell (its own shape, fitted to the canvas);
-tab 5 shows the map with that cell in the middle, zoomed in until about two cells show beyond it along the
-canvas's short side ("Cells shown beyond it"; 0 shows the whole map); tab 6 shows the map twice; the journey
+middle; "Reset" puts it back as uploaded. Tabs 1–3 then show only the selected cell, as the single cell (its own shape, fitted to the canvas);
+tab 4 shows the map with that cell in the middle, zoomed in until about two cells show beyond it along the
+canvas's short side ("Cells shown beyond it"; 0 shows the whole map); tab 5 shows the map twice; the journey
 starts on it. The
 selected cell runs the scene's own pathways and starts the signal. "Remove the map" goes back to each view's own
 cell or generated tissue.
 
-1. **Target ID**: only the receptor and its active DEGs, joined directly; the receptor is ringed as the drug target.
-2. **MOA elucidation**: works backwards. The signal starts at a chosen DEG and travels one to three routes (one
-   protein per layer) in reverse to the receptor, uncovering them as it goes: the route's edges are drawn as the
-   signal passes and each node pops up when it is reached. The rest of the network is dimmed.
-3. **Target combination**: several ringed receptors (one per pathway) fire together through their whole
-   pathways, the proteins in between included ("Receptor → DEG only" hides them).
-4. **Target toxicity**: the cell's membrane blinks red from the start; when the signal reaches the toxic DEGs
-   (drawn red) it stops blinking and stays red, the warning appears, and both fade as the loop closes.
-5. **Tissue-level target ID** (indication extension): the same cell at the centre (an exact copy of the single
+1. **Target identification and MOA**: the drug target's receptor is ringed. The signal starts at a chosen DEG and
+   travels up to three routes (one protein per layer) in reverse to the receptor, uncovering them as it goes: the
+   route's edges are drawn as the signal passes and each node pops up when it is reached. It then flows back and
+   forth between the receptor and the nucleus ("Back-and-forth trips"). The rest of the network is dimmed.
+2. **Target combination**: the pathway of tab 1, unchanged, and one more: two ringed receptors, each with its own
+   traced route to the nucleus, firing together. The second sits to the side and stays shallower, so the two never cross.
+3. **Target toxicity**: the receptor of tab 1 with a different signalling pathway, ending at a different dot in the
+   nucleus. That dot is red and pulses gently for the whole loop; nothing else on screen is red.
+4. **Tissue-level target ID** (indication extension): the same cell at the centre (an exact copy of the single
    cell, scaled by "Centre cell size"), with neighbouring cells generated round it to the canvas edges
    (`src/core/tissue.ts`). Only the centre cell starts on its own; links run outward from it, so its signal relays
    on through the tissue. The tissue follows the centre cell when the seed, shape or canvas changes.
-   Target toxicity also shows a large warning badge in the middle of the cell as the blinking stops (size adjustable).
-   Target combination spaces its receptors unevenly (spacing variation up to 2) and, with crosstalk on,
-   interconnects them: each receptor also reaches a few of the other targets' DEGs.
-6. **Cross-tissue communication** (`src/core/crossTissue.ts`): one tissue map, its cells split between two tissues
+5. **Cross-tissue communication** (`src/core/crossTissue.ts`): one tissue map, its cells split between two tissues
    by colour. Click cells in the preview to switch them between the membrane colour and the second colour (pink by
    default); by default the right-hand half of the map is in the second colour ("Right half" puts that back,
    "None" clears it). The selected cell starts the signal; it spreads through its tissue and crosses into the other
    where they meet, and the links that cross between the two are drawn heavier. With no map uploaded, the tissue is
    generated (`src/core/organic.ts`): irregular cells packed wall to wall in a wide clump with an uneven edge
    (Voronoi cells of evenly scattered points, corners rounded). "New tissue shapes" re-rolls it.
-7. **Body**: organ-level connectivity (`src/core/body.ts`). An anatomical front-view outline drawn like the
+6. **Body**: organ-level connectivity (`src/core/body.ts`). An anatomical front-view outline drawn like the
    membrane in an X-ray look: a dark core, a wide glow reaching in from a bright rim ("Body glow"), and soft
    highlights along the anatomy (collarbones, chest, ribs, hips, shoulders, knees) that model the form. Organs are
    drawn like nuclei, and the same firing lines spread out from a chosen organ: organ to organ, up the neck, and in
@@ -69,7 +66,7 @@ cell or generated tissue.
    `src/core/bodyImage.ts`): the figure is found from its pixels and cut out with soft edges, the network is fitted
    to its head and shoulders (then sized and moved with the sliders), and only the nodes and particles that land on
    the figure are kept. The image is saved in the scene JSON and used by the Body and journey tabs.
-8. **Cell → tissue → body** (`src/render/journey.ts`): the website's scroll sequence, in five sections of equal
+7. **Cell → tissue → body** (`src/render/journey.ts`): the website's scroll sequence, in five sections of equal
    length: cell, cell → tissue (the camera pulls back from the centre cell as the neighbours fade in),
    tissue (zoomed in just enough that tissue fills the frame, no edge of the cell layer showing; "Tissue zoom"
    goes closer or pulls back), tissue → body (the whole tissue comes inside a circle, which shrinks to one white dot of the body, on the chosen organ, as the body fades in round it),
@@ -81,7 +78,7 @@ cell or generated tissue.
    the landscape composition turned 90° and the body is fitted upright. Export it with Export → PNG sequence (frames `{name}_0001.png` onward, saved into a folder you pick in
    Chrome and Edge, or as one ZIP elsewhere); the panel lists how many frames each section takes.
 
-9. **Virtual → real cell** (`src/render/realCell.ts`, `src/core/discovery.ts`): the selected cell, in five sections
+8. **Virtual → real cell** (`src/render/realCell.ts`, `src/core/discovery.ts`): the selected cell, in five sections
    of equal length: the virtual cell; a real cell video ("Add a real cell video…") fading in under the network as the
    virtual cell's outlines fade out; discovery, on the real cell: new edges grow in and new nodes pop up (inactive
    nodes becoming active, "New nodes per layer", with the edges the pathway would give them; nothing else moves);
@@ -89,13 +86,13 @@ cell or generated tissue.
    the real cell up with the network. The video is held for the session only (never saved in the scene JSON);
    every exported frame waits for the video to reach its exact frame, so PNG sequences and videos are frame-exact.
 
-**Zoom (tabs 1–5).** Tabs 1–5 start on a square 2000 × 2000 canvas, zoomed out round the centre cell so more of
-the cells round it show (tabs 1–4 with "Show neighbouring cells" on). "Zoom" at the top of the module settings
+**Zoom (tabs 1–4).** Tabs 1–4 start on a square 2000 × 2000 canvas, zoomed out round the centre cell so more of
+the cells round it show (tabs 1–3 with "Show neighbouring cells" on). "Zoom" at the top of the module settings
 (0.3–1.5; 1 is the cell at its own size) scales the whole view about the centre cell: the cell, its network, line,
-node and receptor sizes, the toxicity warning, and the neighbours or tissue round it, together. Tabs 1–4 start at
-0.6, tab 5 at 0.75. It is saved with each tab; scene files saved before it load at 1.
+node and receptor sizes, and the neighbours or tissue round it, together. Tabs 1–3 start at
+0.6, tab 4 at 0.75. It is saved with each tab; scene files saved before it load at 1.
 
-**Neighbouring cells.** In the single-cell views (the plain animator, tabs 1–4 and 9), "Cell membrane → Show
+**Neighbouring cells.** In the single-cell views (the plain animator, tabs 1–3 and 8), "Cell membrane → Show
 neighbouring cells" draws the cells round the cell behind it, outlines only, without changing the cell's size or
 place: the selected cell's real neighbours when a tissue map is uploaded (with the same transform that fits the
 cell to the canvas), otherwise a tissue generated round the cell. "Neighbour opacity" sets how see-through they
@@ -113,8 +110,8 @@ any size) and encodes it with the browser's own WebCodecs encoder: MP4 (H.264) o
 the canvas size (up to 4096 px a side), 24–60 fps, 1–20 loops. Frame times are spread exactly across whole
 loops, so a looping or continuous scene exports as a seamlessly looping video. Where the browser has no
 H.264 encoder (some Firefox and Linux builds), MP4 falls back to WebM. The muxer (Mediabunny) is loaded
-only when a video is exported. "Export tabs 1–6" saves the six module tabs as six videos in one go, with the
-same settings (each tab at its own canvas size), named `1_…` to `6_…`: into a folder you pick in Chrome and
+only when a video is exported. "Export tabs 1–5" saves the first five module tabs as five videos in one go, with the
+same settings (each tab at its own canvas size), named `1_…` to `5_…`: into a folder you pick in Chrome and
 Edge, or as one ZIP elsewhere. WebM can be saved with a transparent background (VP9 with an alpha channel: it
 plays transparent in Chrome, Edge and Firefox; Safari ignores the alpha); MP4 always includes the background.
 

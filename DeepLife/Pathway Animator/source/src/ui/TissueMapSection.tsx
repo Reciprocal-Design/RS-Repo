@@ -95,8 +95,8 @@ export function TissueMapSection() {
         </>
       ) : (
         <p className="hint">
-          One SVG of the tissue (each cell's membrane and nucleus as closed shapes) for every view: tabs 1–4 show the
-          cell you select in it, tab 5 the whole map round that cell, tab 6 the map twice, side by side.
+          One SVG of the tissue (each cell's membrane and nucleus as closed shapes) for every view: tabs 1–3 show the
+          cell you select in it, tab 4 the whole map round that cell, tab 5 the map twice, side by side.
         </p>
       )}
     </Section>

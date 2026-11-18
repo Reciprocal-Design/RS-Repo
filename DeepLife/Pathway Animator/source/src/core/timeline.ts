@@ -1,3 +1,4 @@
+import { reverseEdge } from './connect';
 import { buildGeometry } from './geometry';
 import type { EdgeGeom, Scene } from './types';
 
@@ -9,6 +10,8 @@ export const PULSE = 0.5;
 const MAX_WAVES = 400;
 /** Hops between two runs of the same pathway (relays arriving sooner only pulse the receptor). */
 const RELAY_GAP = 1.5;
+/** Hops a traced signal rests at each end of its route before turning back. */
+const TURN_REST = 0.4;
 
 export interface EdgeTiming {
   edge: EdgeGeom;
@@ -158,6 +161,26 @@ export function buildSchedule(scene: Scene): Schedule {
   }
   const wave0 = runWave(starts);
   record(wave0, 0, 0);
+
+  // A traced route: the signal has run from the nucleus to the receptor. It now
+  // runs back and forth along the same route, each pass a mirror of the last.
+  const traced = edges.filter((et) => et.edge.reveal);
+  if (traced.length) {
+    const reach = Math.max(...traced.map((et) => et.start + et.duration));
+    const leg = reach + TURN_REST * hop;
+    const passes = 2 * Math.max(1, Math.round(scene.module.trips)) - 1;
+    const backwards = new Map(traced.map((et) => [et.edge.id, reverseEdge(et.edge)]));
+    for (let pass = 1; pass <= passes; pass++) {
+      for (const et of traced) {
+        const toReceptor = pass % 2 === 0;
+        const edge = toReceptor ? et.edge : backwards.get(et.edge.id)!;
+        const start = pass * leg + (toReceptor ? et.start : reach - et.start - et.duration);
+        edges.push({ edge, start, duration: et.duration, wave: pass });
+        push(arrivals, edge.to, start + et.duration);
+        push(pulses, edge.to, { t: start + et.duration, strength: 1 });
+      }
+    }
+  }
 
   // Relay waves, in time order. A pathway can run again once the last run
   // has moved on by a hop and a half, so relays chase each other down it

@@ -108,7 +108,7 @@ export interface Scene {
  * same network is shown; 'custom' shows it unchanged.
  */
 export type ModuleKind =
-  | 'targetId' | 'moa' | 'combination' | 'toxicity' | 'tissue' | 'crossTissue' | 'custom' | 'body' | 'journey'
+  | 'moa' | 'combination' | 'toxicity' | 'tissue' | 'crossTissue' | 'custom' | 'body' | 'journey'
   | 'realCell'
   /** Internal: the network of the real-cell view, with the nodes it discovers (render/realCell.ts). */
   | 'realCellNet';
@@ -118,25 +118,19 @@ export type OrganId = 'brain' | 'lungs' | 'heart' | 'liver' | 'stomach' | 'kidne
 
 export interface ModuleSettings {
   kind: ModuleKind;
-  /** Target ID, target combination: only the receptor and its DEGs, joined directly. */
-  directOnly: boolean;
   /** Ring each pathway receptor as a drug target. */
   markTargets: boolean;
   targetColor: string;
-  /** MOA elucidation: the DEG whose route is traced (1 = leftmost active DEG; 0 = every DEG). */
+  /** Target identification and MOA, target combination: the DEG whose route is traced (1 = leftmost active DEG; 0 = every DEG). */
   focusDeg: number;
-  /** MOA elucidation: how many routes into the DEG are traced (1–3), each one protein per layer. */
+  /** Traced tabs: how many routes into the DEG are traced (1–3), each one protein per layer. */
   routes: number;
-  /** MOA elucidation: how visible the proteins off the traced route stay, 0–1. */
+  /** Traced tabs: how many times the signal runs back and forth between the nucleus and the receptor. */
+  trips: number;
+  /** Traced tabs: how visible the proteins off the traced route stay, 0–1. */
   dimOpacity: number;
-  /** Target toxicity: how many DEGs of each pathway are toxic. */
-  toxicDegs: number;
-  /** Target toxicity: the colour the cell and toxic DEGs turn. */
+  /** Target toxicity: the colour of the toxic DEG, the red dot in the nucleus. */
   toxicColor: string;
-  /** Target toxicity: a warning badge on the membrane as the cell turns. */
-  warning: boolean;
-  /** How big the badge is, in the middle of the cell (1 = a fifth of the canvas's short side). */
-  warningSize: number;
   /** Body and journey: the organ the signal starts from (and the journey zooms out of). */
   organ: OrganId;
   /** Journey: seconds per section (cell, cell → tissue, tissue, tissue → body, body). */
