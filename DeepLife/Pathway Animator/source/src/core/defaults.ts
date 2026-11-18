@@ -28,7 +28,7 @@ export function defaultModule(kind: ModuleKind = 'custom'): ModuleSettings {
     kind,
     markTargets: kind === 'moa' || kind === 'combination' || kind === 'toxicity',
     targetColor: '#FFFFFF',
-    trips: 2,
+    trips: 1,
     toxicColor: '#FF2B45',
     organ: 'heart',
     sectionLength: 3,

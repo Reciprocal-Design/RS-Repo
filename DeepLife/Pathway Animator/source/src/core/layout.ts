@@ -1,4 +1,5 @@
 import { makeOutline, outlineNormal } from './outline';
+import { pointInPolygon } from './polygon';
 import { hash, rngFor, signed } from './rng';
 import type { ModuleKind, NodeGeom, Outline, Pathway, ReceptorGeom, Scene, Vec2 } from './types';
 
@@ -9,9 +10,13 @@ const TAU = Math.PI * 2;
 /** Target combination: how far round the cell the second receptor sits from the first (a share of a full turn). */
 const COMBINATION_GAP = 0.3;
 /** Target combination: how deep into the nucleus the added pathway reaches, relative to the first. */
-const COMBINATION_DEPTH = 0.3;
+const COMBINATION_DEPTH = 0.2;
 /** Target combination: how wide the added pathway's rows are, relative to the first. */
-const COMBINATION_WIDTH = 0.55;
+const COMBINATION_WIDTH = 0.62;
+/** Target combination: the least angle (radians, seen from the nucleus) between the two pathways. */
+const COMBINATION_APART = (48 * Math.PI) / 180;
+/** Target combination: the gap the added pathway's proteins want from the first's (× cell radius). */
+const COMBINATION_CLEAR = 0.1;
 
 /** The views (tabs 1–3) that can zoom out round their centre cell. */
 export const ZOOM_VIEWS: ModuleKind[] = ['moa', 'combination', 'toxicity'];
@@ -118,15 +123,63 @@ export interface PathwayLayout {
   warnings: string[];
 }
 
+/** The convex hull of some points, in order round it. */
+function convexHull(points: Vec2[]): Vec2[] {
+  const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o: Vec2, a: Vec2, b: Vec2) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const half = (list: Vec2[]) => {
+    const out: Vec2[] = [];
+    for (const p of list) {
+      while (out.length > 1 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop();
+      out.push(p);
+    }
+    return out.slice(0, -1);
+  };
+  return [...half(sorted), ...half([...sorted].reverse())];
+}
+
+/**
+ * Target combination: where the second receptor goes. Each place round the
+ * membrane is tried with the pathway laid out from it, and scored by the depth
+ * of cytoplasm it has to spread through, marked down where its cytoplasm
+ * proteins land among the first pathway's, so the two stay apart on the way in.
+ */
+function secondReceptorAngle(frame: CellFrame, scene: Scene, pathway: Pathway, index: number): number {
+  const { cell, nucleus, R } = frame;
+  const N = nucleus.center;
+  const start = pathwayAngle(scene, 0);
+  const firstNodes = layoutPathway(frame, scene, scene.pathways[0], 0).nodes.filter((n) => n.active);
+  const hull = convexHull(firstNodes);
+  const bearing = (phi: number) => angleOf(N, polar(cell.center, cell.radiusAt(phi), phi));
+  const apart = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+  const axis = bearing(start);
+  let best = start + COMBINATION_GAP * TAU, bestScore = -Infinity;
+  for (let deg = 0; deg < 360; deg += 6) {
+    const phi = start + (deg * Math.PI) / 180;
+    if (apart(bearing(phi), axis) < COMBINATION_APART) continue;
+    const q = onOutline(cell, phi);
+    const depth = dist(N, q) - nucleus.radiusAt(angleOf(N, q));
+    const nodes = layoutPathway(frame, scene, pathway, index, phi).nodes.filter((n) => n.active);
+    // The two meet at the DEGs, so only the way there has to stay clear.
+    const way = nodes.filter((n) => n.region !== 'nucleus');
+    const inside = way.filter((n) => pointInPolygon(n, hull)).length / way.length;
+    const gap = Math.min(...way.flatMap((n) => firstNodes.map((m) => dist(n, m))));
+    const score = depth * (1 - inside) ** 2 * Math.min(1, gap / (COMBINATION_CLEAR * R));
+    if (score > bestScore) (bestScore = score), (best = phi);
+  }
+  return best;
+}
+
 /**
  * Lays out one pathway in polar coordinates around the nucleus centre (the
  * point the pathway axis heads for), so rows curve with the cell. Each row is
  * seeded on its own, so editing one layer never moves another.
  */
-export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, index: number): PathwayLayout {
+export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, index: number, at?: number): PathwayLayout {
   const { R, scale, cell, nucleus } = frame;
   const N = nucleus.center;
-  const phi = pathwayAngle(scene, index);
+  const added = scene.module.kind === 'combination' && index > 0;
+  const phi = at ?? (added && index === 1 ? secondReceptorAngle(frame, scene, pathway, index) : pathwayAngle(scene, index));
   const receptor = receptorAt(frame, scene, phi, `receptor-${pathway.id}`, pathway.id);
   const warnings: string[] = [];
 
@@ -162,7 +215,6 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
   // several, it spans from the nucleus edge down to the deepest row that still
   // fits a typical (6-node) row in its wedge, so pathways never knot together
   // at the centre. Both depend only on the pathway count, never on node counts.
-  const added = scene.module.kind === 'combination' && index > 0;
   const depth = Math.max(0.1, Math.min(0.97, scene.nucleus.layerDepth)) * (added ? COMBINATION_DEPTH : 1);
   let lastRho = rhoNucEdge - depth * (rhoNucEdge + 0.75 * nucleus.radiusAt(thAxis + Math.PI));
   if (n > 1) {

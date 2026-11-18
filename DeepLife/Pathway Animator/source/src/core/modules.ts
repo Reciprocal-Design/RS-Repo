@@ -1,10 +1,11 @@
 import { middleCellId, suggestedDetailScale } from './cellMap';
+import { makeEdge } from './connect';
 import { defaultCellMap, defaultModule, defaultScene, makePathway } from './defaults';
 import { ZOOM_VIEWS } from './layout';
 import { organicTissue } from './organic';
 import { withStructureOf } from './layers';
-import { hash } from './rng';
-import type { CellMap, ModuleKind, NodeGeom, ReceptorGeom, Scene, SceneGeom } from './types';
+import { hash, rngFor } from './rng';
+import type { CellMap, EdgeGeom, ModuleKind, NodeGeom, ReceptorGeom, Scene, SceneGeom } from './types';
 
 /** A tissue built round the single cell: the same cell at the centre, neighbours relaying its signal on. */
 export function tissueMap(): CellMap {
@@ -30,7 +31,7 @@ export const MODULES: ModuleInfo[] = [
   {
     kind: 'combination',
     label: 'Target combination',
-    blurb: 'The signalling pathway of tab 1 and one more: two receptors, each with its own route to the nucleus.',
+    blurb: 'The signalling pathway of tab 1 and one more: two receptors, each with its own pathway to the nucleus, talking to each other at the DEGs.',
   },
   {
     kind: 'toxicity',
@@ -67,6 +68,12 @@ export const MODULES: ModuleInfo[] = [
 export const moduleInfo = (kind: ModuleKind): ModuleInfo =>
   MODULES.find((m) => m.kind === kind) ?? { kind, label: 'Pathway', blurb: 'The standard animator.' };
 
+/** Short loops keep exported videos small: how far a tissue relays, and the rest at the end of a loop (seconds). */
+const TISSUE_RELAY_HOPS = 4;
+const SHORT_HOLD = 0.5;
+/** Seconds per section of the virtual → real cell tab. */
+const REAL_CELL_SECTION = 2;
+
 /** The views that show one cell on its own (and, with an uploaded map, only its selected cell). */
 /** The tabs that trace routes through the network. */
 export const TRACED: ModuleKind[] = ['moa', 'combination', 'toxicity'];
@@ -94,11 +101,11 @@ export function withTissueMap(scene: Scene, map: TissueUpload, heroId: string): 
   if (SINGLE_CELL.includes(kind)) return { ...scene, cellMap: { ...base, solo: true, detailScale: 1 } };
   const fit = (s: Scene) => suggestedDetailScale(s, map);
   // The tissue view lays the map out as the cross-tissue view does, in one colour.
-  if (kind === 'tissue') return { ...scene, cellMap: { ...base, startShare: 0, relayHops: 8, detailScale: fit(scene) } };
+  if (kind === 'tissue') return { ...scene, cellMap: { ...base, startShare: 0, relayHops: TISSUE_RELAY_HOPS, detailScale: fit(scene) } };
   if (kind === 'journey') return { ...scene, cellMap: { ...base, startShare: 0, relayHops: 4, detailScale: fit(scene) } };
   if (kind === 'crossTissue') {
     // A new map: the default split (right half in the second colour) applies again.
-    return { ...scene, module: { ...scene.module, pinkCells: null }, cellMap: { ...base, startShare: 0, relayHops: 8, detailScale: fit(scene) } };
+    return { ...scene, module: { ...scene.module, pinkCells: null }, cellMap: { ...base, startShare: 0, relayHops: TISSUE_RELAY_HOPS, detailScale: fit(scene) } };
   }
   return scene;
 }
@@ -159,7 +166,11 @@ export function moduleScene(kind: ModuleKind, seed = 1234): Scene {
     s.pathways = [0, 1].map((i) => ({ ...makePathway(seed, i, s.pathways[0].layers), startDelay: 0 }));
   }
   // Motion that never stops, so the network keeps moving over the video.
-  if (kind === 'realCell') s.animation = { ...s.animation, continuous: true };
+  if (kind === 'realCell') {
+    s.animation = { ...s.animation, continuous: true };
+    s.module.sectionLength = REAL_CELL_SECTION;
+  }
+  if (kind === 'tissue' || kind === 'crossTissue' || kind === 'body') s.animation = { ...s.animation, holdAtEnd: SHORT_HOLD };
   if (kind === 'tissue' || kind === 'crossTissue') return withOrganicTissue(s, seed);
   if (kind === 'journey') {
     // The tissue the cell zooms out into; motion that never stops, for a scroll sequence.
@@ -235,6 +246,19 @@ function degsByPathway(nodes: NodeGeom[]): Map<string, NodeGeom[]> {
   return out;
 }
 
+/** Hops a signal takes to cross between the combination's DEGs. */
+const DEG_CROSSTALK_HOPS = 0.5;
+
+/** Target combination: each DEG of an added pathway talks to the nearest DEG of the first. */
+function degCrosstalk(scene: Scene, nodes: NodeGeom[]): EdgeGeom[] {
+  const [first, ...added] = [...degsByPathway(nodes).values()];
+  if (!first) return [];
+  return added.flat().map((a) => {
+    const b = first.reduce((near, d) => (Math.hypot(d.x - a.x, d.y - a.y) < Math.hypot(near.x - a.x, near.y - a.y) ? d : near));
+    return { ...makeEdge(scene, a, b, true, rngFor(scene.seed, 'deg-crosstalk', a.id, b.id)), hops: DEG_CROSSTALK_HOPS };
+  });
+}
+
 /** Target toxicity's own wiring: the same layer settings and receptor, a different signalling pathway. */
 export const withToxicPathway = (scene: Scene): Scene => ({
   ...scene,
@@ -256,7 +280,8 @@ export function applyModule(scene: Scene, g: SceneGeom): SceneGeom {
   if (!TRACED.includes(kind)) return g;
 
   let nodes = g.nodes;
-  const edges = g.edges.map((e) => ({ ...e, traced: true }));
+  const crosstalk = kind === 'combination' ? degCrosstalk(scene, g.nodes) : [];
+  const edges = [...g.edges, ...crosstalk].map((e) => ({ ...e, traced: true }));
   if (kind === 'toxicity') {
     const toxic = new Set([...degsByPathway(nodes).values()].map((list) => list[list.length - 1].id));
     nodes = nodes.map((n) => (toxic.has(n.id) ? { ...n, toxic: true } : n));
@@ -267,6 +292,12 @@ export function applyModule(scene: Scene, g: SceneGeom): SceneGeom {
     // A pathway's own receptor, not a relay receptor or a decorative one.
     const own = (r: ReceptorGeom) => r.pathwayId !== null && r.id === `receptor-${r.pathwayId}`;
     receptors = receptors.map((r) => (own(r) ? { ...r, target: true } : r));
+    // The combination's second receptor takes the place of any decorative one it lands on.
+    if (kind === 'combination') {
+      const clear = 1.6 * scene.style.receptorSize.length * g.scale;
+      const targets = receptors.filter((r) => r.target);
+      receptors = receptors.filter((r) => r.pathwayId !== null || targets.every((t) => Math.hypot(t.center.x - r.center.x, t.center.y - r.center.y) >= clear));
+    }
   }
 
   return { ...g, nodes, edges, receptors, nodeById: new Map(nodes.map((n) => [n.id, n])) };

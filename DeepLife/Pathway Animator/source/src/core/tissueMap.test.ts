@@ -345,7 +345,7 @@ describe('turning an uploaded map', () => {
     expect(r.cells[0].membrane.slice(0, 2)).toEqual([248, -48]);
     // Ids, seeds, the selected cell and the view's settings stay.
     expect(r.cells.map((c) => [c.id, c.seed])).toEqual(s.cellMap.cells.map((c) => [c.id, c.seed]));
-    expect(r).toMatchObject({ heroId: 'c2', startShare: 0, relayHops: 8 });
+    expect(r).toMatchObject({ heroId: 'c2', startShare: 0, relayHops: 4 });
   });
 
   it('comes back exactly after four quarter turns, or back to 0', () => {

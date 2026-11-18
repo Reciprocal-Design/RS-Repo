@@ -26,6 +26,10 @@ the same pathway; "Use this look and pathway in all tabs" copies the current tab
 animation to the others (each keeps its module settings, pathway count, start delays and cell map). The modules are
 a preset scene plus a pure transform of the geometry (`src/core/modules.ts`):
 
+**Short loops.** To keep exported videos small, tabs 1–3 make one trip back and forth (about 5–6 s), tabs 4 and 5 relay
+the signal four cells out with a short rest at the end (about 16 s), the body rests briefly (about 6 s), and tab 8 runs
+five 2 s sections (10 s). "Back-and-forth trips", "Relay hops", "Hold at end" and "Section length" lengthen them.
+
 **Default pathway and map.** Every pathway starts with a receptor, then 4 cytoplasm, 4 cytoplasm, 3 nucleus and 3 DEG
 nodes, all active, and every cell of a tissue follows those settings ("Cell variation" under Cell map adds drift). The
 app opens on `src/assets/default-tissue-map.svg`; "Remove the map" goes back to the generated cells.
@@ -42,7 +46,8 @@ cell or generated tissue.
 1. **Target identification and MOA**: the drug target's receptor is ringed. Every active protein and line of the
    pathway is always on in the gradient, and pulses run back and forth between the receptor and the nucleus
    ("Back-and-forth trips"). The loop closes seamlessly.
-2. **Target combination**: the pathway of tab 1, unchanged, and one more: two ringed receptors, pulsing together. Tabs
+2. **Target combination**: the pathway of tab 1, unchanged, and one more: two ringed receptors, pulsing together. The
+   second sits where the cell has most room clear of the first, and the two talk to each other at their DEGs. Tabs
    1–3 stay in step: the cell, look, motion and layer settings changed in one change in the others. They start with a
    6.5 px comet and 3.55 px lines.
 3. **Target toxicity**: the receptor and layer settings of tab 1 with a different wiring. One DEG in the nucleus is

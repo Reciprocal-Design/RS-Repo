@@ -35,6 +35,15 @@ describe('modules', () => {
     expect(buildGeometry(custom).edges.length).toBe(buildGeometry(plain).edges.length);
   });
 
+  it('keeps the loops short, so exported videos stay small', () => {
+    const seconds = (kind: ModuleKind) => buildSchedule(moduleScene(kind, 1234)).total;
+    for (const kind of TRACED) expect(seconds(kind)).toBeLessThan(6.5);
+    expect(seconds('body')).toBeLessThan(7);
+    expect(seconds('realCell')).toBe(10);
+    expect(moduleScene('tissue', 1234).cellMap.relayHops).toBe(4);
+    expect(moduleScene('crossTissue', 1234).cellMap.relayHops).toBe(4);
+  });
+
   it('starts every pathway at 4 cytoplasm, 4 cytoplasm, 3 nucleus and 3 DEG, all active', () => {
     for (const m of MODULES) {
       const layers = moduleScene(m.kind, 1234).pathways[0].layers;
@@ -57,7 +66,8 @@ describe('modules', () => {
   });
 
   it('MOA flows back and forth between the nucleus and the receptor', () => {
-    const s = moduleScene('moa', 7);
+    const start = moduleScene('moa', 7);
+    const s: Scene = { ...start, module: { ...start.module, trips: 2 } };
     const g = buildGeometry(s);
     const sched = buildSchedule(s);
     const receptor = g.nodes.find((n) => n.layer === 0)!;
@@ -86,7 +96,16 @@ describe('modules', () => {
     const g = buildGeometry(s);
     expect(g.receptors.filter((r) => r.target).length).toBe(2);
     expect(g.pathways.every((p) => p.startDelay === 0)).toBe(true);
-    expect(g.edges.some((e) => e.crosstalk)).toBe(false);
+    // The two pathways talk only at the DEG level.
+    const last = lastLayer(s);
+    const cross = g.edges.filter((e) => e.crosstalk);
+    expect(cross.length).toBeGreaterThan(0);
+    for (const e of cross) {
+      expect([g.nodeById.get(e.from)!.pathwayId, g.nodeById.get(e.to)!.pathwayId]).toEqual(['p2', 'p1']);
+      expect([g.nodeById.get(e.from)!.layer, g.nodeById.get(e.to)!.layer]).toEqual([last, last]);
+      expect(e.traced).toBe(true);
+    }
+    expect(buildSchedule(s).edges.some((et) => et.edge.crosstalk)).toBe(true);
     // The first pathway: the same proteins in the same places, the same route lit.
     const lit = (x: typeof g, pid: string) => x.edges.filter((e) => e.pathwayId === pid).map((e) => e.id).sort();
     for (const n of one.nodes) {
