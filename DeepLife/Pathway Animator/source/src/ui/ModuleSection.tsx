@@ -71,7 +71,6 @@ export function ModuleSection() {
     <>
       <Slider label="Routes" value={m.routes} min={1} max={3} step={1} onChange={(routes) => set({ routes })} />
       <Slider label="Back-and-forth trips" value={m.trips} min={1} max={4} step={1} onChange={(trips) => set({ trips })} />
-      <Slider label="Other proteins" value={m.dimOpacity} min={0} max={1} onChange={(dimOpacity) => set({ dimOpacity })} />
     </>
   );
   const tracedDeg = (
@@ -125,7 +124,7 @@ export function ModuleSection() {
       {m.kind === 'toxicity' && (
         <>
           <ColorField label="Toxicity colour" value={m.toxicColor} onChange={(toxicColor) => set({ toxicColor })} />
-          <p className="hint">The dot this pathway ends at, in the nucleus, pulses gently in this colour for the whole loop.</p>
+          <p className="hint">The large dot this pathway ends at, in the nucleus, pulses in this colour and radiates a ring for the whole loop.</p>
           {tracing}
           {targets}
         </>

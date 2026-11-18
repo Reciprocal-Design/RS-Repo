@@ -36,14 +36,13 @@ starts on it. The
 selected cell runs the scene's own pathways and starts the signal. "Remove the map" goes back to each view's own
 cell or generated tissue.
 
-1. **Target identification and MOA**: the drug target's receptor is ringed. The signal starts at a chosen DEG and
-   travels up to three routes (one protein per layer) in reverse to the receptor, uncovering them as it goes: the
-   route's edges are drawn as the signal passes and each node pops up when it is reached. It then flows back and
-   forth between the receptor and the nucleus ("Back-and-forth trips"). The rest of the network is dimmed.
+1. **Target identification and MOA**: the drug target's receptor is ringed. Up to three routes (one protein per
+   layer) from the receptor to a chosen DEG are always on in the gradient, with nothing greyed out behind them. A pulse
+   runs back and forth between the receptor and the nucleus ("Back-and-forth trips"), and the loop closes seamlessly.
 2. **Target combination**: the pathway of tab 1, unchanged, and one more: two ringed receptors, each with its own
-   traced route to the nucleus, firing together. The second sits to the side and stays shallower, so the two never cross.
-3. **Target toxicity**: the receptor of tab 1 with a different signalling pathway, ending at a different dot in the
-   nucleus. That dot is red and pulses gently for the whole loop; nothing else on screen is red.
+   always-on route to the nucleus, pulsing together. The second sits to the side and stays shallower, so the two never cross.
+3. **Target toxicity**: the receptor of tab 1 with a different always-on pathway, ending at a different dot in the
+   nucleus. That dot is larger, red, and radiates rings for the whole loop; nothing else on screen is red.
 4. **Tissue-level target ID** (indication extension): the same cell at the centre (an exact copy of the single
    cell, scaled by "Centre cell size"), with neighbouring cells generated round it to the canvas edges
    (`src/core/tissue.ts`). Only the centre cell starts on its own; links run outward from it, so its signal relays

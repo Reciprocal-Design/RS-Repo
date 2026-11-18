@@ -115,7 +115,6 @@ function normalizeModule(raw: unknown): ModuleSettings {
     focusDeg: Math.round(num(m.focusDeg, base.focusDeg, 0, 10)),
     routes: Math.round(num(m.routes, base.routes, 1, 3)),
     trips: Math.round(num(m.trips, base.trips, 1, 4)),
-    dimOpacity: num(m.dimOpacity, base.dimOpacity, 0, 1),
     organ: ORGAN_IDS.includes(m.organ) ? m.organ : base.organ,
     sectionLength: num(m.sectionLength, base.sectionLength, 0.5, 30),
     tissueZoom: num(m.tissueZoom, base.tissueZoom, 0.3, 3),

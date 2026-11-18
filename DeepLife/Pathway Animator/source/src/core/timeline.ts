@@ -79,7 +79,6 @@ export function buildSchedule(scene: Scene): Schedule {
   const outgoing = new Map<string, EdgeGeom[]>();
   const linksFrom = new Map<string, EdgeGeom[]>();
   for (const e of g.edges) {
-    if (e.dim) continue; // off the traced route: drawn, never signalled
     const m = e.link ? linksFrom : outgoing;
     const list = m.get(e.from) ?? [];
     list.push(e);
@@ -162,19 +161,22 @@ export function buildSchedule(scene: Scene): Schedule {
   const wave0 = runWave(starts);
   record(wave0, 0, 0);
 
-  // A traced route: the signal has run from the nucleus to the receptor. It now
-  // runs back and forth along the same route, each pass a mirror of the last.
-  const traced = edges.filter((et) => et.edge.reveal);
+  // A traced route: the pulse has run from the receptor to the nucleus. It now
+  // runs back and forth along the same route, each pass a mirror of the last,
+  // and the loop closes as it gets back to the receptor.
+  const traced = edges.filter((et) => et.edge.traced);
+  let tracedLoop = 0;
   if (traced.length) {
     const reach = Math.max(...traced.map((et) => et.start + et.duration));
     const leg = reach + TURN_REST * hop;
     const passes = 2 * Math.max(1, Math.round(scene.module.trips)) - 1;
+    if (a.loop || a.continuous) tracedLoop = (passes + 1) * leg;
     const backwards = new Map(traced.map((et) => [et.edge.id, reverseEdge(et.edge)]));
     for (let pass = 1; pass <= passes; pass++) {
       for (const et of traced) {
-        const toReceptor = pass % 2 === 0;
-        const edge = toReceptor ? et.edge : backwards.get(et.edge.id)!;
-        const start = pass * leg + (toReceptor ? et.start : reach - et.start - et.duration);
+        const inwards = pass % 2 === 0;
+        const edge = inwards ? et.edge : backwards.get(et.edge.id)!;
+        const start = pass * leg + (inwards ? et.start : reach - et.start - et.duration);
         edges.push({ edge, start, duration: et.duration, wave: pass });
         push(arrivals, edge.to, start + et.duration);
         push(pulses, edge.to, { t: start + et.duration, strength: 1 });
@@ -226,10 +228,10 @@ export function buildSchedule(scene: Scene): Schedule {
   const runs = new Map<string, { start: number; end: number }[]>();
   for (const r of byRun.values()) push(runs, r.pid, { start: r.start, end: r.end });
 
-  const total = a.continuous
+  const total = tracedLoop ? tracedLoop : a.continuous
     ? continuousPeriod(edges, trail, Math.max(0, a.holdAtEnd), a.density ?? 0)
     : signalEnd + Math.max(0, a.holdAtEnd) + (a.loop ? FADE_OUT : 0);
-  const schedule: Schedule = { fire, arrivals, runs, pulses, edges, signalEnd, total, period: a.continuous ? total : 0 };
+  const schedule: Schedule = { fire, arrivals, runs, pulses, edges, signalEnd, total, period: tracedLoop || a.continuous ? total : 0 };
   cache.set(scene, schedule);
   return schedule;
 }

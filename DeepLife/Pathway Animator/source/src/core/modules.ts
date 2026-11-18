@@ -1,5 +1,4 @@
 import { middleCellId, suggestedDetailScale } from './cellMap';
-import { reverseEdge } from './connect';
 import { defaultCellMap, defaultModule, defaultScene, makePathway } from './defaults';
 import { ZOOM_VIEWS } from './layout';
 import { organicTissue } from './organic';
@@ -25,7 +24,7 @@ export const MODULES: ModuleInfo[] = [
   {
     kind: 'moa',
     label: 'Target identification and MOA',
-    blurb: 'The signal uncovers the routes from a DEG in the nucleus to the receptor, then flows back and forth along them. The rest of the network stays dimmed.',
+    blurb: 'The signalling pathway, always on in the gradient, with a pulse running back and forth between the receptor and the nucleus.',
   },
   {
     kind: 'combination',
@@ -35,7 +34,7 @@ export const MODULES: ModuleInfo[] = [
   {
     kind: 'toxicity',
     label: 'Target toxicity',
-    blurb: 'The same receptor as tab 1, a different signalling pathway, ending at a different dot in the nucleus: the red one, which pulses.',
+    blurb: 'The same receptor as tab 1, a different signalling pathway, ending at a different dot in the nucleus: the large red one, radiating a ring.',
   },
   {
     kind: 'tissue',
@@ -239,8 +238,8 @@ function traceRoutes(deg: string, into: Map<string, EdgeGeom[]>, routes: number,
  * objects where anything changes, the input untouched.
  *
  * - Traced routes (tabs 1–3): one to three routes into one DEG (receptor → one
- *   protein per layer → DEG) stay lit; the rest of the network is dimmed and
- *   carries no signal.
+ *   protein per layer → DEG) are always on, in the gradient; the rest of the
+ *   network is not drawn.
  * - Toxicity: the route ends at a different DEG, marked toxic, and takes
  *   different proteins from the route of tab 1 wherever it can.
  * - Drug targets: each pathway's own receptor is marked.
@@ -255,7 +254,6 @@ export function applyModule(scene: Scene, g: SceneGeom): SceneGeom {
 
   let nodes = g.nodes;
   let edges = g.edges;
-  let pathways = g.pathways;
 
   if (traced) {
     const into = new Map<string, EdgeGeom[]>();
@@ -267,7 +265,6 @@ export function applyModule(scene: Scene, g: SceneGeom): SceneGeom {
     }
     const route = new Set<string>();
     const routeEdges = new Set<string>();
-    const startOf = new Map<string, string>(); // pathway → the DEG the trace starts from
     const toxicIds = new Set<string>();
     const routes = Math.max(1, Math.min(3, Math.round(m.routes)));
     const focusDeg = Math.max(1, m.focusDeg);
@@ -284,23 +281,12 @@ export function applyModule(scene: Scene, g: SceneGeom): SceneGeom {
         toxicIds.add(target.id);
         found = traceRoutes(target.id, into, routes, rngFor(scene.seed, 'toxic-route', pid), found);
       }
-      startOf.set(pid, target.id);
       found.nodes.forEach((id) => route.add(id));
       found.edges.forEach((id) => routeEdges.add(id));
     }
-    // The signal starts at the DEG and first travels the route in reverse to
-    // the receptor. The route is not there to begin with: its edges are drawn
-    // as the signal passes, and each node pops up when it is reached (the DEG
-    // itself is known from the start).
-    const starts = new Set(startOf.values());
-    nodes = nodes.map((n) => {
-      if (!n.active) return n;
-      if (!route.has(n.id)) return { ...n, dim: true };
-      if (starts.has(n.id)) return toxicIds.has(n.id) ? { ...n, toxic: true } : n;
-      return { ...n, reveal: true };
-    });
-    edges = edges.map((e) => (routeEdges.has(e.id) ? { ...reverseEdge(e), reveal: true } : { ...e, dim: true }));
-    pathways = pathways.map((p) => (startOf.has(p.id) ? { ...p, start: startOf.get(p.id) } : p));
+    // Only the traced routes are drawn: no greyed-out network behind them.
+    nodes = nodes.filter((n) => route.has(n.id)).map((n) => (toxicIds.has(n.id) ? { ...n, toxic: true } : n));
+    edges = edges.filter((e) => routeEdges.has(e.id)).map((e) => ({ ...e, traced: true }));
   }
 
   let receptors = g.receptors;
@@ -310,5 +296,5 @@ export function applyModule(scene: Scene, g: SceneGeom): SceneGeom {
     receptors = receptors.map((r) => (own(r) ? { ...r, target: true } : r));
   }
 
-  return { ...g, nodes, edges, receptors, pathways, nodeById: new Map(nodes.map((n) => [n.id, n])) };
+  return { ...g, nodes, edges, receptors, nodeById: new Map(nodes.map((n) => [n.id, n])) };
 }

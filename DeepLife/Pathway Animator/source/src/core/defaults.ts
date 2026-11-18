@@ -31,7 +31,6 @@ export function defaultModule(kind: ModuleKind = 'custom'): ModuleSettings {
     focusDeg: 1,
     routes: 3,
     trips: 2,
-    dimOpacity: 0.22,
     toxicColor: '#FF2B45',
     organ: 'heart',
     sectionLength: 3,

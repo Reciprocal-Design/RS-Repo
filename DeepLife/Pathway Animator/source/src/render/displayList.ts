@@ -69,10 +69,13 @@ const TRAIL_SEGMENTS = 12;
 /** Seconds a pathway takes to light up from grey (grey idle mode). */
 const RISE = 0.3;
 const GLOW_LAYERS = 26;
-/** Seconds an uncovered node takes to pop up (MOA elucidation). */
-const POP = 0.4;
 /** Roughly how many seconds one pulse of the toxic DEG takes. */
 const TOXIC_PULSE = 1.6;
+/** The toxic DEG's size at rest, relative to the other dots. */
+const TOXIC_DOT = 2.4;
+/** Rings the toxic DEG radiates at once, and how far they reach (× the halo radius). */
+const TOXIC_RINGS = 2;
+const TOXIC_REACH = 9;
 
 /**
  * An outline as a plain line, or as a glowing rim: a stack of strokes clipped
@@ -332,12 +335,8 @@ export function buildDisplayList(
   const idle = Math.max(0, Math.min(1, st.idleOpacity));
   const greyRgb = parseColor(st.inactiveNodeColor);
   const greyCss = rgbaString([greyRgb[0], greyRgb[1], greyRgb[2], 1]);
-  // MOA focus: the network off the traced route rests faint and grey.
-  const dimA = Math.max(0, Math.min(1, scene.module.dimOpacity));
 
   for (const e of lines ? g.edges : []) {
-    // A route being uncovered is drawn only as the signal travels it.
-    if (e.reveal && signal) continue;
     // A discovered edge grows in from its start.
     const grown = shownBy(e.discoverAt);
     if (grown <= 0) continue;
@@ -347,11 +346,9 @@ export function buildDisplayList(
     }
     prims.push({
       kind: 'bezier', id: e.id, group: e.crosstalk ? 'crosstalk' : 'edges', p, width: st.edgeWidth * s * (e.weight ?? 1),
-      ...(e.dim
-        ? { from: greyCss, to: greyCss, opacity: e.opacity * dimA }
-        : grey
-          ? { from: greyCss, to: greyCss, opacity: e.opacity * idle }
-          : { from: color(e.depthFrom), to: color(e.depthTo), opacity: e.opacity }),
+      ...(grey
+        ? { from: greyCss, to: greyCss, opacity: e.opacity * idle }
+        : { from: color(e.depthFrom), to: color(e.depthTo), opacity: e.opacity }),
     });
   }
 
@@ -378,7 +375,7 @@ export function buildDisplayList(
     }
     for (const e of lines ? g.edges : []) {
       const a = act.get(e.pathwayId) ?? 0;
-      if (a <= 0 || e.dim || shownBy(e.discoverAt) < 1) continue;
+      if (a <= 0 || shownBy(e.discoverAt) < 1) continue;
       prims.push({
         kind: 'bezier', id: `${e.id}-on`, group: e.crosstalk ? 'crosstalk' : 'edges', p: e.bezier,
         width: st.edgeWidth * s, from: color(e.depthFrom), to: color(e.depthTo), opacity: e.opacity * a,
@@ -398,16 +395,14 @@ export function buildDisplayList(
       const x = since(tau, et.start, period);
       // Continuous or grey idle: how lit the edge still is, x seconds after its
       // comet left (otherwise lit edges stay lit until the loop's closing fade).
-      // An uncovered edge stays until the loop closes (or, in continuous mode, until just before it runs again).
-      const lit = et.edge.reveal
-        ? period ? Math.max(0, Math.min(1, (period - x) / FADE_OUT)) : 1
-        : period || grey ? Math.max(0, Math.min(1, (et.duration + litHold + FADE_OUT - x) / FADE_OUT)) : 1;
+      const lit = period || grey ? Math.max(0, Math.min(1, (et.duration + litHold + FADE_OUT - x) / FADE_OUT)) : 1;
       return { et, q: x / et.duration, lit, id: et.wave ? `${et.edge.id}-w${et.wave}` : et.edge.id };
     });
 
     // Lit edges: the part a comet has passed stays brighter until the loop resets.
+    // A traced route is always on, so it never changes as the pulse passes.
     for (const { et, q, lit, id } of along) {
-      if (q <= 0 || fade * lit <= 0 || shownBy(et.edge.discoverAt) < 1) continue;
+      if (et.edge.traced || q <= 0 || fade * lit <= 0 || shownBy(et.edge.discoverAt) < 1) continue;
       const e = et.edge;
       const frac = ease(Math.min(1, q), an.easing);
       const tt = tAtDistance(e.lut, frac * e.length);
@@ -521,25 +516,15 @@ export function buildDisplayList(
       if (!n.toxic) continue;
       prims.push({
         kind: 'glow', id: `${n.id}-pulse`, group: 'signal', blend: 'lighter', c: n,
-        r: st.haloRadius * s * (1.2 + 0.8 * toxicPulse), color: withAlpha(toxicRgb, 0.2 + 0.35 * toxicPulse),
+        r: st.haloRadius * s * (2 + 0.8 * toxicPulse), color: withAlpha(toxicRgb, 0.25 + 0.3 * toxicPulse),
       });
     }
   }
   const grow = (id: string) => 1 + (Math.max(1, an.nodePulseScale) - 1) * (pulse.get(id) ?? 0);
 
-  // Nodes being uncovered (MOA elucidation): hidden until the signal reaches
-  // them, then they pop up (a quick overshoot) and stay until the loop closes.
-  const shown = (n: { id: string; reveal?: boolean; discoverAt?: number }): { a: number; k: number } => {
-    if (n.discoverAt !== undefined) return popOf(n);
-    if (!n.reveal || !signal) return { a: 1, k: 1 };
-    const f = schedule.fire.get(n.id);
-    if (f === undefined) return { a: 0, k: 1 };
-    const x = since(tau, f, period);
-    if (x < 0) return { a: 0, k: 1 };
-    const u = Math.min(1, x / POP);
-    const back = 1 + 2.70158 * (u - 1) ** 3 + 1.70158 * (u - 1) ** 2; // ease-out-back
-    return { a: Math.min(1, x / (POP * 0.4)) * (period ? Math.max(0, Math.min(1, (period - x) / FADE_OUT)) : fade), k: Math.max(0, back) };
-  };
+  // A discovered node pops up when discovery reaches it; every other node is simply there.
+  const shown = (n: { discoverAt?: number }): { a: number; k: number } =>
+    n.discoverAt !== undefined ? popOf(n) : { a: 1, k: 1 };
 
   // A discovered node: a grey ring until discovery reaches it, then it pops
   // up as an active node (a quick overshoot and a flash) as the ring fades.
@@ -563,7 +548,6 @@ export function buildDisplayList(
   for (const n of active) {
     const isReceptor = n.layer === 0;
     if (isReceptor && st.receptorStyle === 'capsule') continue;
-    if (n.dim) continue;
     const v = shown(n);
     const a = on(n) * v.a;
     if (a <= 0) continue;
@@ -584,14 +568,12 @@ export function buildDisplayList(
         r: st.activeNodeRadius * 1.6 * s * grow(n.id) * v.k, angle: rec.angle, fill: nodeFill(a),
         ...(a < 1 || v.a < 1 ? { opacity: (a < 1 ? idle + (1 - idle) * a : 1) * v.a } : {}),
       });
-    } else if (n.dim) {
-      prims.push({ kind: 'circle', id: n.id, group: 'nodes-active', c: n, r: st.activeNodeRadius * s, fill: greyCss, opacity: dimA });
     } else {
       const a = on(n);
       const v = shown(n);
       if (v.a <= 0) continue;
       prims.push({
-        kind: 'circle', id: n.id, group: 'nodes-active', c: n, r: st.activeNodeRadius * s * (n.toxic ? 1.25 + 0.3 * toxicPulse : grow(n.id)) * v.k,
+        kind: 'circle', id: n.id, group: 'nodes-active', c: n, r: st.activeNodeRadius * s * (n.toxic ? TOXIC_DOT + 0.5 * toxicPulse : grow(n.id)) * v.k,
         fill: n.toxic ? toxicFill : nodeFill(a),
         ...(a < 1 || v.a < 1 ? { opacity: (a < 1 ? idle + (1 - idle) * a : 1) * v.a } : {}),
       });
@@ -606,6 +588,21 @@ export function buildDisplayList(
     const fadeRing = found > 0 ? { opacity: 1 - found } : {};
     prims.push({ kind: 'ring', id: `${n.id}-outer`, group: 'nodes-inactive', c: n, r, stroke: st.inactiveNodeColor, width: w, ...fadeRing });
     prims.push({ kind: 'ring', id: `${n.id}-inner`, group: 'nodes-inactive', c: n, r: r * 0.5, stroke: st.inactiveNodeColor, width: w, ...fadeRing });
+  }
+
+  // Target toxicity: rings radiating from the red dot, over everything, to draw the eye.
+  if (signal) {
+    for (const n of g.nodes) {
+      if (!n.toxic) continue;
+      const from = st.activeNodeRadius * s * TOXIC_DOT;
+      for (let i = 0; i < TOXIC_RINGS; i++) {
+        const u = (((toxicBeats * tau) / schedule.total + i / TOXIC_RINGS) % 1 + 1) % 1;
+        prims.push({
+          kind: 'ring', id: `${n.id}-ring-${i + 1}`, group: 'nodes-active', c: n, r: from + (st.haloRadius * s * TOXIC_REACH - from) * u,
+          stroke: toxicFill, width: Math.max(1, 2.5 * s), opacity: 0.85 * (1 - u) ** 1.5,
+        });
+      }
+    }
   }
 
   let out = prims;

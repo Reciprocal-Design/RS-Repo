@@ -127,8 +127,6 @@ export interface ModuleSettings {
   routes: number;
   /** Traced tabs: how many times the signal runs back and forth between the nucleus and the receptor. */
   trips: number;
-  /** Traced tabs: how visible the proteins off the traced route stay, 0–1. */
-  dimOpacity: number;
   /** Target toxicity: the colour of the toxic DEG, the red dot in the nucleus. */
   toxicColor: string;
   /** Body and journey: the organ the signal starts from (and the journey zooms out of). */
@@ -249,10 +247,6 @@ export interface NodeGeom {
   rho: number;
   /** Signed arc-length position across the node's row (0 on the pathway axis). */
   lateral: number;
-  /** Off the traced route (MOA elucidation): drawn faint, never signalled. */
-  dim?: boolean;
-  /** Hidden until the signal reaches it, then pops up (the route MOA elucidation uncovers). */
-  reveal?: boolean;
   /** Discovered (the real-cell view): inactive until discovery reaches this point (0–1), then pops up. */
   discoverAt?: number;
   /** A DEG that makes the cell toxic when it fires (target toxicity). */
@@ -262,6 +256,8 @@ export interface NodeGeom {
 export type Bezier = [Vec2, Vec2, Vec2, Vec2];
 
 export interface EdgeGeom {
+  /** On a traced route (tabs 1–3): always drawn in the gradient, with a pulse running back and forth along it. */
+  traced?: boolean;
   id: string;
   from: string;
   to: string;
@@ -276,12 +272,8 @@ export interface EdgeGeom {
   depthTo: number;
   /** A cell-to-cell link into a neighbour's relay receptor (cell maps). */
   link?: boolean;
-  /** Off the traced route (MOA elucidation): drawn faint, never signalled. */
-  dim?: boolean;
   /** Layer hops this edge stands for (a direct receptor → DEG edge spans several); scales its travel time. */
   hops?: number;
-  /** Hidden until the signal travels it (the route MOA elucidation uncovers). */
-  reveal?: boolean;
   /** Line width, as a multiple of the usual (connections between tissues are drawn heavier). */
   weight?: number;
   /** Discovered (the real-cell view): absent until discovery reaches this point (0–1), then grows in. */

@@ -36,88 +36,49 @@ describe('modules', () => {
     expect(buildGeometry(custom).edges.length).toBe(buildGeometry(plain).edges.length);
   });
 
-  it('MOA traces the route into one DEG and dims the rest', () => {
+  it('MOA draws only the routes into one DEG, always on in the gradient', () => {
     const s = oneRoute(moduleScene('moa', 7));
     const g = buildGeometry(s);
     const last = lastLayer(s);
-    const degs = g.nodes.filter((n) => n.layer === last && n.active).sort((a, b) => a.lateral - b.lateral);
-    expect(degs[0].dim).toBeFalsy();
-    for (const d of degs.slice(1)) expect(d.dim).toBe(true);
-    expect(g.nodes.some((n) => n.dim)).toBe(true);
-    // Only the route carries the signal.
-    const sched = buildSchedule(s);
-    for (const n of g.nodes) if (n.dim) expect(sched.fire.has(n.id)).toBe(false);
-    expect(sched.fire.has(degs[0].id)).toBe(true);
-    expect(sched.edges.every((et) => !et.edge.dim)).toBe(true);
-    // One route: one protein per layer, receptor to DEG.
-    const lit = g.nodes.filter((n) => n.active && !n.dim && n.pathwayId === 'p1');
-    for (let l = 0; l <= last; l++) expect(lit.filter((n) => n.layer === l).length).toBe(1);
-    expect(g.edges.filter((e) => !e.dim).length).toBe(last);
-  });
-
-  it('MOA runs backwards from the DEG, uncovering the route as it goes', () => {
-    const s = oneRoute(moduleScene('moa', 7));
-    const g = buildGeometry(s);
-    const last = lastLayer(s);
-    const deg = g.nodes.filter((n) => n.layer === last && n.active).sort((a, b) => a.lateral - b.lateral)[0];
-    const receptor = g.nodes.find((n) => n.layer === 0)!;
-    const sched = buildSchedule(s);
-    // The signal starts at the DEG and reaches the receptor last.
-    expect(sched.fire.get(deg.id)).toBe(0);
-    const route = g.nodes.filter((n) => n.active && !n.dim);
-    expect(Math.max(...route.map((n) => sched.fire.get(n.id)!))).toBe(sched.fire.get(receptor.id));
-    for (const e of g.edges.filter((x) => !x.dim)) {
-      expect(g.nodeById.get(e.from)!.layer).toBe(g.nodeById.get(e.to)!.layer + 1);
-      expect(e.reveal).toBe(true);
+    // One route: one protein per layer, receptor to DEG, and nothing else.
+    for (let l = 0; l <= last; l++) expect(g.nodes.filter((n) => n.layer === l)).toHaveLength(1);
+    expect(g.edges).toHaveLength(last);
+    // The same lines, in the gradient, on every frame from the first; no grey anywhere.
+    const lines = (t: number) => buildDisplayList(s, t).prims.filter((p) => p.kind === 'bezier');
+    const { total } = buildSchedule(s);
+    for (const t of [0, total / 3, total / 2, total - 0.01]) {
+      expect(lines(t).map((p) => p.id).sort()).toEqual(g.edges.map((e) => e.id).sort());
+      for (const p of lines(t)) expect(p.kind === 'bezier' && p.from).not.toBe(p.kind === 'bezier' && p.to);
     }
-    // The DEG is there from the start; the rest of the route is not.
-    expect(deg.reveal).toBeFalsy();
-    expect(route.filter((n) => n.reveal).length).toBe(last);
-    const ids = (t: number) => new Set(buildDisplayList(s, t).prims.map((p) => p.id));
-    const mid = route.find((n) => n.layer === 2)!;
-    const edge = g.edges.find((e) => e.to === mid.id && !e.dim)!;
-    const start = ids(0.01);
-    expect(start.has(deg.id)).toBe(true);
-    expect(start.has(mid.id)).toBe(false);
-    expect(start.has(`${receptor.id}-diamond`)).toBe(false);
-    expect(start.has(edge.id)).toBe(false); // no resting edge on the route
-    const t = sched.fire.get(mid.id)! + 0.6;
-    const later = ids(t);
-    expect(later.has(mid.id)).toBe(true);
-    expect(later.has(`${edge.id}-lit`)).toBe(true);
-    // It pops: larger than its resting size just after it appears.
-    const r = (time: number) => {
-      const p = buildDisplayList(s, time).prims.find((q) => q.id === mid.id)!;
-      return p.kind === 'circle' ? p.r : 0;
-    };
-    expect(r(sched.fire.get(mid.id)! + 0.2)).toBeGreaterThan(r(sched.fire.get(mid.id)! + 2));
-    // A still export without the signal shows the whole route.
-    expect(new Set(buildDisplayList(s, 0, { signal: false }).prims.map((p) => p.id)).has(mid.id)).toBe(true);
+    expect(JSON.stringify(lines(total / 2))).toBe(JSON.stringify(lines(0)));
   });
 
   it('MOA starts on a pathway more complex than a single route', () => {
     const s = moduleScene('moa', 7);
-    expect(buildGeometry(s).edges.filter((e) => !e.dim).length).toBeGreaterThan(lastLayer(s));
+    expect(buildGeometry(s).edges.length).toBeGreaterThan(lastLayer(s));
   });
 
   it('MOA flows back and forth between the nucleus and the receptor', () => {
     const s = oneRoute(moduleScene('moa', 7));
     const g = buildGeometry(s);
     const sched = buildSchedule(s);
-    const deg = g.nodes.find((n) => n.layer === lastLayer(s) && n.active && !n.dim)!;
+    const deg = g.nodes.find((n) => n.layer === lastLayer(s))!;
     const receptor = g.nodes.find((n) => n.layer === 0)!;
     const legs = [0, 1, 2, 3].map((w) => sched.edges.filter((et) => et.wave === w));
     for (const leg of legs) expect(leg).toHaveLength(lastLayer(s));
     // Each leg sets off from the end the last one reached, away from the nucleus and back in turn.
     const leaves = (w: number) => [...legs[w]].sort((a, b) => a.start - b.start)[0];
-    expect([0, 1, 2, 3].map((w) => leaves(w).edge.from)).toEqual([deg.id, receptor.id, deg.id, receptor.id]);
+    expect([0, 1, 2, 3].map((w) => leaves(w).edge.from)).toEqual([receptor.id, deg.id, receptor.id, deg.id]);
     for (let w = 1; w < 4; w++) {
       const arrived = Math.max(...legs[w - 1].map((et) => et.start + et.duration));
       expect(leaves(w).start).toBeGreaterThan(arrived);
     }
     // Both ends pulse every time the signal arrives.
-    expect(sched.pulses.get(receptor.id)!.length).toBe(2);
-    expect(sched.pulses.get(deg.id)!.length).toBe(3);
+    expect(sched.pulses.get(receptor.id)!.length).toBe(3);
+    expect(sched.pulses.get(deg.id)!.length).toBe(2);
+    // The loop closes as the pulse gets back to the receptor, so it never stops.
+    expect(sched.period).toBe(sched.total);
+    expect(Math.max(...sched.edges.map((et) => et.start + et.duration))).toBeLessThan(sched.total);
     // More trips, a longer loop.
     const more = { ...s, module: { ...s.module, trips: 3 } };
     expect(buildSchedule(more).total).toBeGreaterThan(sched.total);
@@ -126,7 +87,7 @@ describe('modules', () => {
   it('MOA with no traced DEG shows every route', () => {
     const s = moduleScene('moa', 7);
     s.module = { ...s.module, focusDeg: 0 };
-    expect(buildGeometry(s).nodes.some((n) => n.dim)).toBe(false);
+    expect(buildGeometry(s).edges.length).toBe(buildGeometry(defaultScene(7)).edges.length);
   });
 
   it('target combination is the pathway of tab 1 and one more', () => {
@@ -137,10 +98,10 @@ describe('modules', () => {
     expect(g.pathways.every((p) => p.startDelay === 0)).toBe(true);
     expect(g.edges.some((e) => e.crosstalk)).toBe(false);
     // The first pathway: the same proteins in the same places, the same route lit.
-    const lit = (x: typeof g, pid: string) => x.edges.filter((e) => !e.dim && e.pathwayId === pid).map((e) => e.id).sort();
+    const lit = (x: typeof g, pid: string) => x.edges.filter((e) => e.pathwayId === pid).map((e) => e.id).sort();
     for (const n of one.nodes) {
       const m = g.nodeById.get(n.id)!;
-      expect([m.x, m.y, !!m.dim]).toEqual([n.x, n.y, !!n.dim]);
+      expect([m.x, m.y]).toEqual([n.x, n.y]);
     }
     expect(lit(g, 'p1')).toEqual(lit(one, 'p1'));
     // The second: its own receptor and its own route to the nucleus.
@@ -162,11 +123,11 @@ describe('modules', () => {
     expect(toxic[0].layer).toBe(last);
     expect(toxic[0].region).toBe('nucleus');
     // Tab 1 traces another DEG; the receptor is where it was.
-    const litDeg = one.nodes.find((n) => n.layer === last && n.active && !n.dim)!;
+    const litDeg = one.nodes.find((n) => n.layer === last)!;
     expect(toxic[0].id).not.toBe(litDeg.id);
     const receptor = (x: typeof g) => x.receptors.find((r) => r.target)!.center;
     expect(receptor(g)).toEqual(receptor(one));
-    const lit = (x: typeof g) => new Set(x.edges.filter((e) => !e.dim).map((e) => e.id));
+    const lit = (x: typeof g) => new Set(x.edges.map((e) => e.id));
     const a = lit(g), b = lit(one);
     expect([...a].filter((id) => !b.has(id)).length).toBeGreaterThan(0);
     // Red from the first frame to the last, pulsing, with no warning and an unchanged membrane.
@@ -182,6 +143,14 @@ describe('modules', () => {
     expect(radius(0)).toBeCloseTo(radius(total - 1e-6), 3); // the loop closes without a jump
     const plain = buildDisplayList(moduleScene('moa', 7), 0).prims.filter((p) => p.group === 'membrane');
     expect(buildDisplayList(s, total / 2).prims.filter((p) => p.group === 'membrane')).toEqual(plain);
+    // Larger than the other dots, with rings radiating from it.
+    const other = buildDisplayList(s, 0).prims.find((p) => p.id === g.nodes.find((n) => n.layer === 2)!.id)!;
+    expect(radius(0)).toBeGreaterThan(2 * (other.kind === 'circle' ? other.r : 0));
+    const ring = (t: number) => buildDisplayList(s, t).prims.find((p) => p.id === `${toxic[0].id}-ring-1`)!;
+    const beat = total / Math.round(total / 1.6);
+    const size = (t: number) => { const p = ring(t); return p.kind === 'ring' ? p.r : 0; };
+    expect(size(beat * 0.6)).toBeGreaterThan(size(beat * 0.1));
+    expect(ring(beat * 0.9).opacity!).toBeLessThan(ring(beat * 0.1).opacity!);
     // Nothing else is red.
     expect(displayListToSvg(buildDisplayList(s, total / 2)).match(/id="warning/)).toBeNull();
   });

@@ -60,8 +60,8 @@ describe('a shared tissue map', () => {
   });
 
   it('keeps each view its own treatment of that cell', () => {
-    // Target identification and MOA: a route to uncover; toxicity: one toxic DEG.
-    expect(buildGeometry(view('moa')).nodes.some((n) => n.reveal)).toBe(true);
+    // Target identification and MOA: an always-on route; toxicity: one toxic DEG.
+    expect(buildGeometry(view('moa')).edges.every((e) => e.traced)).toBe(true);
     const tox = view('toxicity');
     expect(buildGeometry(tox).nodes.filter((n) => n.toxic)).toHaveLength(1);
     // Combination: two targets on the one cell.
