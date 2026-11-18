@@ -26,28 +26,29 @@ the same pathway; "Use this look and pathway in all tabs" copies the current tab
 animation to the others (each keeps its module settings, pathway count, start delays and cell map). The modules are
 a preset scene plus a pure transform of the geometry (`src/core/modules.ts`):
 
+**Default pathway and map.** Every pathway starts with a receptor, then 4 cytoplasm, 4 cytoplasm, 3 nucleus and 3 DEG
+nodes, all active, and every cell of a tissue follows those settings ("Cell variation" under Cell map adds drift). The
+app opens on `src/assets/default-tissue-map.svg`; "Remove the map" goes back to the generated cells.
+
 **One tissue map for every cell view.** "Tissue map → Upload SVG tissue map…" (on tabs 1–5 and the journey) takes
 one SVG of the tissue and applies it everywhere; click a cell in the thumbnail (or in the preview on tab 4) to
 select it. "↺ 90°" / "↻ 90°" and "Rotation" (any angle, −180° to 180°) turn the map in every view, about its
 middle; "Reset" puts it back as uploaded. Tabs 1–3 then show only the selected cell, as the single cell (its own shape, fitted to the canvas);
-tab 4 shows the map with that cell in the middle, zoomed in until about two cells show beyond it along the
-canvas's short side ("Cells shown beyond it"; 0 shows the whole map); tab 5 shows the map twice; the journey
+tabs 4 and 5 show the whole map; the journey
 starts on it. The
 selected cell runs the scene's own pathways and starts the signal. "Remove the map" goes back to each view's own
 cell or generated tissue.
 
-1. **Target identification and MOA**: the drug target's receptor is ringed. Up to three routes (one protein per
-   layer) from the receptor to a chosen DEG are always on in the gradient, with nothing greyed out behind them. A pulse
-   runs back and forth between the receptor and the nucleus ("Back-and-forth trips"), and the loop closes seamlessly.
-2. **Target combination**: the pathway of tab 1, unchanged, and one more: two ringed receptors, each with its own
-   always-on route to the nucleus, pulsing together. Tabs 1–3 stay in step: the cell, look, motion and first pathway
-   changed in one (Regenerate included) change in the others. They start with a 6.5 px comet and 3.55 px lines. The second sits to the side and stays shallower, so the two never cross.
-3. **Target toxicity**: the receptor of tab 1 with a different always-on pathway, ending at a different dot in the
-   nucleus. That dot is larger, red, and radiates rings for the whole loop; nothing else on screen is red.
-4. **Tissue-level target ID** (indication extension): the same cell at the centre (an exact copy of the single
-   cell, scaled by "Centre cell size"), with neighbouring cells generated round it to the canvas edges
-   (`src/core/tissue.ts`). Only the centre cell starts on its own; links run outward from it, so its signal relays
-   on through the tissue. The tissue follows the centre cell when the seed, shape or canvas changes.
+1. **Target identification and MOA**: the drug target's receptor is ringed. Every active protein and line of the
+   pathway is always on in the gradient, and pulses run back and forth between the receptor and the nucleus
+   ("Back-and-forth trips"). The loop closes seamlessly.
+2. **Target combination**: the pathway of tab 1, unchanged, and one more: two ringed receptors, pulsing together. Tabs
+   1–3 stay in step: the cell, look, motion and layer settings changed in one change in the others. They start with a
+   6.5 px comet and 3.55 px lines.
+3. **Target toxicity**: the receptor and layer settings of tab 1 with a different wiring. One DEG in the nucleus is
+   larger, red, and radiates rings for the whole loop; nothing else on screen is red.
+4. **Tissue-level target ID** (indication extension): the layout of tab 5 in one colour. The whole tissue map fills the
+   canvas, the signal starts in the selected cell and spreads from cell to cell. With no map, the tissue is generated.
 5. **Cross-tissue communication** (`src/core/crossTissue.ts`): one tissue map, its cells split between two tissues
    by colour. Click cells in the preview to switch them between the membrane colour and the second colour (pink by
    default); by default the right-hand half of the map is in the second colour ("Right half" puts that back,
@@ -86,11 +87,11 @@ cell or generated tissue.
    the real cell up with the network. The video is held for the session only (never saved in the scene JSON);
    every exported frame waits for the video to reach its exact frame, so PNG sequences and videos are frame-exact.
 
-**Zoom (tabs 1–4).** Tabs 1–4 start on a square 2000 × 2000 canvas, zoomed out round the centre cell so more of
+**Zoom (tabs 1–3).** Tabs 1–3 start on a square 2000 × 2000 canvas, zoomed out round the centre cell so more of
 the cells round it show (tabs 1–3 with "Show neighbouring cells" on). "Zoom" at the top of the module settings
 (0.3–1.5; 1 is the cell at its own size) scales the whole view about the centre cell: the cell, its network, line,
-node and receptor sizes, and the neighbours or tissue round it, together. Tabs 1–3 start at
-0.6, tab 4 at 0.75. It is saved with each tab; scene files saved before it load at 1.
+node and receptor sizes, and the neighbours round it, together. They start at
+0.6. It is saved with each tab; scene files saved before it load at 1.
 
 **Neighbouring cells.** In the single-cell views (the plain animator, tabs 1–3 and 8), "Cell membrane → Show
 neighbouring cells" draws the cells round the cell behind it, outlines only, without changing the cell's size or

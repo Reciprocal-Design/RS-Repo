@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { bodyImageInfo } from '../core/bodyImage';
 import { ORGANS } from '../core/body';
-import { degCount, MODULES, moduleInfo, tissueMap, withOrganicTissue } from '../core/modules';
+import { MODULES, moduleInfo, withOrganicTissue } from '../core/modules';
 import { ZOOM_VIEWS } from '../core/layout';
 import { ORGANIC_NAME } from '../core/organic';
 import { randomSeed } from '../core/rng';
@@ -54,7 +54,6 @@ export function ModuleSection() {
   const m = scene.module;
   const info = moduleInfo(m.kind);
   const set = (v: Partial<ModuleSettings>) => setScene((s) => ({ ...s, module: { ...s.module, ...v } }));
-  const degs = degCount(scene);
   // A scene loaded with a body image: analyse it (once) so it can be drawn.
   useEffect(() => {
     if (m.bodyImage) loadBodyImage(m.bodyImage).catch((e) => setImageMsg({ text: (e as Error).message, error: true }));
@@ -69,16 +68,7 @@ export function ModuleSection() {
   );
   const tracing = (
     <>
-      <Slider label="Routes" value={m.routes} min={1} max={3} step={1} onChange={(routes) => set({ routes })} />
       <Slider label="Back-and-forth trips" value={m.trips} min={1} max={4} step={1} onChange={(trips) => set({ trips })} />
-    </>
-  );
-  const tracedDeg = (
-    <>
-      <Slider label="Traced DEG" value={Math.min(m.focusDeg, degs)} min={0} max={degs} step={1}
-        onChange={(focusDeg) => set({ focusDeg })} />
-      <p className="hint">Numbered left to right across the DEG row; 0 shows every route.</p>
-      {m.focusDeg > 0 && tracing}
     </>
   );
   const organ = (label: string) => (
@@ -100,14 +90,14 @@ export function ModuleSection() {
           <p className="hint">
             Zooms the whole view about the centre cell: lower makes the cell smaller and shows more of the cells round
             it; 1 is the cell at its own size.
-            {m.kind !== 'tissue' && !scene.cell.neighbours.show && ' Turn on Cell membrane → Show neighbouring cells to see them.'}
+            {!scene.cell.neighbours.show && ' Turn on Cell membrane → Show neighbouring cells to see them.'}
           </p>
         </>
       )}
 
       {m.kind === 'moa' && (
         <>
-          {tracedDeg}
+          {tracing}
           {targets}
         </>
       )}
@@ -116,7 +106,7 @@ export function ModuleSection() {
         <>
           <Slider label="Turn" value={scene.rotation} min={-180} max={180} step={1} unit="°"
             onChange={(rotation) => setScene((s) => ({ ...s, rotation }))} />
-          {tracedDeg}
+          {tracing}
           {targets}
         </>
       )}
@@ -154,37 +144,11 @@ export function ModuleSection() {
         </>
       )}
 
-      {m.kind === 'tissue' && !scene.cellMap.around && scene.cellMap.heroId && (
-        <>
-          <Toggle label="Keep the selected cell in the middle" checked={scene.cellMap.centerHero}
-            onChange={(centerHero) => setScene((s) => ({ ...s, cellMap: { ...s.cellMap, centerHero } }))} />
-          {scene.cellMap.centerHero && (
-            <>
-              <Slider label="Cells shown beyond it" value={scene.cellMap.rings} min={0} max={6} step={1}
-                onChange={(rings) => setScene((s) => ({ ...s, cellMap: { ...s.cellMap, rings } }))} />
-              <p className="hint">How far the view reaches from the selected cell, along the canvas's short side. 0 shows the whole map.</p>
-            </>
-          )}
-        </>
-      )}
-
-      {m.kind === 'tissue' && (
-        <>
-          {scene.cellMap.around && scene.cellMap.enabled ? (
-            <>
-              <Slider label="Centre cell size" value={scene.cellMap.detailScale} min={0.2} max={1}
-                onChange={(detailScale) => setScene((s) => ({ ...s, cellMap: { ...s.cellMap, detailScale } }))} />
-              <p className="hint">
-                The centre cell is the same cell as the other tabs; neighbours fill the canvas around it, and Regenerate
-                all re-rolls them with it. Links, relays and spontaneous starts are under Cell map.
-              </p>
-            </>
-          ) : (
-            <button className="btn wide" onClick={() => setScene((s) => ({ ...s, cellMap: tissueMap() }))}>
-              Build tissue around the cell
-            </button>
-          )}
-        </>
+      {m.kind === 'tissue' && scene.cellMap.name === ORGANIC_NAME && (
+        <button className="btn wide" title="New cell shapes for the generated tissue"
+          onClick={() => setScene((s) => withOrganicTissue(s, randomSeed()))}>
+          New tissue shapes
+        </button>
       )}
 
       {(m.kind === 'body' || m.kind === 'journey') && (

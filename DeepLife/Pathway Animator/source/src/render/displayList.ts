@@ -219,7 +219,7 @@ export function buildDisplayList(
   // cycle. In continuous mode each edge fades on its own instead: it stays lit
   // for the hold time after its comet passes, then fades.
   const fade = period ? 1 : an.loop ? Math.max(0, Math.min(1, (schedule.total - tau) / FADE_OUT)) : 1;
-  const litHold = Math.max(0, an.holdAtEnd);
+  const litHold = schedule.litHold;
 
   // Target toxicity: the toxic DEG pulses gently for the whole loop, a whole
   // number of pulses per cycle so the loop closes without a jump.

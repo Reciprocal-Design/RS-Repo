@@ -214,7 +214,7 @@ export function buildMapGeometry(scene: Scene, opts: MapBuildOptions = {}): Scen
   const pre = opts.prefix ?? '';
   // A solo view is the single cell: full-size detail. Zoomed in on the
   // selected cell, detail grows with the cells (up to full size). The view's
-  // own zoom (tabs 1–4) then scales it with everything else.
+  // own zoom (tabs 1–3) then scales it with everything else.
   const detail = (soloActive(scene) ? 1 : Math.min(1, Math.max(0.05, cm.detailScale) * mapTransform(scene).zoom)) * viewZoom(scene);
   const scale = (Math.min(scene.canvas.width, scene.canvas.height) / REFERENCE_SHORT_SIDE) * detail;
   const count = Math.max(1, scene.pathwayCount);
@@ -256,7 +256,9 @@ export function buildMapGeometry(scene: Scene, opts: MapBuildOptions = {}): Scen
         cs.rotation = cm.orient ? roomy() + (spin - 0.5) * 2 * ORIENT_JITTER : spin * 360 - 180;
       }
     } else if (!cm.around && cm.orient) {
-      cs = { ...scene, rotation: roomiestRotation(scene, cell, nucleus, polygonOutline(polygon, 4, nucleus.center), count) + scene.rotation };
+      // Target combination turns the cell for its first pathway alone, so that pathway sits exactly as it does in tab 1.
+      const turnFor = scene.module.kind === 'combination' ? 1 : count;
+      cs = { ...scene, rotation: roomiestRotation(scene, cell, nucleus, polygonOutline(polygon, 4, nucleus.center), turnFor) + scene.rotation };
     }
     receptors.push(...decorativeReceptors(frame, cs).map((r) => ({ ...r, id: `${mc.id}-${r.id}` })));
 

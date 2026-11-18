@@ -4,7 +4,7 @@ import { buildCrossTissueGeometry } from './crossTissue';
 import { connectCrosstalk, connectPathway } from './connect';
 import { buildDiscoveryGeometry } from './discovery';
 import { cellFrame, decorativeReceptors, layoutPathway } from './layout';
-import { applyModule } from './modules';
+import { applyModule, withToxicPathway } from './modules';
 import type { NodeGeom, Scene, SceneGeom } from './types';
 
 const cache = new WeakMap<Scene, SceneGeom>();
@@ -24,7 +24,7 @@ export function buildGeometry(scene: Scene): SceneGeom {
     ? buildBodyGeometry(scene)
     : kind === 'realCell' || kind === 'realCellNet'
       ? buildDiscoveryGeometry(scene, plain)
-      : plain(scene);
+      : plain(kind === 'toxicity' ? withToxicPathway(scene) : scene);
   cache.set(scene, geom);
   return geom;
 }

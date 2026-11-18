@@ -4,7 +4,7 @@ import { displayListToSvg } from '../render/svg';
 import { defaultScene } from './defaults';
 import { neighbourCells } from './cellMap';
 import { buildGeometry } from './geometry';
-import { linkTraced, MODULES, moduleScene, shareScene, TRACED } from './modules';
+import { linkTraced, MODULES, moduleScene, shareScene, tissueMap, TRACED } from './modules';
 import { parseSceneJson, serializeScene } from './sceneIO';
 import { buildSchedule } from './timeline';
 import type { ModuleKind, Scene } from './types';
@@ -21,7 +21,6 @@ const classic = (kind: ModuleKind, seed = 7): Scene => {
 };
 
 const lastLayer = (s: ReturnType<typeof defaultScene>) => s.pathways[0].layers.length - 1;
-const oneRoute = (s: Scene): Scene => ({ ...s, module: { ...s.module, routes: 1 } });
 
 describe('modules', () => {
   it('starts every tab from the same pathway', () => {
@@ -36,58 +35,49 @@ describe('modules', () => {
     expect(buildGeometry(custom).edges.length).toBe(buildGeometry(plain).edges.length);
   });
 
-  it('MOA draws only the routes into one DEG, always on in the gradient', () => {
-    const s = oneRoute(moduleScene('moa', 7));
-    const g = buildGeometry(s);
-    const last = lastLayer(s);
-    // One route: one protein per layer, receptor to DEG, and nothing else.
-    for (let l = 0; l <= last; l++) expect(g.nodes.filter((n) => n.layer === l)).toHaveLength(1);
-    expect(g.edges).toHaveLength(last);
-    // The same lines, in the gradient, on every frame from the first; no grey anywhere.
-    const lines = (t: number) => buildDisplayList(s, t).prims.filter((p) => p.kind === 'bezier');
-    const { total } = buildSchedule(s);
-    for (const t of [0, total / 3, total / 2, total - 0.01]) {
-      expect(lines(t).map((p) => p.id).sort()).toEqual(g.edges.map((e) => e.id).sort());
-      for (const p of lines(t)) expect(p.kind === 'bezier' && p.from).not.toBe(p.kind === 'bezier' && p.to);
+  it('starts every pathway at 4 cytoplasm, 4 cytoplasm, 3 nucleus and 3 DEG, all active', () => {
+    for (const m of MODULES) {
+      const layers = moduleScene(m.kind, 1234).pathways[0].layers;
+      expect(layers.map((l) => [l.region, l.nodeCount, l.activeCount])).toEqual([
+        ['membrane', 1, 1], ['cytoplasm', 4, 4], ['cytoplasm', 4, 4], ['nucleus', 3, 3], ['nucleus', 3, 3],
+      ]);
     }
-    expect(JSON.stringify(lines(total / 2))).toBe(JSON.stringify(lines(0)));
   });
 
-  it('MOA starts on a pathway more complex than a single route', () => {
-    const s = moduleScene('moa', 7);
-    expect(buildGeometry(s).edges.length).toBeGreaterThan(lastLayer(s));
+  it('tabs 1–3 draw every active protein of the settings, always on in the gradient', () => {
+    for (const kind of TRACED) {
+      const s = moduleScene(kind, 1234);
+      const g = buildGeometry(s);
+      expect([0, 1, 2, 3, 4].map((l) => g.nodes.filter((n) => n.pathwayId === 'p1' && n.layer === l && n.active).length)).toEqual([1, 4, 4, 3, 3]);
+      const lines = (t: number) => buildDisplayList(s, t).prims.filter((p) => p.kind === 'bezier');
+      const { total } = buildSchedule(s);
+      expect(lines(0).map((p) => p.id).sort()).toEqual(g.edges.map((e) => e.id).sort());
+      expect(JSON.stringify(lines(total / 2))).toBe(JSON.stringify(lines(0)));
+    }
   });
 
   it('MOA flows back and forth between the nucleus and the receptor', () => {
-    const s = oneRoute(moduleScene('moa', 7));
+    const s = moduleScene('moa', 7);
     const g = buildGeometry(s);
     const sched = buildSchedule(s);
-    const deg = g.nodes.find((n) => n.layer === lastLayer(s))!;
     const receptor = g.nodes.find((n) => n.layer === 0)!;
+    const deg = g.nodes.find((n) => n.layer === lastLayer(s))!;
     const legs = [0, 1, 2, 3].map((w) => sched.edges.filter((et) => et.wave === w));
-    for (const leg of legs) expect(leg).toHaveLength(lastLayer(s));
-    // Each leg sets off from the end the last one reached, away from the nucleus and back in turn.
-    const leaves = (w: number) => [...legs[w]].sort((a, b) => a.start - b.start)[0];
-    expect([0, 1, 2, 3].map((w) => leaves(w).edge.from)).toEqual([receptor.id, deg.id, receptor.id, deg.id]);
-    for (let w = 1; w < 4; w++) {
-      const arrived = Math.max(...legs[w - 1].map((et) => et.start + et.duration));
-      expect(leaves(w).start).toBeGreaterThan(arrived);
-    }
-    // Both ends pulse every time the signal arrives.
-    expect(sched.pulses.get(receptor.id)!.length).toBe(3);
-    expect(sched.pulses.get(deg.id)!.length).toBe(2);
+    for (const leg of legs) expect(leg).toHaveLength(g.edges.length);
+    const first = (w: number) => [...legs[w]].sort((a, b) => a.start - b.start)[0];
+    expect(g.nodeById.get(first(0).edge.from)!.layer).toBe(0);
+    expect(g.nodeById.get(first(1).edge.from)!.layer).toBe(lastLayer(s));
+    expect(g.nodeById.get(first(2).edge.from)!.layer).toBe(0);
+    expect(g.nodeById.get(first(3).edge.from)!.layer).toBe(lastLayer(s));
+    for (let w = 1; w < 4; w++) expect(first(w).start).toBeGreaterThan(Math.max(...legs[w - 1].map((et) => et.start + et.duration)));
+    expect(sched.pulses.get(deg.id)!.length).toBeGreaterThan(1);
+    expect(sched.pulses.get(receptor.id)!.length).toBeGreaterThan(1);
     // The loop closes as the pulse gets back to the receptor, so it never stops.
     expect(sched.period).toBe(sched.total);
     expect(Math.max(...sched.edges.map((et) => et.start + et.duration))).toBeLessThan(sched.total);
     // More trips, a longer loop.
     const more = { ...s, module: { ...s.module, trips: 3 } };
     expect(buildSchedule(more).total).toBeGreaterThan(sched.total);
-  });
-
-  it('MOA with no traced DEG shows every route', () => {
-    const s = moduleScene('moa', 7);
-    s.module = { ...s.module, focusDeg: 0 };
-    expect(buildGeometry(s).edges.length).toBe(buildGeometry(defaultScene(7)).edges.length);
   });
 
   it('target combination is the pathway of tab 1 and one more', () => {
@@ -135,7 +125,7 @@ describe('modules', () => {
       ...tab1, seed: 555,
       pathways: [{ ...tab1.pathways[0], seed: 987 }],
       style: { ...tab1.style, edgeWidth: 2 },
-      module: { ...tab1.module, routes: 2, focusDeg: 2 },
+      module: { ...tab1.module, trips: 3 },
     };
     const linked = linkTraced(edited, tab2);
     expect(shape(linked)).toBe(shape(edited));
@@ -158,14 +148,11 @@ describe('modules', () => {
     const last = lastLayer(s);
     expect(toxic[0].layer).toBe(last);
     expect(toxic[0].region).toBe('nucleus');
-    // Tab 1 traces another DEG; the receptor is where it was.
-    const litDeg = one.nodes.find((n) => n.layer === last)!;
-    expect(toxic[0].id).not.toBe(litDeg.id);
+    // The receptor is where it was; the wiring is its own.
     const receptor = (x: typeof g) => x.receptors.find((r) => r.target)!.center;
     expect(receptor(g)).toEqual(receptor(one));
-    const lit = (x: typeof g) => new Set(x.edges.map((e) => e.id));
-    const a = lit(g), b = lit(one);
-    expect([...a].filter((id) => !b.has(id)).length).toBeGreaterThan(0);
+    const wiring = (x: typeof g) => JSON.stringify(x.edges.map((e) => e.bezier));
+    expect(wiring(g)).not.toBe(wiring(one));
     // Red from the first frame to the last, pulsing, with no warning and an unchanged membrane.
     const dot = (t: number) => buildDisplayList(s, t).prims.find((p) => p.id === toxic[0].id)!;
     const radius = (t: number) => { const p = dot(t); return p.kind === 'circle' ? p.r : 0; };
@@ -180,7 +167,7 @@ describe('modules', () => {
     const plain = buildDisplayList(moduleScene('moa', 7), 0).prims.filter((p) => p.group === 'membrane');
     expect(buildDisplayList(s, total / 2).prims.filter((p) => p.group === 'membrane')).toEqual(plain);
     // Larger than the other dots, with rings radiating from it.
-    const other = buildDisplayList(s, 0).prims.find((p) => p.id === g.nodes.find((n) => n.layer === 2)!.id)!;
+    const other = buildDisplayList(s, 0).prims.find((p) => p.id === g.nodes.find((n) => n.layer === 2 && !n.toxic)!.id)!;
     expect(radius(0)).toBeGreaterThan(2 * (other.kind === 'circle' ? other.r : 0));
     const ring = (t: number) => buildDisplayList(s, t).prims.find((p) => p.id === `${toxic[0].id}-ring-1`)!;
     const beat = total / Math.round(total / 1.6);
@@ -191,8 +178,8 @@ describe('modules', () => {
     expect(displayListToSvg(buildDisplayList(s, total / 2)).match(/id="warning/)).toBeNull();
   });
 
-  it('tissue puts the same cell at the centre, scaled, with neighbours round it', () => {
-    const s = classic('tissue', 7);
+  it('a generated tissue puts the same cell at the centre, scaled, with neighbours round it', () => {
+    const s: Scene = { ...classic('tissue', 7), cellMap: tissueMap() };
     const single = buildGeometry(defaultScene(7));
     const g = buildGeometry(s);
     const k = s.cellMap.detailScale;
@@ -224,8 +211,8 @@ describe('modules', () => {
     }
   });
 
-  it('tissue follows the centre cell when the seed changes', () => {
-    const a = moduleScene('tissue', 7);
+  it('a generated tissue follows the centre cell when the seed changes', () => {
+    const a: Scene = { ...moduleScene('tissue', 7), cellMap: tissueMap() };
     const b = { ...a, seed: 8 };
     expect(buildGeometry(b).cells[0].cell.points[0]).not.toEqual(buildGeometry(a).cells[0].cell.points[0]);
     const json = parseSceneJson(serializeScene(a));
@@ -257,18 +244,18 @@ describe('modules', () => {
   });
 });
 
-describe('zoom (tabs 1–4)', () => {
-  const ZOOMED: ModuleKind[] = ['moa', 'combination', 'toxicity', 'tissue'];
+describe('zoom (tabs 1–3)', () => {
+  const ZOOMED: ModuleKind[] = ['moa', 'combination', 'toxicity'];
   const zoomed = (s: Scene, zoom: number): Scene => ({ ...s, module: { ...s.module, zoom } });
 
-  it('tabs 1–4 start square and zoomed out, the single-cell tabs with their neighbours showing', () => {
+  it('tabs 1–3 start square and zoomed out, with their neighbours showing', () => {
     for (const kind of ZOOMED) {
       const s = moduleScene(kind, 7);
       expect(s.canvas.width).toBe(s.canvas.height);
       expect(s.module.zoom).toBeLessThan(1);
-      expect(s.cell.neighbours.show).toBe(kind !== 'tissue');
+      expect(s.cell.neighbours.show).toBe(true);
     }
-    for (const kind of ['crossTissue', 'body', 'journey', 'realCell'] as ModuleKind[]) {
+    for (const kind of ['tissue', 'crossTissue', 'body', 'journey', 'realCell'] as ModuleKind[]) {
       const s = moduleScene(kind, 7);
       expect([s.canvas.width, s.canvas.height]).toEqual([1920, 1080]);
       expect(s.module.zoom).toBe(1);
@@ -302,19 +289,6 @@ describe('zoom (tabs 1–4)', () => {
       const th = Math.atan2(n.cell.center.y - cell.center.y, n.cell.center.x - cell.center.x);
       expect(Math.hypot(n.cell.center.x - cell.center.x, n.cell.center.y - cell.center.y)).toBeGreaterThan(cell.radiusAt(th));
     }
-  });
-
-  it('zooms the tissue round its centre cell, with more cells as it zooms out', () => {
-    const base = zoomed(moduleScene('tissue', 7), 1);
-    const a = buildGeometry(base);
-    const b = buildGeometry(zoomed(base, 0.6));
-    const cx = base.canvas.width / 2, cy = base.canvas.height / 2;
-    for (const n of a.nodes.filter((x) => x.id.startsWith('p'))) {
-      const m = b.nodeById.get(n.id)!;
-      expect(m.x).toBeCloseTo(cx + (n.x - cx) * 0.6, 6);
-      expect(m.y).toBeCloseTo(cy + (n.y - cy) * 0.6, 6);
-    }
-    expect(b.cells.length).toBeGreaterThan(a.cells.length);
   });
 
   it('leaves the other tabs alone', () => {

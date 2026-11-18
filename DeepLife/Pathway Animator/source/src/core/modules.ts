@@ -3,8 +3,8 @@ import { defaultCellMap, defaultModule, defaultScene, makePathway } from './defa
 import { ZOOM_VIEWS } from './layout';
 import { organicTissue } from './organic';
 import { withStructureOf } from './layers';
-import { hash, rngFor, type Rng } from './rng';
-import type { CellMap, EdgeGeom, ModuleKind, NodeGeom, ReceptorGeom, Scene, SceneGeom } from './types';
+import { hash } from './rng';
+import type { CellMap, ModuleKind, NodeGeom, ReceptorGeom, Scene, SceneGeom } from './types';
 
 /** A tissue built round the single cell: the same cell at the centre, neighbours relaying its signal on. */
 export function tissueMap(): CellMap {
@@ -25,7 +25,7 @@ export const MODULES: ModuleInfo[] = [
   {
     kind: 'moa',
     label: 'Target identification and MOA',
-    blurb: 'The signalling pathway, always on in the gradient, with a pulse running back and forth between the receptor and the nucleus.',
+    blurb: 'The whole signalling pathway, always on in the gradient, with pulses running back and forth between the receptor and the nucleus.',
   },
   {
     kind: 'combination',
@@ -40,7 +40,7 @@ export const MODULES: ModuleInfo[] = [
   {
     kind: 'tissue',
     label: 'Tissue-level target ID',
-    blurb: 'Indication extension: the same cell at the centre of a tissue, its signal passing on into neighbouring cells.',
+    blurb: 'Indication extension: the whole tissue map, the signal starting in the selected cell and spreading from cell to cell.',
   },
   {
     kind: 'crossTissue',
@@ -93,8 +93,8 @@ export function withTissueMap(scene: Scene, map: TissueUpload, heroId: string): 
   const base: CellMap = { ...defaultCellMap(), enabled: true, name: map.name, viewBox: map.viewBox, cells: map.cells, heroId };
   if (SINGLE_CELL.includes(kind)) return { ...scene, cellMap: { ...base, solo: true, detailScale: 1 } };
   const fit = (s: Scene) => suggestedDetailScale(s, map);
-  // The tissue view is zoomed in on the selected cell, two cells showing beyond it.
-  if (kind === 'tissue') return { ...scene, cellMap: { ...base, centerHero: true, rings: 2, startShare: 0, relayHops: 4, detailScale: fit(scene) } };
+  // The tissue view lays the map out as the cross-tissue view does, in one colour.
+  if (kind === 'tissue') return { ...scene, cellMap: { ...base, startShare: 0, relayHops: 8, detailScale: fit(scene) } };
   if (kind === 'journey') return { ...scene, cellMap: { ...base, startShare: 0, relayHops: 4, detailScale: fit(scene) } };
   if (kind === 'crossTissue') {
     // A new map: the default split (right half in the second colour) applies again.
@@ -114,9 +114,8 @@ export function withHero(scene: Scene, heroId: string): Scene {
 export function withoutTissueMap(scene: Scene): Scene {
   const kind = scene.module.kind;
   if (SINGLE_CELL.includes(kind)) return { ...scene, cellMap: defaultCellMap() };
-  if (kind === 'tissue') return { ...scene, cellMap: tissueMap() };
   if (kind === 'journey') return { ...scene, cellMap: { ...tissueMap(), detailScale: 0.4 } };
-  if (kind === 'crossTissue') return withOrganicTissue(scene, scene.seed);
+  if (kind === 'tissue' || kind === 'crossTissue') return withOrganicTissue(scene, scene.seed);
   return scene;
 }
 
@@ -131,9 +130,9 @@ export function withOrganicTissue(scene: Scene, seed: number): Scene {
   return withTissueMap(scene, map, middleCellId(probe) ?? map.cells[0]?.id ?? '');
 }
 
-/** Each zoomable tab's starting zoom: the single cell about half the canvas across, the tissue's centre cell a third. */
+/** Each zoomable tab's starting zoom: the single cell about half the canvas across. */
 const DEFAULT_ZOOM: Partial<Record<ModuleKind, number>> = {
-  moa: 0.6, combination: 0.6, toxicity: 0.6, tissue: 0.75,
+  moa: 0.6, combination: 0.6, toxicity: 0.6,
 };
 
 /**
@@ -145,10 +144,10 @@ export function moduleScene(kind: ModuleKind, seed = 1234): Scene {
   s.module = defaultModule(kind);
   s.name = moduleInfo(kind).label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   if (ZOOM_VIEWS.includes(kind)) {
-    // Tabs 1–4: a square canvas, zoomed out so the cells round the centre cell show.
+    // Tabs 1–3: a square canvas, zoomed out so the cells round the centre cell show.
     s.canvas = { ...s.canvas, width: 2000, height: 2000 };
     s.module.zoom = DEFAULT_ZOOM[kind] ?? 1;
-    if (kind !== 'tissue') s.cell.neighbours = { ...s.cell.neighbours, show: true };
+    s.cell.neighbours = { ...s.cell.neighbours, show: true };
   }
   if (TRACED.includes(kind)) {
     s.animation = { ...s.animation, cometSize: TRACED_COMET_SIZE };
@@ -161,8 +160,7 @@ export function moduleScene(kind: ModuleKind, seed = 1234): Scene {
   }
   // Motion that never stops, so the network keeps moving over the video.
   if (kind === 'realCell') s.animation = { ...s.animation, continuous: true };
-  if (kind === 'tissue') s.cellMap = tissueMap();
-  if (kind === 'crossTissue') return withOrganicTissue(s, seed);
+  if (kind === 'tissue' || kind === 'crossTissue') return withOrganicTissue(s, seed);
   if (kind === 'journey') {
     // The tissue the cell zooms out into; motion that never stops, for a scroll sequence.
     s.cellMap = { ...tissueMap(), detailScale: 0.4 };
@@ -205,7 +203,7 @@ export function linkTraced(from: Scene, to: Scene): Scene {
     seed: from.seed !== to.seed && !p.locked ? hash(from.seed, 'pathway', i + 1) : p.seed,
     layers: from.sameLayersForAll ? withStructureOf(p.layers, first.layers) : p.layers,
   }));
-  const { zoom, focusDeg, routes, trips, markTargets, targetColor } = from.module;
+  const { zoom, trips, markTargets, targetColor } = from.module;
   return {
     ...to,
     seed: from.seed,
@@ -218,7 +216,7 @@ export function linkTraced(from: Scene, to: Scene): Scene {
     sameLayersForAll: from.sameLayersForAll,
     cellMap: from.cellMap,
     pathways: [{ ...first, startDelay: to.pathways[0].startDelay }, ...added],
-    module: { ...to.module, zoom, focusDeg, routes, trips, markTargets, targetColor },
+    module: { ...to.module, zoom, trips, markTargets, targetColor },
   };
 }
 
@@ -237,97 +235,35 @@ function degsByPathway(nodes: NodeGeom[]): Map<string, NodeGeom[]> {
   return out;
 }
 
-/** How many active DEGs the first pathway has (the range of the traced DEG control). */
-export function degCount(scene: Scene): number {
-  const layers = scene.pathways[0]?.layers ?? [];
-  return Math.max(1, layers[layers.length - 1]?.activeCount ?? 1);
-}
-
-interface Traced { nodes: Set<string>; edges: Set<string> }
-
-/**
- * Walk back from a DEG to its receptor, one incoming edge at a time. Later
- * routes prefer proteins not yet used, so they show other ways the signal can
- * arrive; `avoid` is a trace this one should differ from wherever it can.
- */
-function traceRoutes(deg: string, into: Map<string, EdgeGeom[]>, routes: number, rng: Rng, avoid?: Traced): Traced {
-  const nodes = new Set([deg]);
-  const edges = new Set<string>();
-  for (let r = 0; r < routes; r++) {
-    let id = deg;
-    for (let guard = 0; guard < 16; guard++) {
-      const ins = into.get(id) ?? [];
-      if (!ins.length) break;
-      const newEdge = ins.filter((e) => !avoid?.edges.has(e.id));
-      const fresh = newEdge.filter((e) => !nodes.has(e.from));
-      const pool = [fresh.filter((e) => !avoid?.nodes.has(e.from)), fresh, newEdge, ins].find((p) => p.length)!;
-      const e = pool[Math.floor(rng() * pool.length)];
-      edges.add(e.id);
-      nodes.add(e.from);
-      id = e.from;
-    }
-  }
-  return { nodes, edges };
-}
+/** Target toxicity's own wiring: the same layer settings and receptor, a different signalling pathway. */
+export const withToxicPathway = (scene: Scene): Scene => ({
+  ...scene,
+  pathways: scene.pathways.map((p) => ({ ...p, seed: hash(p.seed, 'toxic') })),
+});
 
 /**
  * The module's view of a scene's geometry. Pure: new node, edge and receptor
  * objects where anything changes, the input untouched.
  *
- * - Traced routes (tabs 1–3): one to three routes into one DEG (receptor → one
- *   protein per layer → DEG) are always on, in the gradient; the rest of the
- *   network is not drawn.
- * - Toxicity: the route ends at a different DEG, marked toxic, and takes
- *   different proteins from the route of tab 1 wherever it can.
+ * - Tabs 1–3: every active protein and line of the pathway, always on in the
+ *   gradient, carrying a pulse back and forth.
+ * - Toxicity: one DEG of each pathway is marked toxic.
  * - Drug targets: each pathway's own receptor is marked.
  */
 export function applyModule(scene: Scene, g: SceneGeom): SceneGeom {
   const m = scene.module;
   const kind = m.kind;
-  const toxicity = kind === 'toxicity';
-  const traced = toxicity || (TRACED.includes(kind) && m.focusDeg > 0);
-  const mark = m.markTargets && TRACED.includes(kind);
-  if (!traced && !mark) return g;
+  if (!TRACED.includes(kind)) return g;
 
   let nodes = g.nodes;
-  let edges = g.edges;
-
-  if (traced) {
-    const into = new Map<string, EdgeGeom[]>();
-    for (const e of edges) {
-      if (e.crosstalk || e.link) continue;
-      const list = into.get(e.to) ?? [];
-      list.push(e);
-      into.set(e.to, list);
-    }
-    const route = new Set<string>();
-    const routeEdges = new Set<string>();
-    const toxicIds = new Set<string>();
-    const routes = Math.max(1, Math.min(3, Math.round(m.routes)));
-    const focusDeg = Math.max(1, m.focusDeg);
-    for (const [pid, list] of degsByPathway(nodes)) {
-      // An added pathway of the combination ends at the DEG straight ahead of its receptor, clear of the first.
-      const added = kind === 'combination' && pid !== g.pathways[0]?.id;
-      const ahead = [...list].sort((a, b) => Math.abs(a.lateral) - Math.abs(b.lateral))[0];
-      const focus = added ? ahead : list[Math.min(focusDeg, list.length) - 1];
-      let target = focus;
-      let found = traceRoutes(focus.id, into, routes, rngFor(scene.seed, 'route', pid, focusDeg));
-      if (toxicity) {
-        // The DEG furthest along the row from the one tab 1 traces.
-        target = focus === list[list.length - 1] ? list[0] : list[list.length - 1];
-        toxicIds.add(target.id);
-        found = traceRoutes(target.id, into, routes, rngFor(scene.seed, 'toxic-route', pid), found);
-      }
-      found.nodes.forEach((id) => route.add(id));
-      found.edges.forEach((id) => routeEdges.add(id));
-    }
-    // Only the traced routes are drawn: no greyed-out network behind them.
-    nodes = nodes.filter((n) => route.has(n.id)).map((n) => (toxicIds.has(n.id) ? { ...n, toxic: true } : n));
-    edges = edges.filter((e) => routeEdges.has(e.id)).map((e) => ({ ...e, traced: true }));
+  const edges = g.edges.map((e) => ({ ...e, traced: true }));
+  if (kind === 'toxicity') {
+    const toxic = new Set([...degsByPathway(nodes).values()].map((list) => list[list.length - 1].id));
+    nodes = nodes.map((n) => (toxic.has(n.id) ? { ...n, toxic: true } : n));
   }
 
   let receptors = g.receptors;
-  if (mark) {
+  if (m.markTargets) {
     // A pathway's own receptor, not a relay receptor or a decorative one.
     const own = (r: ReceptorGeom) => r.pathwayId !== null && r.id === `receptor-${r.pathwayId}`;
     receptors = receptors.map((r) => (own(r) ? { ...r, target: true } : r));

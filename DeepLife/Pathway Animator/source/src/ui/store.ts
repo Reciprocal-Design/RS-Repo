@@ -9,10 +9,28 @@ import { withStructureOf } from '../core/layers';
 import { onBodyImage } from '../core/bodyImage';
 import { linkTraced, MODULES, moduleScene, shareScene, TRACED, withHero, withoutTissueMap, withTissueMap, type TissueUpload } from '../core/modules';
 import { hash, randomSeed } from '../core/rng';
+import { importCellMapSvg } from '../core/svgImport';
+import defaultMapSvg from '../assets/default-tissue-map.svg?raw';
 import type { CellMap, LayerSpec, Pathway, Scene, Vec2 } from '../core/types';
 
+/** Put a tissue map into every tab, its middle cell selected. */
+function withSharedMap(tabs: Scene[], from: Scene, map: TissueUpload): Scene[] {
+  const probe = { ...from, cellMap: { ...defaultCellMap(), viewBox: map.viewBox, cells: map.cells } };
+  const hero = middleCellId(probe) ?? map.cells[0]?.id ?? '';
+  return tabs.map((s) => withTissueMap(s, map, hero));
+}
+
+/** The tissue map the app opens with. */
+const DEFAULT_MAP_NAME = 'SVG Map 2.svg';
+function openingTabs(): Scene[] {
+  const tabs = MODULES.map((m) => moduleScene(m.kind, 1234));
+  if (typeof DOMParser === 'undefined') return tabs;
+  const { viewBox, cells } = importCellMapSvg(defaultMapSvg, 1);
+  return withSharedMap(tabs, tabs[0], { name: DEFAULT_MAP_NAME, viewBox, cells });
+}
+
 /** One scene per module tab, all from the same seed so they show the same pathway. */
-const TABS = MODULES.map((m) => moduleScene(m.kind, 1234));
+const TABS = openingTabs();
 
 interface AppState {
   /** One scene per module tab; `scene` is always `tabs[active]`. */
@@ -161,9 +179,7 @@ export const useApp = create<AppState>((set) => ({
     }),
   setTissueMap: (map) =>
     set((st) => {
-      const probe = { ...st.scene, cellMap: { ...defaultCellMap(), viewBox: map.viewBox, cells: map.cells } };
-      const hero = middleCellId(probe) ?? map.cells[0]?.id ?? '';
-      const tabs = st.tabs.map((s) => withTissueMap(s, map, hero));
+      const tabs = withSharedMap(st.tabs, st.scene, map);
       return { tabs, scene: tabs[st.active] };
     }),
   setHeroCell: (id) =>

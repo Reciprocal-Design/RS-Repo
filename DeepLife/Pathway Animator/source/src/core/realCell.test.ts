@@ -37,13 +37,14 @@ describe('virtual → real cell', () => {
 
   it('discovers inactive nodes, joined by new edges, without moving or changing anything else', () => {
     const s = view();
-    const before = buildGeometry(defaultScene(7));
+    // The settings' layers, all active, with room for one node more in each.
+    const roomy = defaultScene(7);
+    roomy.pathways = roomy.pathways.map((p) => ({ ...p, layers: p.layers.map((l, i) => (i ? { ...l, nodeCount: l.nodeCount + 1 } : l)) }));
+    const before = buildGeometry(roomy);
     const g = buildGeometry(realCellNet(s));
     const found = g.nodes.filter((n) => n.discoverAt !== undefined);
-    // One more node in each layer after the receptor (as many as had an inactive node to give).
-    const layers = defaultScene(7).pathways[0].layers;
-    const spare = layers.slice(1).filter((l) => l.nodeCount > l.activeCount).length;
-    expect(found.length).toBe(spare);
+    // One more node in each layer after the receptor.
+    expect(found.length).toBe(defaultScene(7).pathways[0].layers.length - 1);
     for (const n of found) {
       const was = before.nodeById.get(n.id)!;
       expect(was.active).toBe(false);

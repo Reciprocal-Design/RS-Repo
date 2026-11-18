@@ -3,7 +3,7 @@ import { buildDisplayList } from '../render/displayList';
 import { heroView, journeyScenes } from '../render/journey';
 import { neighbourCells, rotateMap, singleCellView } from './cellMap';
 import { buildGeometry } from './geometry';
-import { moduleScene, withHero, withoutTissueMap, withTissueMap, type TissueUpload } from './modules';
+import { moduleScene, tissueMap, withHero, withoutTissueMap, withTissueMap, type TissueUpload } from './modules';
 import { ORGANIC_NAME, organicTissue } from './organic';
 import { pointInPolygon } from './polygon';
 import { parseSceneJson, serializeScene } from './sceneIO';
@@ -39,6 +39,22 @@ const bbox = (pts: { x: number; y: number }[]) => {
 };
 
 describe('a shared tissue map', () => {
+  it('shows the pathway of tab 1 unchanged in tab 2, on the selected cell of a map', () => {
+    const shape = (s: Scene) => JSON.stringify(buildGeometry(s).edges.filter((e) => e.pathwayId === 'p1').map((e) => [e.id, e.bezier]));
+    expect(shape(view('combination'))).toBe(shape(view('moa')));
+  });
+
+  it('gives every cell of a tissue the layer settings of the tab', () => {
+    const s = view('tissue', 'c1');
+    const g = buildGeometry(s);
+    const cells = new Set(g.nodes.map((n) => /^(c\d+)-p1-L/.exec(n.id)?.[1]).filter(Boolean));
+    expect(cells.size).toBeGreaterThan(3);
+    for (const c of cells) {
+      const row = (l: number) => g.nodes.filter((n) => n.id.startsWith(`${c}-p1-L`) && n.layer === l && n.active).length;
+      expect([1, 2, 3, 4].map(row)).toEqual([4, 4, 3, 3]);
+    }
+  });
+
   it('shows only the selected cell, as the single cell, in the single-cell views', () => {
     for (const kind of ['moa', 'combination', 'toxicity'] as const) {
       const s = view(kind);
@@ -68,18 +84,23 @@ describe('a shared tissue map', () => {
     expect(buildGeometry(view('combination')).receptors.filter((r) => r.target).length).toBe(2);
   });
 
-  it('shows the whole map in the tissue view, the selected cell in the middle and starting the signal', () => {
+  it('lays the tissue view out as the cross-tissue view, all in one colour', () => {
     const s = view('tissue', 'c1');
     const g = buildGeometry(s);
+    const cross = view('crossTissue', 'c1');
+    const other = buildGeometry(cross);
+    expect([s.canvas.width, s.canvas.height]).toEqual([cross.canvas.width, cross.canvas.height]);
     expect(g.cells).toHaveLength(9);
-    const hero = g.cells.find((c) => c.hero)!;
-    expect(hero.id).toBe('c1');
-    expect(hero.cell.center.x).toBeCloseTo(s.canvas.width / 2, 0);
-    expect(hero.cell.center.y).toBeCloseTo(s.canvas.height / 2, 0);
+    expect(g.cells.find((c) => c.hero)!.id).toBe('c1');
     expect(g.pathways.filter((p) => !p.relayOnly).map((p) => p.id)).toEqual(['p1']);
-    // Not centred: the map sits as drawn.
-    const fitted = buildGeometry({ ...s, cellMap: { ...s.cellMap, centerHero: false } });
-    expect(fitted.cells.find((c) => c.hero)!.cell.center.x).toBeLessThan(s.canvas.width / 2);
+    // The same cells and networks in the same places.
+    const places = (x: typeof g) => JSON.stringify(x.nodes.map((n) => [n.id, n.x, n.y]));
+    expect(places(g)).toBe(places(other));
+    expect(s.cellMap.relayHops).toBe(cross.cellMap.relayHops);
+    // One colour here; the two colours stay on the cross-tissue view.
+    expect(g.cells.some((c) => c.glow)).toBe(false);
+    expect(g.edges.some((e) => e.weight)).toBe(false);
+    expect(other.cells.some((c) => c.glow)).toBe(true);
   });
 
   it('selects another cell everywhere, and goes back to each view\'s own cell', () => {
@@ -90,7 +111,7 @@ describe('a shared tissue map', () => {
     expect(withHero(moved, 'nope').cellMap.heroId).toBe('c2');
     expect(a).toBeDefined();
     expect(withoutTissueMap(view('moa')).cellMap.cells).toHaveLength(0);
-    expect(withoutTissueMap(view('tissue')).cellMap.around).toBe(true);
+    expect(withoutTissueMap(view('tissue')).cellMap.name).toBe(ORGANIC_NAME);
     // Saved and loaded with the selection.
     const loaded = parseSceneJson(serializeScene(view('moa', 'c3')));
     expect(loaded.cellMap).toMatchObject({ heroId: 'c3', solo: true });
@@ -141,7 +162,10 @@ describe('a shared tissue map', () => {
 });
 
 describe('the tissue view zoomed in on the selected cell', () => {
-  const big = () => withTissueMap(classic('tissue'), grid(9), 'c41'); // the middle of a 9 × 9 map
+  const big = (): Scene => {
+    const s = withTissueMap(classic('tissue'), grid(9), 'c41'); // the middle of a 9 × 9 map
+    return { ...s, cellMap: { ...s.cellMap, centerHero: true, rings: 2 } };
+  };
 
   it('shows the selected cell and two cells beyond it along the short side', () => {
     const s = big();
@@ -321,7 +345,7 @@ describe('turning an uploaded map', () => {
     expect(r.cells[0].membrane.slice(0, 2)).toEqual([248, -48]);
     // Ids, seeds, the selected cell and the view's settings stay.
     expect(r.cells.map((c) => [c.id, c.seed])).toEqual(s.cellMap.cells.map((c) => [c.id, c.seed]));
-    expect(r).toMatchObject({ heroId: 'c2', centerHero: true, rings: 2 });
+    expect(r).toMatchObject({ heroId: 'c2', startShare: 0, relayHops: 8 });
   });
 
   it('comes back exactly after four quarter turns, or back to 0', () => {
@@ -357,7 +381,7 @@ describe('turning an uploaded map', () => {
   });
 
   it('leaves a generated tissue alone', () => {
-    const t = moduleScene('tissue', 7).cellMap;
+    const t = tissueMap();
     expect(rotateMap(t, 90)).toBe(t);
   });
 });

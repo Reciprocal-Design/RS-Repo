@@ -19,6 +19,7 @@ describe('SVG export', () => {
   it('has named groups, one gradient per edge, and no raster content', () => {
     const s = multi(3);
     s.style.showInactiveNodes = true;
+    s.pathways = s.pathways.map((p) => ({ ...p, layers: p.layers.map((l, i) => (i ? { ...l, nodeCount: l.nodeCount + 1 } : l)) }));
     const svg = displayListToSvg(buildDisplayList(s, 0, { signal: false }));
     const g = buildGeometry(s);
     for (const id of ['membrane', 'nucleus', 'receptors', 'edges', 'crosstalk', 'nodes-active', 'nodes-inactive']) {
@@ -112,6 +113,7 @@ describe('inactive nodes', () => {
     expect(defaultScene(21).style.showInactiveNodes).toBe(false);
     const s = defaultScene(21);
     s.style.showInactiveNodes = true;
+    s.pathways = s.pathways.map((p) => ({ ...p, layers: p.layers.map((l, i) => (i ? { ...l, nodeCount: l.nodeCount + 1 } : l)) }));
     const shown = buildDisplayList(s, 0).prims;
     expect(shown.some((p) => p.group === 'nodes-inactive')).toBe(true);
     const hidden = buildDisplayList({ ...s, style: { ...s.style, showInactiveNodes: false } }, 0).prims;

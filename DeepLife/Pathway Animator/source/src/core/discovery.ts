@@ -1,8 +1,9 @@
+import { MAX_NODES } from './layers';
 import type { Scene, SceneGeom } from './types';
 
 // The real-cell view's network: the pathway as it is, plus what the real
-// cell reveals. Each layer gains a few of its inactive nodes (the ones the
-// layout would make active next), joined to the network by the edges the
+// cell reveals. Each layer gains a few nodes, inactive until then (spare ones
+// are added to any layer that is all active), joined to the network by the edges the
 // pathway would give them. Nothing that was there moves or changes: the new
 // nodes and edges are only added, each with the point in the discovery
 // (0–1) at which it appears.
@@ -14,12 +15,20 @@ import type { Scene, SceneGeom } from './types';
  */
 export function buildDiscoveryGeometry(scene: Scene, build: (s: Scene) => SceneGeom): SceneGeom {
   const plain: Scene = { ...scene, module: { ...scene.module, kind: 'custom' } };
-  const before = build(plain);
   const extra = Math.max(0, Math.round(scene.module.newNodes));
-  if (!extra) return before;
-  const more: Scene = {
+  if (!extra) return build(plain);
+  // Room in every layer for the nodes still to be found.
+  const roomy: Scene = {
     ...plain,
     pathways: plain.pathways.map((p) => ({
+      ...p,
+      layers: p.layers.map((l, i) => (i === 0 ? l : { ...l, nodeCount: Math.min(MAX_NODES, Math.max(l.nodeCount, l.activeCount + extra)) })),
+    })),
+  };
+  const before = build(roomy);
+  const more: Scene = {
+    ...roomy,
+    pathways: roomy.pathways.map((p) => ({
       ...p,
       layers: p.layers.map((l, i) => (i === 0 ? l : { ...l, activeCount: Math.min(l.nodeCount, l.activeCount + extra) })),
     })),

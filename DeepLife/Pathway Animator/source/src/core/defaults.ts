@@ -13,7 +13,7 @@ export function defaultCellMap(): CellMap {
     links: { enabled: true, amount: 1 },
     relayHops: 3,
     startShare: 1,
-    variation: 0.4,
+    variation: 0,
     around: false,
     heroId: '',
     solo: false,
@@ -28,8 +28,6 @@ export function defaultModule(kind: ModuleKind = 'custom'): ModuleSettings {
     kind,
     markTargets: kind === 'moa' || kind === 'combination' || kind === 'toxicity',
     targetColor: '#FFFFFF',
-    focusDeg: 1,
-    routes: 3,
     trips: 2,
     toxicColor: '#FF2B45',
     organ: 'heart',
@@ -75,10 +73,10 @@ export const CANVAS_PRESETS = [
 export function defaultLayers(): LayerSpec[] {
   return [
     { region: 'membrane', nodeCount: 1, activeCount: 1 },
-    { region: 'cytoplasm', nodeCount: 5, activeCount: 4 },
-    { region: 'cytoplasm', nodeCount: 6, activeCount: 4 },
-    { region: 'nucleus', nodeCount: 6, activeCount: 3 },
-    { region: 'nucleus', nodeCount: 6, activeCount: 3 },
+    { region: 'cytoplasm', nodeCount: 4, activeCount: 4 },
+    { region: 'cytoplasm', nodeCount: 4, activeCount: 4 },
+    { region: 'nucleus', nodeCount: 3, activeCount: 3 },
+    { region: 'nucleus', nodeCount: 3, activeCount: 3 },
   ];
 }
 
@@ -95,7 +93,7 @@ export function makePathway(sceneSeed: number, index: number, layers = defaultLa
 }
 
 export const DEFAULT_ANIMATION: AnimationSettings = {
-  layerDuration: 0.9,
+  layerDuration: 0.5,
   nucleusSpeedFactor: 1.4,
   easing: 'linear',
   pathwayStagger: 0.6,

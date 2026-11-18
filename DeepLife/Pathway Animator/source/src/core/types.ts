@@ -121,10 +121,6 @@ export interface ModuleSettings {
   /** Ring each pathway receptor as a drug target. */
   markTargets: boolean;
   targetColor: string;
-  /** Target identification and MOA, target combination: the DEG whose route is traced (1 = leftmost active DEG; 0 = every DEG). */
-  focusDeg: number;
-  /** Traced tabs: how many routes into the DEG are traced (1–3), each one protein per layer. */
-  routes: number;
   /** Traced tabs: how many times the signal runs back and forth between the nucleus and the receptor. */
   trips: number;
   /** Target toxicity: the colour of the toxic DEG, the red dot in the nucleus. */
@@ -256,7 +252,7 @@ export interface NodeGeom {
 export type Bezier = [Vec2, Vec2, Vec2, Vec2];
 
 export interface EdgeGeom {
-  /** On a traced route (tabs 1–3): always drawn in the gradient, with a pulse running back and forth along it. */
+  /** In a traced pathway (tabs 1–3): always drawn in the gradient, with a pulse running back and forth along it. */
   traced?: boolean;
   id: string;
   from: string;

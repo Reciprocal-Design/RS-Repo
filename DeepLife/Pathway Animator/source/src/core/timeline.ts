@@ -34,6 +34,8 @@ export interface Schedule {
   signalEnd: number;
   /** Full cycle length: signal, hold, and (when looping) the fade back to base. */
   total: number;
+  /** Seconds a lit edge stays lit after its comet passes (shortened when continuous motion needs it). */
+  litHold: number;
   /**
    * Continuous mode: every event repeats with this period (= total), so the
    * end of the signal runs on into the start of the next loop. 0 otherwise.
@@ -63,7 +65,7 @@ export function buildSchedule(scene: Scene): Schedule {
     // The journey and the real-cell view run their own timelines
     // (render/journey.ts, render/realCell.ts): five equal sections.
     const total = 5 * Math.max(0.5, scene.module.sectionLength);
-    const empty: Schedule = { fire: new Map(), arrivals: new Map(), runs: new Map(), pulses: new Map(), edges: [], signalEnd: total, total, period: 0 };
+    const empty: Schedule = { fire: new Map(), arrivals: new Map(), runs: new Map(), pulses: new Map(), edges: [], signalEnd: total, total, litHold: 0, period: 0 };
     cache.set(scene, empty);
     return empty;
   }
@@ -228,10 +230,11 @@ export function buildSchedule(scene: Scene): Schedule {
   const runs = new Map<string, { start: number; end: number }[]>();
   for (const r of byRun.values()) push(runs, r.pid, { start: r.start, end: r.end });
 
+  const litHold = a.continuous ? continuousHold(edges, trail, Math.max(0, a.holdAtEnd)) : Math.max(0, a.holdAtEnd);
   const total = tracedLoop ? tracedLoop : a.continuous
-    ? continuousPeriod(edges, trail, Math.max(0, a.holdAtEnd), a.density ?? 0)
+    ? continuousPeriod(edges, trail, litHold, a.density ?? 0)
     : signalEnd + Math.max(0, a.holdAtEnd) + (a.loop ? FADE_OUT : 0);
-  const schedule: Schedule = { fire, arrivals, runs, pulses, edges, signalEnd, total, period: tracedLoop || a.continuous ? total : 0 };
+  const schedule: Schedule = { fire, arrivals, runs, pulses, edges, signalEnd, total, litHold, period: tracedLoop || a.continuous ? total : 0 };
   cache.set(scene, schedule);
   return schedule;
 }
@@ -242,6 +245,18 @@ export const loops = (scene: Scene) => scene.animation.loop || scene.animation.c
 /** Seconds since an event at `at`, wrapped onto the period in continuous mode. */
 export const since = (tau: number, at: number, period: number) =>
   period > 0 ? ((((tau - at) % period) + period) % period) : tau - at;
+
+/**
+ * Continuous mode's lit hold: no longer than fits inside the signal's own span.
+ * A longer hold would stretch the loop past the signal, leaving a stretch with
+ * no comet running (a fast signal on a short pathway).
+ */
+export function continuousHold(edges: EdgeTiming[], trail: number, hold: number): number {
+  if (!edges.length) return hold;
+  const span = Math.max(...edges.map((e) => e.start + e.duration)) - Math.min(...edges.map((e) => e.start));
+  const edge = Math.max(...edges.map((e) => e.duration * (1 + trail)));
+  return Math.max(0, Math.min(hold, span - edge - FADE_OUT - 0.05));
+}
 
 /**
  * Continuous mode's loop length. Every event repeats with the period, so a

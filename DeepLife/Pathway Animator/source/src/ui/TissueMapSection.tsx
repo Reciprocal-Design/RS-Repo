@@ -33,7 +33,7 @@ export function TissueMapSection() {
   const what = SINGLE_CELL.includes(kind)
     ? 'This view shows the selected cell on its own.'
     : kind === 'tissue'
-      ? 'This view shows the whole map, the selected cell in the middle.'
+      ? 'This view shows the whole map; the signal starts in the selected cell.'
       : kind === 'crossTissue'
         ? 'This view shows the map twice, side by side; the signal starts in the selected cell.'
         : 'The sequence starts on the selected cell, then pulls back to the whole map.';
@@ -96,7 +96,7 @@ export function TissueMapSection() {
       ) : (
         <p className="hint">
           One SVG of the tissue (each cell's membrane and nucleus as closed shapes) for every view: tabs 1–3 show the
-          cell you select in it, tab 4 the whole map round that cell, tab 5 the map twice, side by side.
+          cell you select in it, tabs 4 and 5 the whole map, the signal starting in that cell.
         </p>
       )}
     </Section>

@@ -13,10 +13,10 @@ const COMBINATION_DEPTH = 0.3;
 /** Target combination: how wide the added pathway's rows are, relative to the first. */
 const COMBINATION_WIDTH = 0.55;
 
-/** The views (tabs 1–4) that can zoom out round their centre cell. */
-export const ZOOM_VIEWS: ModuleKind[] = ['moa', 'combination', 'toxicity', 'tissue'];
+/** The views (tabs 1–3) that can zoom out round their centre cell. */
+export const ZOOM_VIEWS: ModuleKind[] = ['moa', 'combination', 'toxicity'];
 
-/** The scene's zoom about its centre cell: the module's zoom in tabs 1–4, otherwise 1. */
+/** The scene's zoom about its centre cell: the module's zoom in tabs 1–3, otherwise 1. */
 export const viewZoom = (scene: Scene): number =>
   ZOOM_VIEWS.includes(scene.module.kind) ? Math.max(0.05, scene.module.zoom ?? 1) : 1;
 const polar = (c: Vec2, r: number, th: number): Vec2 => ({ x: c.x + Math.cos(th) * r, y: c.y + Math.sin(th) * r });
