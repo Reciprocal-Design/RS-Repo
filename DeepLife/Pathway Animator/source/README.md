@@ -72,8 +72,8 @@ cell or generated tissue.
 8. **Cell → tissue → body** (`src/render/journey.ts`): the website's scroll sequence, in five sections of equal
    length: cell, cell → tissue (the camera pulls back from the centre cell as the neighbours fade in),
    tissue (zoomed in just enough that tissue fills the frame, no edge of the cell layer showing; "Tissue zoom"
-   goes closer or pulls back), tissue → body (the whole tissue shrinks into one dot of the body, on the chosen organ, as the body fades in round it),
-   body (its dots fire with no lines between them; the tissue stays alive inside its dot). The tissue is the generated one round the single cell, or an SVG map imported under Cell map: then the
+   goes closer or pulls back), tissue → body (the whole tissue comes inside a circle, which shrinks to one white dot of the body, on the chosen organ, as the body fades in round it),
+   body (its dots fire with no lines between them). The tissue is the generated one round the single cell, or an SVG map imported under Cell map: then the
    cell nearest the map's middle is the centre cell, shown alone at the single cell's size to start with (every
    other cell, and the links to them, faded out) and starting the signal. The tissue layer fades out towards its
    edges, so it never ends in a hard cut. Layout: "Mobile · landscape" (1920 × 1080) or "Desktop · portrait"

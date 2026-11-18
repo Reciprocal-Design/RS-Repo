@@ -106,23 +106,31 @@ describe('journey', () => {
     }
   });
 
-  it('shrinks the whole tissue into one dot of the body, and keeps it there', () => {
+  it('shrinks the circle holding the whole tissue to one white dot of the body', () => {
     const s = moduleScene('journey', 7);
     const L = s.module.sectionLength;
     const dot = tissueDot(s);
-    // The dot starts larger than the frame, so nothing of the tissue section is cut.
+    // The circle starts larger than the frame, so nothing of the tissue section is cut.
     const first = journeyState(s, 3 * L + 1e-6);
     expect(first.dot.r).toBeGreaterThan(Math.hypot(s.canvas.width, s.canvas.height) / 2);
-    // From halfway through the section the whole tissue fits inside the dot.
-    for (const u of [0.5, 0.75, 1]) {
-      const st = journeyState(s, (3 + u) * L - 1e-6);
+    expect(first.dot.white).toBe(0);
+    // From halfway through the section the whole tissue fits inside it.
+    for (const u of [0.5, 0.7, 0.9]) {
+      const st = journeyState(s, (3 + u) * L);
       expect(dot.tissueRadius * st.tissue.zoom).toBeLessThan(st.dot.r);
     }
+    // White before the tissue has gone, the size of a body dot as the section ends.
+    const late = journeyState(s, 3.93 * L);
+    expect(late.dot.white).toBe(1);
+    expect(late.tissue.alpha).toBe(0);
+    const last = journeyState(s, 4 * L - 1e-6);
+    expect(last.dot.r).toBeCloseTo(dot.nodeR, 3);
+    expect(last.dot.at.x).toBeCloseTo(dot.c.x, 3);
+    expect(last.dot.alpha).toBeCloseTo(0, 3);
+    // In the body section only the body's own dot is left.
     const end = journeyState(s, 5 * L - 1e-6);
-    expect(end.tissue.alpha).toBe(1);
-    expect(end.dot).toMatchObject({ at: dot.c, r: dot.r, alpha: 1 });
-    expect(end.tissue.at).toEqual(dot.c);
-    expect(end.tissue.origin).toEqual(dot.tissueCenter);
+    expect(end.tissue.alpha).toBe(0);
+    expect(end.dot.alpha).toBe(0);
   });
 
   it('can draw the body without the lines between its dots, the dots still firing', () => {

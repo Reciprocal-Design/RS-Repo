@@ -14,11 +14,10 @@ import { buildDisplayList } from './displayList';
 //                    the single cell's size; neighbours hidden
 //   2 Cell → tissue  the camera pulls back and the neighbours fade in
 //   3 Tissue         the tissue round the cell
-//   4 Tissue → body  the camera keeps pulling back: the whole tissue shrinks
-//                    into one dot of the body, on the chosen organ, as the
-//                    body fades in round it
-//   5 Body           the body and its dots, firing without lines between
-//                    them, the tissue still alive inside its dot
+//   4 Tissue → body  the camera keeps pulling back: the whole tissue comes
+//                    inside a circle, which shrinks to one white dot of the
+//                    body, on the chosen organ, as the body fades in round it
+//   5 Body           the body and its dots, firing without lines between them
 //
 // Each layer (tissue, body) is its own scene, drawn with its own signal and
 // a camera transform, into an offscreen layer that is faded onto the frame.
@@ -32,12 +31,14 @@ import { buildDisplayList } from './displayList';
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
 export const JOURNEY_SECTIONS = ['Cell', 'Cell → tissue', 'Tissue', 'Tissue → body', 'Body'];
-/** The dot that holds the tissue: its radius as a share of the body's height. */
+/** The circle that holds the tissue: its radius as a share of the body's height. */
 const DOT_SIZE = 0.03;
-/** The whole tissue's radius as a share of the dot's, once it is inside. */
+/** The whole tissue's radius as a share of the circle's, once it is inside. */
 const DOT_FILL = 0.94;
-/** Share of section 4 by which the whole tissue has come inside the dot. */
+/** Share of section 4 by which the whole tissue has come inside the circle. */
 const DOT_SETTLE = 0.5;
+/** Share of section 4 after which the circle shrinks to the size of a body dot. */
+const DOT_SHRINK = 0.55;
 
 const scenes = new WeakMap<Scene, { tissue: Scene; body: Scene }>();
 /** A portrait canvas: the cell and tissue are turned 90° onto it. */
@@ -81,8 +82,8 @@ export interface JourneyState {
   section: number;
   tissue: Camera & { neighbours: number };
   body: Camera;
-  /** The dot round the tissue, on screen (none before section 4). */
-  dot: { at: Vec2; r: number; alpha: number };
+  /** The circle round the tissue, on screen (only in section 4); `white` is how far it has filled in. */
+  dot: { at: Vec2; r: number; alpha: number; white: number };
 }
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
@@ -188,13 +189,17 @@ export function tissueView(scene: Scene): { center: Vec2; zoom: number } {
   return view;
 }
 
-/** The body's dot that holds the tissue, and the tissue's centre and radius as it sits inside. */
+/**
+ * The circle that holds the tissue, the radius of the body dot it shrinks to,
+ * and the tissue's centre and radius as it sits inside.
+ */
 export function tissueDot(scene: Scene) {
-  const { tissue } = journeyScenes(scene);
+  const { tissue, body } = journeyScenes(scene);
   const e = mapExtent(tissue);
   return {
     c: organCenter(scene, scene.module.organ),
     r: DOT_SIZE * bodyTransform(scene).h,
+    nodeR: scene.style.activeNodeRadius * buildGeometry(body).scale,
     tissueCenter: { x: e.x + e.w / 2, y: e.y + e.h / 2 },
     tissueRadius: Math.max(e.w, e.h) / 2,
   };
@@ -217,7 +222,7 @@ export function journeyState(scene: Scene, tau: number): JourneyState {
 
   const tissue = { at: C, origin: tv.center, zoom: tv.zoom, alpha: 1, neighbours: 1, turn: isPortrait(scene) };
   const body = { at: C, origin: A, zoom: startZoom, alpha: 0 };
-  const ring = { at: C, r: dot.r * startZoom, alpha: 0 };
+  const ring = { at: C, r: dot.r * startZoom, alpha: 0, white: 0 };
   if (section === 0) {
     // The centre cell alone, centred, at the single cell's size.
     tissue.origin = hero.center;
@@ -234,9 +239,12 @@ export function journeyState(scene: Scene, tau: number): JourneyState {
     body.at = lerp(C, A, e);
     body.alpha = smooth(0.1, 0.6, u);
     ring.at = body.at;
-    ring.r = dot.r * body.zoom;
-    ring.alpha = smooth(0.05, 0.35, u);
-    // The tissue pulls back inside the dot, then rides it down to its place in the body.
+    ring.r = dot.r * (dot.nodeR / dot.r) ** ease((u - DOT_SHRINK) / (1 - DOT_SHRINK)) * body.zoom;
+    // Filled white as it shrinks, then handing over to the body's own dot beneath it.
+    ring.white = smooth(0.6, 0.9, u);
+    ring.alpha = smooth(0.05, 0.35, u) * (1 - smooth(0.95, 1, u));
+    tissue.alpha = 1 - smooth(0.8, 0.93, u);
+    // The tissue pulls back inside the circle, then rides it down to its place in the body.
     const v = ease(u / DOT_SETTLE);
     const from = (tv.zoom * dot.tissueRadius) / (dot.r * startZoom);
     tissue.origin = lerp(tv.center, dot.tissueCenter, v);
@@ -247,11 +255,12 @@ export function journeyState(scene: Scene, tau: number): JourneyState {
     body.at = A;
     body.alpha = 1;
     ring.at = A;
-    ring.r = dot.r;
-    ring.alpha = 1;
+    ring.r = dot.nodeR;
+    ring.white = 1;
     tissue.origin = dot.tissueCenter;
-    tissue.zoom = (DOT_FILL * dot.r) / dot.tissueRadius;
+    tissue.zoom = (DOT_FILL * dot.nodeR) / dot.tissueRadius;
     tissue.at = A;
+    tissue.alpha = 0;
   }
   return { section, tissue, body, dot: ring };
 }
@@ -351,10 +360,10 @@ export function drawJourney(ctx: Ctx, scene: Scene, t: number, opts: CanvasDrawO
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-  // The body first, with a hole where the dot is: the tissue shows through it.
+  // The body first, with a hole where the circle is while the tissue shows through it.
   const dotted = st.dot.alpha > 0;
   if (st.body.alpha > 0.001) {
-    const hole = { at: st.dot.at, r: st.dot.r, keep: false, base };
+    const hole = dotted && st.tissue.alpha > 0.001 ? { at: st.dot.at, r: st.dot.r, keep: false, base } : undefined;
     const img = drawLayer('body', ctx, body, t, cameraMatrix(base, st.body), 1, undefined, undefined, hole, false);
     ctx.globalAlpha = st.body.alpha;
     ctx.drawImage(img, 0, 0);
@@ -371,11 +380,14 @@ export function drawJourney(ctx: Ctx, scene: Scene, t: number, opts: CanvasDrawO
     ctx.drawImage(img, 0, 0);
   }
   if (dotted) {
-    // The dot's rim: a soft glow under a fine bright line, in the membrane's colours.
-    const w = 0.0022 * Math.min(scene.canvas.width, scene.canvas.height);
+    // The white fill, and the rim: a soft glow under a fine bright line, in the membrane's colours.
+    const w = Math.min(0.0022 * Math.min(scene.canvas.width, scene.canvas.height), st.dot.r * 0.25);
     ctx.setTransform(base);
     ctx.beginPath();
     ctx.arc(st.dot.at.x, st.dot.at.y, st.dot.r, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = st.dot.white * st.dot.alpha;
+    ctx.fill();
     ctx.strokeStyle = scene.cell.glowColor;
     ctx.globalAlpha = 0.35 * st.dot.alpha;
     ctx.lineWidth = w * 3.5;
