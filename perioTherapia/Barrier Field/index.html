@@ -327,10 +327,12 @@ const DEFAULTS = {
   loop: 12, seed: 7, bg: '#ecebe9', color: '#ee6650',
   size: 0.3, lobulation: 0.5, soft: 0.5, texture: 0.4,
   rings: 3, spacing: 0.26, band: 0.3, idle: 0.3, strength: 1,
-  shots: 3, speed: 1, pierce: 0.4, aimMode: 'random', aim: 315, spread: 14, refract: 1.6, drift: 0.5, edges: 0.6,
+  shots: 3, speed: 1, pierce: 0.4, aimMode: 'random', aim: 315, spread: 14, refract: 1.6, drift: 0.5, edges: 0.6, offset: 0.55,
+  res: '1920x1080', customW: 1920, customH: 1080, manual: [],
 };
 const P = { ...DEFAULTS };
-const SETTINGS_KEY = 'periotherapia.barrier.settings.v5';
+const SETTINGS_KEY = 'periotherapia.barrier.settings';
+const OLD_SETTINGS_KEYS = ['periotherapia.barrier.settings.v5'];
 
 // slider definitions: [key, label, min, max, step, format, container]
 const compass = v => ['top','top right','right','bottom right','bottom','bottom left','left','top left'][Math.round(v/45) % 8];
@@ -344,6 +346,7 @@ const SLIDERS = [
   ['spacing', 'Spacing', 0.12, 0.4, 0.005, v => v.toFixed(2), 'g-rings'],
   ['band', 'Edge bevel', 0, 1, 0.01, v => v.toFixed(2), 'g-rings'],
   ['edges', 'Edge visibility', 0, 1, 0.01, v => v.toFixed(2), 'g-rings'],
+  ['offset', 'Refraction offset', 0, 1, 0.01, v => v.toFixed(2), 'g-rings'],
   ['refract', 'Refraction strength', 0.2, 3, 0.05, v => v.toFixed(2), 'g-rings'],
   ['idle', 'Resting refraction', 0, 1, 0.01, v => v.toFixed(2), 'g-rings'],
   ['strength', 'Pressure response', 0.3, 1.6, 0.05, v => v.toFixed(2), 'g-rings'],
@@ -365,13 +368,32 @@ for(const [key, label, min, max, step, , box] of SLIDERS){
 const ui = {};
 document.querySelectorAll('[id]').forEach(el => { ui[el.id] = el; });
 
+// Settings persist across refreshes. Values are merged onto the defaults and clamped
+// to the current slider ranges, so saves survive app updates instead of being wiped.
 function loadSettings(){
   try{
-    const d = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null');
-    if(d) for(const k of Object.keys(DEFAULTS)) if(typeof d[k] === typeof DEFAULTS[k]) P[k] = d[k];
-  } catch(e){ /* storage unavailable */ }
+    let raw = localStorage.getItem(SETTINGS_KEY);
+    for(const k of OLD_SETTINGS_KEYS) if(!raw) raw = localStorage.getItem(k);
+    const d = JSON.parse(raw || 'null');
+    if(!d) return;
+    const ranges = Object.fromEntries(SLIDERS.map(([k, , min, max]) => [k, [min, max]]));
+    for(const k of Object.keys(DEFAULTS)){
+      if(typeof d[k] !== typeof DEFAULTS[k] || Array.isArray(d[k]) !== Array.isArray(DEFAULTS[k])) continue;
+      let v = d[k];
+      if(typeof v === 'number'){
+        if(!isFinite(v)) continue;
+        if(ranges[k]) v = Math.min(ranges[k][1], Math.max(ranges[k][0], v));
+      }
+      P[k] = v;
+    }
+    if(!['random', 'point'].includes(P.aimMode)) P.aimMode = DEFAULTS.aimMode;
+    if(![...ui.resolutionPreset.options].some(o => o.value === P.res)) P.res = DEFAULTS.res;
+    manualShots = (P.manual || []).filter(m => m && isFinite(m.T) && isFinite(m.theta) && isFinite(m.seed))
+      .map(m => ({ T: ((m.T % P.loop) + P.loop) % P.loop, theta: m.theta, seed: m.seed|0 }));
+  } catch(e){ /* storage unavailable: defaults */ }
 }
 function saveSettings(){
+  P.manual = manualShots;
   try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(P)); } catch(e){ /* ignore */ }
 }
 function syncUI(){
@@ -380,6 +402,9 @@ function syncUI(){
     ui['v_' + key].textContent = fmt(+P[key]);
   }
   ui.aimMode.value = P.aimMode; ui['g-aim'].classList.toggle('hidden', P.aimMode !== 'point');
+  ui.resolutionPreset.value = P.res; ui.customWidth.value = P.customW; ui.customHeight.value = P.customH;
+  ui.customResWrap.classList.toggle('hidden', P.res !== 'custom');
+  ui.clearShots.textContent = `Clear clicked pulses (${manualShots.length})`;
   ui.seed.value = P.seed; ui.bgColor.value = P.bg; ui.exMatte.value = P.bg; ui.tissueColor.value = P.color;
 }
 
@@ -573,8 +598,13 @@ function refractDisc(ring){
   const m = 1 + eps;
   // pressure moves the lens centre away from the hit, so the bend is strongest where it landed
   const px = cx - dir[0]*R*0.5*dirAmt, py = cy - dir[1]*R*0.5*dirAmt;
+  // sideways offset: what's under the glass is displaced down-left (away from the light),
+  // and pushed further away from a hit; stacked discs add up, as in the reference
+  const so = u*0.055*P.offset*P.refract/1.6;
+  const sx = -0.7071*so - dir[0]*u*0.012*pulse*dirAmt*P.refract/1.6;
+  const sy = 0.7071*so - dir[1]*u*0.012*pulse*dirAmt*P.refract/1.6;
 
-  const pad = 6;
+  const pad = 6 + Math.ceil(Math.hypot(sx, sy)*1.5 + eps*R);
   const bx = Math.max(0, Math.floor(cx - R - pad)), by = Math.max(0, Math.floor(cy - R - pad));
   const bW = Math.min(W, Math.ceil(cx + R + pad)) - bx, bH = Math.min(H, Math.ceil(cy + R + pad)) - by;
   if(bW <= 0 || bH <= 0) return;
@@ -585,11 +615,11 @@ function refractDisc(ring){
   sctx.clearRect(bx, by, bW, bH);
   sctx.drawImage(canvas, bx, by, bW, bH, bx, by, bW, bH);
 
-  const lens = (clipPath, mag) => {
+  const lens = (clipPath, mag, shiftK = 1) => {
     ctx.save();
     ctx.clip(clipPath, 'evenodd');
     clearOrFill(bx, by, bW, bH);
-    ctx.translate(px, py); ctx.scale(mag, mag); ctx.translate(-px, -py);
+    ctx.translate(px + sx*shiftK, py + sy*shiftK); ctx.scale(mag, mag); ctx.translate(-px, -py);
     ctx.drawImage(scratch, bx, by, bW, bH, bx, by, bW, bH);
     ctx.restore();
   };
@@ -599,7 +629,7 @@ function refractDisc(ring){
   // the bevelled rim bends light harder: a thin band that compresses what's beneath
   const wb = u*(0.002 + 0.01*P.band);
   const rim = new Path2D(); rim.arc(cx, cy, R, 0, TAU); rim.arc(cx, cy, Math.max(1, R - wb), 0, TAU);
-  lens(rim, 1 + eps*3.5 + 0.002*P.refract);
+  lens(rim, 1 + eps*3.5 + 0.002*P.refract, 1.6);
 
   // the glass edge, as in the reference: a soft white highlight band just inside the rim
   // (brightest where the light falls, upper right), a crisp hairline and a faint shadow outside.
@@ -795,6 +825,7 @@ function fireAt(theta){
   const rr = mulberry32(seed); let b = P.rings - 1; while(b > 0 && rr() < P.pierce) b--;
   const approach = (spawn - rings[b].R)/v;
   manualShots.push({ T: (previewT + approach) % P.loop, theta: ((theta % TAU) + TAU) % TAU, seed });
+  saveSettings();
   ui.clearShots.textContent = `Clear clicked pulses (${manualShots.length})`;
   setPlaying(true);
 }
@@ -805,7 +836,7 @@ canvas.addEventListener('click', ev => {
   fireAt(Math.atan2(y - canvas.height/2, x - canvas.width/2));
 });
 ui.fireBtn.addEventListener('click', () => fireAt(Math.random()*TAU));
-ui.clearShots.addEventListener('click', () => { manualShots = []; ui.clearShots.textContent = 'Clear clicked pulses (0)'; });
+ui.clearShots.addEventListener('click', () => { manualShots = []; ui.clearShots.textContent = 'Clear clicked pulses (0)'; saveSettings(); });
 document.addEventListener('keydown', ev => {
   if(ev.target.matches('input, select, textarea, button')) return;
   if(ev.code === 'Space'){ ev.preventDefault(); setPlaying(!playing); }
@@ -831,7 +862,7 @@ ui.exMatte.addEventListener('input', () => { P.bg = ui.exMatte.value; ui.bgColor
 ui.resetBtn.addEventListener('click', () => {
   Object.assign(P, DEFAULTS); manualShots = [];
   ui.clearShots.textContent = 'Clear clicked pulses (0)';
-  syncUI(); saveSettings(); if(exportUIReady){ syncLoopRange(); updateExportUI(); }
+  syncUI(); applyResolution(); saveSettings(); if(exportUIReady){ syncLoopRange(); updateExportUI(); }
 });
 
 function applyResolution(){
@@ -841,6 +872,8 @@ function applyResolution(){
   else [w, h] = preset.split('x').map(Number);
   w = Math.min(3840, Math.max(200, w)); h = Math.min(3840, Math.max(200, h));
   compW = w; compH = h;
+  P.res = preset; P.customW = Math.round(+ui.customWidth.value) || 1920; P.customH = Math.round(+ui.customHeight.value) || 1080;
+  saveSettings();
   if(!exporting){ canvas.width = w; canvas.height = h; }
   if(exportUIReady) updateExportUI();
 }
