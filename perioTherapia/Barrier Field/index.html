@@ -135,7 +135,7 @@
 <div id="panel">
   <p class="brand">perioTherapia</p>
   <h1>Barrier Field</h1>
-  <p class="sub">An abstract tumour microenvironment. Its barriers stay invisible until something tries to get in.</p>
+  <p class="sub">An abstract tumour microenvironment. Glass barriers inside it stay invisible until something tries to get in.</p>
 
   <div class="group">
     <h2>Composition</h2>
@@ -317,24 +317,24 @@ const sctx = scratch.getContext('2d', { alpha: true });
 // ---------- settings ----------
 const DEFAULTS = {
   loop: 12, seed: 7, bg: '#ecebe9', color: '#ee6650',
-  size: 0.21, lobulation: 0.7, buds: 3, lumens: 8, density: 1, texture: 0.75,
-  rings: 3, spacing: 0.07, band: 0.55, idle: 0, strength: 1,
-  shots: 3, speed: 1, pierce: 0.3,
+  size: 0.23, lobulation: 0.6, buds: 5, lumens: 7, density: 1, texture: 0.75,
+  rings: 3, spacing: 0.26, band: 0.55, idle: 0, strength: 1,
+  shots: 3, speed: 1, pierce: 0.4,
 };
 const P = { ...DEFAULTS };
-const SETTINGS_KEY = 'periotherapia.barrier.settings.v1';
+const SETTINGS_KEY = 'periotherapia.barrier.settings.v2';
 
 // slider definitions: [key, label, min, max, step, format, container]
 const SLIDERS = [
   ['loop', 'Loop length', 6, 30, 1, v => `${v}s`, 'g-loop'],
-  ['size', 'Size', 0.12, 0.3, 0.005, v => v.toFixed(2), 'g-tissue'],
-  ['lobulation', 'Irregular margin', 0, 1, 0.01, v => v.toFixed(2), 'g-tissue'],
-  ['buds', 'Tumour buds', 0, 8, 1, v => v, 'g-tissue'],
+  ['size', 'Size', 0.12, 0.27, 0.005, v => v.toFixed(2), 'g-tissue'],
+  ['lobulation', 'Splash', 0, 1, 0.01, v => v.toFixed(2), 'g-tissue'],
+  ['buds', 'Droplets', 0, 12, 1, v => v, 'g-tissue'],
   ['lumens', 'Lumens / vessels', 0, 16, 1, v => v, 'g-tissue'],
   ['density', 'Cell density', 0.5, 1.8, 0.05, v => v.toFixed(2), 'g-tissue'],
   ['texture', 'Texture contrast', 0, 1, 0.01, v => v.toFixed(2), 'g-tissue'],
   ['rings', 'Barrier layers', 1, 5, 1, v => v, 'g-rings'],
-  ['spacing', 'Spacing', 0.035, 0.11, 0.0025, v => v.toFixed(3), 'g-rings'],
+  ['spacing', 'Spacing', 0.12, 0.4, 0.005, v => v.toFixed(2), 'g-rings'],
   ['band', 'Glass thickness', 0.15, 1, 0.01, v => v.toFixed(2), 'g-rings'],
   ['idle', 'Resting visibility', 0, 0.5, 0.01, v => v.toFixed(2), 'g-rings'],
   ['strength', 'Reaction strength', 0.3, 1.6, 0.05, v => v.toFixed(2), 'g-rings'],
@@ -431,6 +431,7 @@ function geom(){
 }
 
 // ---------- tissue (cached; rebuilt only when shape settings or size change) ----------
+// The splat is a metaball field: a lumpy body, tapered arms ending in bulbs, and loose droplets.
 let tissue = null, tissueKey = '';
 
 function blobPoly(r, rnd, irregular, elong, rot, n){
@@ -453,6 +454,57 @@ function polyPath(pts, ox, oy, path = new Path2D()){
   return path;
 }
 
+const FIELD_T = 0.3;                       // iso level of the metaball field
+const VIS = 1 - Math.cbrt(FIELD_T);        // visible radius / influence radius, squared ratio
+function splatBalls(rnd){
+  const balls = [];
+  // ball(x, y, visible radius) in units of the core radius
+  const ball = (x, y, v) => balls.push({ x, y, R: v/Math.sqrt(VIS) });
+  const lob = P.lobulation;
+
+  // body: one main mass plus a few lumps so it never reads as a circle
+  ball((rnd()-0.5)*0.08, (rnd()-0.5)*0.08, 0.7);
+  const lumps = 4 + Math.floor(rnd()*3);
+  for(let i = 0; i < lumps; i++){
+    const a = i/lumps*TAU + (rnd()-0.5)*0.8, d = 0.3 + rnd()*0.22;
+    ball(Math.cos(a)*d, Math.sin(a)*d, 0.32 + rnd()*0.2);
+  }
+
+  // arms: tapered streams that end in a rounded bulb
+  const tips = [];
+  const nArms = 3 + Math.round(lob*6);
+  const a0 = rnd()*TAU;
+  for(let i = 0; i < nArms; i++){
+    const a = a0 + i/nArms*TAU + (rnd()-0.5)*(TAU/nArms)*0.7;
+    const len = 0.12 + (0.15 + 0.5*lob)*Math.pow(rnd(), 1.2);
+    const curve = (rnd()-0.5)*0.35;
+    const vStart = 0.16 + rnd()*0.1, vNeck = 0.05 + rnd()*0.035;
+    const d0 = 0.6, d1 = 0.85 + len;
+    const steps = Math.max(3, Math.ceil((d1 - d0)/0.035));
+    let x = 0, y = 0;
+    for(let s = 0; s <= steps; s++){
+      const f = s/steps;
+      const d = d0 + (d1 - d0)*f, aa = a + curve*f*f;
+      x = Math.cos(aa)*d; y = Math.sin(aa)*d;
+      ball(x, y, vStart + (vNeck - vStart)*Math.pow(f, 0.8));
+    }
+    const bulb = vNeck + 0.04 + rnd()*0.07*(0.5 + lob);
+    const ab = a + curve;
+    ball(Math.cos(ab)*(d1 + bulb*0.4), Math.sin(ab)*(d1 + bulb*0.4), bulb);
+    tips.push({ a: ab, d: d1 + bulb*0.4, r: bulb });
+  }
+
+  // droplets flung past the arms
+  for(let i = 0; i < P.buds; i++){
+    const tip = tips[Math.floor(rnd()*tips.length)];
+    const near = rnd() < 0.7;
+    const a = near ? tip.a + (rnd()-0.5)*0.35 : rnd()*TAU;
+    const d = near ? tip.d + tip.r + 0.08 + rnd()*0.2 : 1.05 + rnd()*0.4;
+    ball(Math.cos(a)*d, Math.sin(a)*d, 0.025 + rnd()*0.045);
+  }
+  return balls;
+}
+
 function buildTissue(){
   const { u } = geom();
   const key = [canvas.width, canvas.height, P.seed, P.size, P.lobulation, P.buds, P.lumens, P.density, P.texture, P.color].join('|');
@@ -466,83 +518,87 @@ function buildTissue(){
   const dark = shade(P.color, -2, 0.02, -0.2);
   const pale = shade(P.color, 2, -0.08, 0.09);
 
-  // --- outer margin: low harmonics for the lobulated outline, high ones for a fine crenulated edge
-  const M = 1024, rArr = new Float32Array(M);
-  const coarse = [], fine = [];
-  for(let n = 2; n <= 22; n++) coarse.push([n, (0.35 + 0.65*rnd())*Math.pow(n, -1.15)*(n >= 3 && n <= 7 ? 1.6 : 1), rnd()*TAU]);
-  for(let n = 23; n <= 70; n++) fine.push([n, rnd()*Math.pow(n, -1.0), rnd()*TAU]);
-  const cs = new Float32Array(M), fs = new Float32Array(M);
-  let cmx = 1e-6, fmx = 1e-6;
-  for(let i = 0; i < M; i++){
-    const a = i/M*TAU;
-    let c = 0, f = 0;
-    for(const [n, amp, ph] of coarse) c += amp*Math.cos(n*a + ph);
-    for(const [n, amp, ph] of fine) f += amp*Math.cos(n*a + ph);
-    cs[i] = c; fs[i] = f;
-    cmx = Math.max(cmx, Math.abs(c)); fmx = Math.max(fmx, Math.abs(f));
+  const balls = splatBalls(rnd).map(b => ({ x: b.x*Rb, y: b.y*Rb, R: b.R*Rb }));
+  let ext = 0;
+  for(const b of balls) ext = Math.max(ext, Math.hypot(b.x, b.y) + b.R);
+  const pad = u*0.02;
+  const S = Math.ceil(2*(ext + pad)), half = S/2;
+
+  // --- metaball field, splatted ball by ball (compact kernel keeps this cheap)
+  const field = new Float32Array(S*S);
+  for(const b of balls){
+    const cx = b.x + half, cy = b.y + half, R2 = b.R*b.R;
+    const x0 = Math.max(0, Math.floor(cx - b.R)), x1 = Math.min(S-1, Math.ceil(cx + b.R));
+    const y0 = Math.max(0, Math.floor(cy - b.R)), y1 = Math.min(S-1, Math.ceil(cy + b.R));
+    for(let y = y0; y <= y1; y++){
+      const dy = y + 0.5 - cy, row = y*S;
+      for(let x = x0; x <= x1; x++){
+        const dx = x + 0.5 - cx, q = (dx*dx + dy*dy)/R2;
+        if(q < 1){ const k = 1 - q; field[row + x] += k*k*k; }
+      }
+    }
   }
-  const lob = 0.03 + 0.22*P.lobulation, fineAmp = 0.006 + 0.012*P.lobulation;
-  for(let i = 0; i < M; i++) rArr[i] = 1 + cs[i]/cmx*lob + fs[i]/fmx*fineAmp;
-  const rAt = a => {
-    const x = ((a/TAU)%1 + 1)%1*M, i = Math.floor(x), f = x - i;
-    return rArr[i % M]*(1-f) + rArr[(i+1) % M]*f;
+  const inside = (x, y) => {
+    const ix = Math.floor(x + half), iy = Math.floor(y + half);
+    return ix >= 0 && iy >= 0 && ix < S && iy < S && field[iy*S + ix] >= FIELD_T;
   };
-  let maxR = 0;
-  for(let i = 0; i < M; i++) maxR = Math.max(maxR, rArr[i]*Rb);
 
-  // --- tumour buds: small islands just outside the margin
-  const buds = [];
-  for(let b = 0; b < P.buds; b++){
-    const a = rnd()*TAU;
-    const br = Rb*(0.022 + 0.035*rnd());
-    const d = rAt(a)*Rb + u*(0.008 + 0.018*rnd()) + br;
-    const pts = blobPoly(br, rnd, 0.5, 1 + rnd()*0.5, rnd()*TAU, 48);
-    buds.push({ x: Math.cos(a)*d, y: Math.sin(a)*d, r: br, pts });
-    maxR = Math.max(maxR, d + br*1.5);
+  // coverage mask (anti-aliased via distance estimate) and a soft darker rim at the cut edge
+  const maskC = document.createElement('canvas'); maskC.width = maskC.height = S;
+  const rimC = document.createElement('canvas'); rimC.width = rimC.height = S;
+  const mImg = maskC.getContext('2d').createImageData(S, S);
+  const rImg = rimC.getContext('2d').createImageData(S, S);
+  const rimPx = u*0.008;
+  for(let y = 1; y < S-1; y++){
+    for(let x = 1; x < S-1; x++){
+      const i = y*S + x, f = field[i];
+      if(f <= 0) continue;
+      const gx = (field[i+1] - field[i-1])*0.5, gy = (field[i+S] - field[i-S])*0.5;
+      const g = Math.hypot(gx, gy) || 1e-6;
+      const dist = (f - FIELD_T)/g;            // approx. pixels inside the edge
+      const cov = Math.min(1, Math.max(0, dist + 0.5));
+      if(cov <= 0) continue;
+      const o = i*4;
+      mImg.data[o] = mImg.data[o+1] = mImg.data[o+2] = 255; mImg.data[o+3] = cov*255;
+      if(dist < rimPx){
+        const r = 1 - Math.max(0, dist)/rimPx;
+        const a = 0.12*r*r + (dist < 1.6 ? 0.3 : 0);
+        rImg.data[o] = deep[0]; rImg.data[o+1] = deep[1]; rImg.data[o+2] = deep[2]; rImg.data[o+3] = a*cov*255;
+      }
+    }
   }
+  maskC.getContext('2d').putImageData(mImg, 0, 0);
+  rimC.getContext('2d').putImageData(rImg, 0, 0);
 
-  // --- lumens / vessels: irregular holes, kept apart and inside the margin
+  // --- lumens / vessels inside the body
   const lumens = [];
-  for(let tries = 0; tries < 400 && lumens.length < P.lumens; tries++){
-    const a = rnd()*TAU, d = Math.sqrt(rnd())*0.8*Rb;
-    const lr = Rb*(0.022 + 0.085*Math.pow(rnd(), 1.8));
+  for(let tries = 0; tries < 500 && lumens.length < P.lumens; tries++){
+    const a = rnd()*TAU, d = Math.sqrt(rnd())*0.75*Rb;
+    const lr = Rb*(0.022 + 0.08*Math.pow(rnd(), 1.8));
     const elong = 1 + Math.pow(rnd(), 2)*1.6;
     const x = Math.cos(a)*d, y = Math.sin(a)*d;
-    if(d + lr*elong*1.5 > rAt(a)*Rb*0.94) continue;
+    const m = lr*elong*1.6;
+    if(![[0,0],[m,0],[-m,0],[0,m],[0,-m]].every(([ox, oy]) => inside(x+ox, y+oy))) continue;
     if(lumens.some(L => Math.hypot(L.x-x, L.y-y) < (L.r*L.e + lr*elong) + u*0.018)) continue;
     lumens.push({ x, y, r: lr, e: elong, pts: blobPoly(lr, rnd, 0.6, elong, rnd()*TAU, 64) });
   }
 
-  const pad = u*0.02;
-  const S = Math.ceil(2*(maxR + pad)), half = S/2;
   const tc = document.createElement('canvas');
   tc.width = tc.height = S;
   const t = tc.getContext('2d');
   t.translate(half, half);
-
-  const shape = new Path2D();
-  for(let i = 0; i < M; i += 2){
-    const a = i/M*TAU, r = rArr[i]*Rb;
-    i ? shape.lineTo(Math.cos(a)*r, Math.sin(a)*r) : shape.moveTo(r, 0);
-  }
-  shape.closePath();
-  for(const b of buds) polyPath(b.pts, b.x, b.y, shape);
-
   t.fillStyle = rgba(base, 1);
-  t.fill(shape);
+  t.fillRect(-half, -half, S, S);
 
-  t.save();
-  t.clip(shape);
-
-  // nest/stroma field: dense tumour nests vs looser stroma, as soft one-colour mottling
-  const field = (x, y) => fbm(x/(Rb*0.42) + 31.7, y/(Rb*0.42) - 12.3, nseed);
+  // nest/stroma field as soft one-colour mottling
+  const nf = (x, y) => fbm(x/(Rb*0.42) + 31.7, y/(Rb*0.42) - 12.3, nseed);
   const N = 120, low = document.createElement('canvas');
   low.width = low.height = N;
   const lctx = low.getContext('2d'), img = lctx.createImageData(N, N);
   const tex = 0.15 + 0.85*P.texture;
   for(let j = 0; j < N; j++) for(let i = 0; i < N; i++){
     const x = (i+0.5)/N*S - half, y = (j+0.5)/N*S - half;
-    const f = field(x, y), o = (j*N + i)*4;
+    const f = nf(x, y), o = (j*N + i)*4;
     if(f > 0.5){ const a = Math.min(1, (f-0.5)*3.4)*0.38*tex; img.data.set([deep[0], deep[1], deep[2], a*255], o); }
     else { const a = Math.min(1, (0.5-f)*3.4)*0.5*tex; img.data.set([pale[0], pale[1], pale[2], a*255], o); }
   }
@@ -550,19 +606,17 @@ function buildTissue(){
   t.imageSmoothingEnabled = true; t.imageSmoothingQuality = 'high';
   t.drawImage(low, -half, -half, S, S);
 
-  // gentle light direction: redder lower-left, softer upper-right
   const lg = t.createLinearGradient(-Rb, Rb, Rb, -Rb);
   lg.addColorStop(0, rgba(deep, 0.55)); lg.addColorStop(0.5, rgba(deep, 0)); lg.addColorStop(1, rgba(pale, 0.35));
   t.fillStyle = lg; t.fillRect(-half, -half, S, S);
 
-  // lumen rims (epithelial lining reads as a slightly denser ring)
   for(const L of lumens){
     t.lineWidth = Math.max(u*0.006, L.r*0.32);
     t.strokeStyle = rgba(deep, 0.16*tex + 0.06);
     t.stroke(polyPath(L.pts, L.x, L.y));
   }
 
-  // nuclei: jittered grid, dense in nests, sparse and spindle-shaped in stroma
+  // nuclei: dense in nests, sparse and spindle-shaped in stroma
   const sp = u*0.0068/Math.sqrt(P.density);
   const buckets = [new Path2D(), new Path2D(), new Path2D()];
   const nr = mulberry32(nseed + 99);
@@ -573,9 +627,10 @@ function buildTissue(){
   };
   for(let y = -half; y < half; y += sp) for(let x = -half; x < half; x += sp){
     const px = x + (nr()-0.5)*sp*0.9, py = y + (nr()-0.5)*sp*0.9;
-    const f = field(px, py);
-    const nest = f > 0.5;
-    if(nr() > (nest ? 0.82 : 0.28)) continue;
+    const keep = nr();
+    if(!inside(px, py)) continue;
+    const f = nf(px, py), nest = f > 0.5;
+    if(keep > (nest ? 0.82 : 0.28)) continue;
     if(lumens.some(L => Math.hypot(L.x-px, L.y-py) < L.r*L.e*1.25)) continue;
     const rx = sp*(nest ? 0.26 : 0.3)*(0.75 + nr()*0.5);
     const ry = rx*(nest ? 0.7 + nr()*0.3 : 0.28 + nr()*0.15);
@@ -583,52 +638,43 @@ function buildTissue(){
     addNucleus(px, py, rx, ry, rot, Math.floor(nr()*3));
   }
   for(const L of lumens){
-    // ring of nuclei just around each lumen
     const step = Math.max(1, Math.round(L.pts.length*sp*0.9/(TAU*L.r*L.e)));
     for(let i = 0; i < L.pts.length; i += step){
       const [x, y] = L.pts[i], d = Math.hypot(x, y) || 1, k = 1 + sp*0.75/d;
       addNucleus(L.x + x*k, L.y + y*k, sp*0.28, sp*0.16, Math.atan2(y, x), 2);
     }
   }
-  for(const b of buds){
-    for(let i = 0; i < 6; i++){
-      const a = nr()*TAU, d = Math.sqrt(nr())*b.r*0.6;
-      addNucleus(b.x + Math.cos(a)*d, b.y + Math.sin(a)*d, sp*0.28, sp*0.2, nr()*TAU, 2);
-    }
-  }
   const na = 0.1 + 0.3*tex;
   [0.55, 0.8, 1].forEach((k, i) => { t.fillStyle = rgba(dark, na*k); t.fill(buckets[i]); });
 
-  // soft inner rim for a crisp, slice-like edge
-  t.lineWidth = u*0.014; t.strokeStyle = rgba(deep, 0.1); t.stroke(shape);
-  t.restore();
-  t.lineWidth = Math.max(1, u*0.0014); t.strokeStyle = rgba(deep, 0.35); t.stroke(shape);
-
-  // cut the lumens out (real holes, so transparent exports stay transparent)
+  t.setTransform(1, 0, 0, 1, 0, 0);
+  t.drawImage(rimC, 0, 0);
+  t.globalCompositeOperation = 'destination-in';
+  t.drawImage(maskC, 0, 0);
   t.globalCompositeOperation = 'destination-out';
+  t.translate(half, half);
   for(const L of lumens) t.fill(polyPath(L.pts, L.x, L.y));
   t.globalCompositeOperation = 'source-over';
 
-  tissue = { canvas: tc, half, maxR, Rb };
+  tissue = { canvas: tc, half, Rb };
   tissueKey = key;
   return tissue;
 }
 
-// ---------- barriers ----------
+// ---------- barriers (glass rings living inside the tissue) ----------
 const MR = 240;
 const COS = new Float32Array(MR), SIN = new Float32Array(MR);
 for(let j = 0; j < MR; j++){ COS[j] = Math.cos(j/MR*TAU); SIN[j] = Math.sin(j/MR*TAU); }
-const Ibuf = new Float32Array(MR), Rbuf = new Float32Array(MR);
 
 function ringGeom(T){
-  const { u, cx, cy } = geom();
+  const { cx, cy, u } = geom();
   const r = mulberry32(P.seed*31 + 5);
   const off = r()*TAU;
   const rings = [];
   for(let k = 0; k < P.rings; k++){
-    const R = T.maxR + u*(0.045 + P.spacing*k);
-    const o = u*0.004*k;
-    rings.push({ R, cx: cx + Math.cos(off)*o, cy: cy + Math.sin(off)*o, bw: u*P.spacing*P.band*0.85 });
+    const R = T.Rb*(0.4 + P.spacing*k);
+    const o = u*0.003*k;
+    rings.push({ R, cx: cx + Math.cos(off)*o, cy: cy + Math.sin(off)*o, bw: T.Rb*P.spacing*P.band*0.75 });
   }
   return rings;
 }
@@ -652,6 +698,157 @@ function react(dt, d, amp, mode){
   const glow = 0.3*Math.exp(-dt/1.2)*(1 - Math.exp(-dt*5));  // whole barrier briefly visible
   return amp*rise*(central + front + glow);
 }
+// the glass flexes: an inward dent that rings out and spreads from the impact
+function wobble(dt, d, amp, u){
+  if(dt <= 0 || dt > 2.5) return 0;
+  const w = 0.3 + 0.7*dt;
+  return -u*0.014*amp*Math.exp(-dt*2.8)*Math.sin(dt*15)*Math.exp(-d*d/(2*w*w));
+}
+
+function computeRing(k, rings, insts, t){
+  const { u } = geom();
+  const ring = rings[k];
+  const I = ring.I = new Float32Array(MR), dR = ring.dR = new Float32Array(MR);
+  const sweep = TAU*t/P.loop;
+  let maxI = 0, maxD = 0;
+  for(let j = 0; j < MR; j++){
+    const a = j/MR*TAU;
+    let v = P.idle*(0.55 + 0.45*Math.cos(a - sweep - k*1.3));
+    let w = 0;
+    for(const s of insts){
+      const b = s.e.block, d = angDist(a, s.e.theta);
+      if(k > b){
+        const dtk = s.dt + (ring.R - s.ring.R)/s.v;
+        v += react(dtk, d, 0.45, PASS);
+        w += wobble(dtk, d, 0.3, u);
+      } else if(k === b){
+        v += react(s.dt, d, 1, HIT);
+        w += wobble(s.dt, d, 1, u);
+      } else {
+        v += react(s.dt - 0.1*(b-k), d, 0.3*Math.pow(0.7, b-k-1), SYM);
+        w += wobble(s.dt - 0.1*(b-k), d, 0.15, u);
+      }
+    }
+    I[j] = Math.min(1, v*P.strength);
+    dR[j] = w*P.strength;
+    maxI = Math.max(maxI, I[j]); maxD = Math.max(maxD, Math.abs(dR[j]));
+  }
+  ring.maxI = maxI; ring.maxD = maxD;
+}
+
+// Tissue seen through the glass: the ring band is rebuilt offscreen from thin,
+// overlapping wedges, each shifted along the radius, then laid over the tissue in
+// one pass, so the slice underneath bends and shakes with the glass.
+const DISP = new Float32Array(MR);
+function distortTissue(ring, T, breath){
+  const { u, W, H, cx: ccx, cy: ccy } = geom();
+  const { R, cx, cy, bw, I, dR } = ring;
+  let maxDisp = 0;
+  for(let j = 0; j < MR; j++){
+    DISP[j] = dR[j]*1.25 - u*0.005*I[j];
+    maxDisp = Math.max(maxDisp, Math.abs(DISP[j]));
+  }
+  if(maxDisp < 0.3) return;
+  const r0 = Math.max(1, R - 1.7*bw), r1 = R + 0.35*bw;
+  const S = T.canvas.width;
+  const m = r1 + maxDisp + 4;
+  const bx = Math.max(0, Math.floor(cx - m)), by = Math.max(0, Math.floor(cy - m));
+  const bW = Math.min(W, Math.ceil(cx + m)) - bx, bH = Math.min(H, Math.ceil(cy + m)) - by;
+  if(bW <= 0 || bH <= 0) return;
+
+  sctx.setTransform(1, 0, 0, 1, 0, 0);
+  sctx.globalCompositeOperation = 'source-over';
+  sctx.clearRect(bx, by, bW, bH);
+  const step = TAU/MR;
+  for(let j = 0; j < MR; j++){
+    const disp = DISP[j];
+    const a0 = j*step - step, a1 = (j+1)*step + step, am = (j + 0.5)*step;
+    const ox = Math.cos(am)*disp, oy = Math.sin(am)*disp;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for(const a of [a0, am, a1]) for(const r of [r0, r1]){
+      const x = cx + Math.cos(a)*r, y = cy + Math.sin(a)*r;
+      x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+    }
+    x0 = Math.floor(x0) - 2; y0 = Math.floor(y0) - 2; x1 = Math.ceil(x1) + 2; y1 = Math.ceil(y1) + 2;
+    const sx = (x0 - ox - ccx)/breath + T.half, sy = (y0 - oy - ccy)/breath + T.half;
+    const sw = (x1 - x0)/breath, sh = (y1 - y0)/breath;
+    const c0x = Math.max(0, sx), c0y = Math.max(0, sy), c1x = Math.min(S, sx + sw), c1y = Math.min(S, sy + sh);
+    if(c1x <= c0x || c1y <= c0y) continue;
+    sctx.save();
+    sctx.beginPath();
+    sctx.arc(cx, cy, r1, a0, a1);
+    sctx.arc(cx, cy, r0, a1, a0, true);
+    sctx.closePath();
+    sctx.clip();
+    sctx.drawImage(T.canvas, c0x, c0y, c1x - c0x, c1y - c0y,
+      x0 + (c0x - sx)*breath, y0 + (c0y - sy)*breath, (c1x - c0x)*breath, (c1y - c0y)*breath);
+    sctx.restore();
+  }
+  // knock the undistorted band out (slightly narrower, so no seam), then lay the bent one in
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r1 - 1, 0, TAU);
+  ctx.arc(cx, cy, r0 + 1, TAU, 0, true);
+  ctx.clip('evenodd');
+  if(renderTransparent) ctx.clearRect(bx, by, bW, bH);
+  else { ctx.fillStyle = exportMatte || P.bg; ctx.fillRect(bx, by, bW, bH); }
+  ctx.restore();
+  ctx.drawImage(scratch, bx, by, bW, bH, bx, by, bW, bH);
+}
+
+function drawGlass(ring){
+  if(ring.maxI < 0.004) return;
+  const { u, W, H } = geom();
+  const { R, cx, cy, bw, I, dR } = ring;
+  const col = hexToRgb(P.color), deep = shade(P.color, -5, 0.12, -0.12);
+  const gw = bw*0.6;
+  const m = R + gw + u*0.03;
+  const bx = Math.max(0, Math.floor(cx - m)), by = Math.max(0, Math.floor(cy - m));
+  const bx2 = Math.min(W, Math.ceil(cx + m)), by2 = Math.min(H, Math.ceil(cy + m));
+  const bW = bx2 - bx, bH = by2 - by;
+  if(bW <= 0 || bH <= 0) return;
+
+  const ringPath = (off, p = new Path2D()) => {
+    for(let j = 0; j < MR; j++){
+      const r = R + dR[j] + off, x = cx + r*COS[j], y = cy + r*SIN[j];
+      j ? p.lineTo(x, y) : p.moveTo(x, y);
+    }
+    p.closePath();
+    return p;
+  };
+
+  sctx.setTransform(1, 0, 0, 1, 0, 0);
+  sctx.globalCompositeOperation = 'source-over';
+  sctx.clearRect(bx, by, bW, bH);
+
+  // faint white bloom just outside the edge
+  const outer = ringPath(gw); ringPath(0, outer);
+  const wg = sctx.createRadialGradient(cx, cy, R, cx, cy, R + gw);
+  wg.addColorStop(0, 'rgba(255,255,255,0.6)'); wg.addColorStop(1, 'rgba(255,255,255,0)');
+  sctx.fillStyle = wg; sctx.fill(outer, 'evenodd');
+
+  // glass body: tinted toward the edge, with a pale sheen across it
+  const band = ringPath(0); ringPath(-bw, band);
+  const g = sctx.createRadialGradient(cx, cy, Math.max(0, R - bw), cx, cy, R);
+  g.addColorStop(0, 'rgba(255,255,255,0)');
+  g.addColorStop(0.6, rgba(mixWhite(col, 0.55), 0.18));
+  g.addColorStop(1, rgba(col, 0.45));
+  sctx.fillStyle = g; sctx.fill(band, 'evenodd');
+
+  // crisp edge and specular highlight
+  sctx.lineWidth = Math.max(1, u*0.0012); sctx.strokeStyle = rgba(deep, 0.85); sctx.stroke(ringPath(0));
+  sctx.lineWidth = Math.max(1, u*0.0022); sctx.strokeStyle = 'rgba(255,255,255,0.9)'; sctx.stroke(ringPath(-u*0.0035));
+  sctx.lineWidth = Math.max(1, u*0.001); sctx.strokeStyle = 'rgba(255,255,255,0.55)'; sctx.stroke(ringPath(-bw));
+
+  // reveal only where the barrier is reacting
+  sctx.globalCompositeOperation = 'destination-in';
+  const cg = sctx.createConicGradient(0, cx, cy);
+  for(let j = 0; j <= MR; j++) cg.addColorStop(j/MR, `rgba(0,0,0,${I[j % MR].toFixed(4)})`);
+  sctx.fillStyle = cg; sctx.fillRect(bx, by, bW, bH);
+  sctx.globalCompositeOperation = 'source-over';
+
+  ctx.drawImage(scratch, bx, by, bW, bH, bx, by, bW, bH);
+}
 
 // ---------- shots ----------
 function shotSpeed(u){ return u*0.95*P.speed; }
@@ -667,7 +864,7 @@ function buildEvents(){
     ev.push({ T, theta: theta % TAU, seed: Math.floor(r()*1e9) });
   }
   for(const m of manualShots) ev.push(m);
-  // deterministic depth: how many layers each shot gets through
+  // deterministic depth: how many layers each shot gets through (the innermost always holds)
   for(const e of ev){
     const rr = mulberry32(e.seed);
     let b = P.rings - 1;
@@ -693,148 +890,54 @@ function instances(t, rings){
   return out;
 }
 
-function drawRing(k, rings, insts, t){
-  const { u, W, H } = geom();
-  const ring = rings[k];
-  const col = hexToRgb(P.color);
-  const sweep = TAU*t/P.loop;
-  let maxI = 0;
-  for(let j = 0; j < MR; j++){
-    const a = j/MR*TAU;
-    let I = P.idle*(0.55 + 0.45*Math.cos(a - sweep - k*1.3));
-    let dR = 0;
-    for(const s of insts){
-      const b = s.e.block, d = angDist(a, s.e.theta);
-      if(k > b){
-        I += react(s.dt + (ring.R - s.ring.R)/s.v, d, 0.45, PASS);
-      } else if(k === b){
-        I += react(s.dt, d, 1, HIT);
-        if(s.dt > 0 && s.dt < 2.5){
-          const w = 0.3 + 0.6*s.dt;
-          dR -= u*0.009*P.strength*Math.exp(-s.dt*3.2)*Math.sin(s.dt*17)*Math.exp(-d*d/(2*w*w));
-        }
-      } else {
-        I += react(s.dt - 0.1*(b-k), d, 0.3*Math.pow(0.7, b-k-1), SYM);
-      }
-    }
-    I = Math.min(1, I*P.strength);
-    Ibuf[j] = I; Rbuf[j] = ring.R + dR;
-    if(I > maxI) maxI = I;
-  }
-  if(maxI < 0.004) return;
-
-  const { R, cx, cy, bw } = ring;
-  const gw = bw*0.8;
-  const m = R + gw + u*0.02;
-  const bx = Math.max(0, Math.floor(cx - m)), by = Math.max(0, Math.floor(cy - m));
-  const bx2 = Math.min(W, Math.ceil(cx + m)), by2 = Math.min(H, Math.ceil(cy + m));
-  const bW = bx2 - bx, bH = by2 - by;
-  if(bW <= 0 || bH <= 0) return;
-
-  const ringPath = (off, p = new Path2D()) => {
-    for(let j = 0; j < MR; j++){
-      const r = Rbuf[j] + off, x = cx + r*COS[j], y = cy + r*SIN[j];
-      j ? p.lineTo(x, y) : p.moveTo(x, y);
-    }
-    p.closePath();
-    return p;
-  };
-
-  sctx.setTransform(1, 0, 0, 1, 0, 0);
-  sctx.globalCompositeOperation = 'source-over';
-  sctx.clearRect(bx, by, bW, bH);
-
-  // soft white bloom just outside the glass edge
-  const outer = ringPath(gw); ringPath(0, outer);
-  const wg = sctx.createRadialGradient(cx, cy, R, cx, cy, R + gw);
-  wg.addColorStop(0, 'rgba(255,255,255,0.95)'); wg.addColorStop(1, 'rgba(255,255,255,0)');
-  sctx.fillStyle = wg; sctx.fill(outer, 'evenodd');
-
-  // coloured glass band, strongest at the edge and fading inward
-  const band = ringPath(0); ringPath(-bw, band);
-  const g = sctx.createRadialGradient(cx, cy, Math.max(0, R - bw), cx, cy, R);
-  g.addColorStop(0, rgba(col, 0)); g.addColorStop(0.55, rgba(col, 0.22)); g.addColorStop(1, rgba(col, 0.78));
-  sctx.fillStyle = g; sctx.fill(band, 'evenodd');
-
-  // hairline edge + inner specular line
-  sctx.lineWidth = Math.max(1, u*0.0012); sctx.strokeStyle = rgba(col, 0.95); sctx.stroke(ringPath(0));
-  sctx.lineWidth = Math.max(1, u*0.0016); sctx.strokeStyle = 'rgba(255,255,255,0.85)'; sctx.stroke(ringPath(-u*0.0038));
-
-  // reveal only where the barrier is reacting
-  sctx.globalCompositeOperation = 'destination-in';
-  const cg = sctx.createConicGradient(0, cx, cy);
-  for(let j = 0; j <= MR; j++) cg.addColorStop(j/MR, `rgba(0,0,0,${Ibuf[j % MR].toFixed(4)})`);
-  sctx.fillStyle = cg; sctx.fillRect(bx, by, bW, bH);
-  sctx.globalCompositeOperation = 'source-over';
-
-  ctx.drawImage(scratch, bx, by, bW, bH, bx, by, bW, bH);
-}
-
 function drawShot(s, rings){
   const { u } = geom();
   const { e, dt, ring, v, spawn } = s;
-  const col = hexToRgb(P.color), light = mixWhite(col, 0.5);
+  const deep = shade(P.color, -5, 0.12, -0.14);
   const nx = Math.cos(e.theta), ny = Math.sin(e.theta);
   const hitX = ring.cx + nx*ring.R, hitY = ring.cy + ny*ring.R;
 
-  const head = (x, y, a, size = 1) => {
-    const rad = u*0.03*size;
-    const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
-    g.addColorStop(0, `rgba(255,255,255,${a})`);
-    g.addColorStop(0.12, rgba(light, a));
-    g.addColorStop(0.3, rgba(col, 0.45*a));
-    g.addColorStop(0.6, rgba(col, 0.12*a));
-    g.addColorStop(1, rgba(col, 0));
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(x, y, rad, 0, TAU); ctx.fill();
+  // simple light: a white bead with a fine outline and a thin tail
+  const head = (x, y, a) => {
+    ctx.globalAlpha = a;
+    ctx.beginPath(); ctx.arc(x, y, u*0.0042, 0, TAU);
+    ctx.fillStyle = '#fff'; ctx.fill();
+    ctx.lineWidth = Math.max(1, u*0.0011); ctx.strokeStyle = rgba(deep, 0.85); ctx.stroke();
+    ctx.globalAlpha = 1;
   };
-  const trail = (x1, y1, x2, y2, a, w) => {
+  const trail = (x1, y1, x2, y2, a) => {
     const g = ctx.createLinearGradient(x1, y1, x2, y2);
-    g.addColorStop(0, rgba(col, 0.75*a)); g.addColorStop(1, rgba(col, 0));
-    ctx.strokeStyle = g; ctx.lineWidth = w; ctx.lineCap = 'round';
+    g.addColorStop(0, rgba(deep, 0.6*a)); g.addColorStop(1, rgba(deep, 0));
+    ctx.strokeStyle = g; ctx.lineWidth = Math.max(1, u*0.0018); ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
   };
 
-  // energy lost passing each outer layer
   const crossedAll = rings.length - 1 - e.block;
   if(dt < 0){
     const rr = ring.R + v*(-dt);
     const crossed = rings.filter((r, k) => k > e.block && r.R > rr).length;
-    const a = Math.pow(0.78, crossed)*Math.min(1, (spawn - rr)/(u*0.15));
+    const a = Math.pow(0.8, crossed)*Math.min(1, (spawn - rr)/(u*0.15));
     const x = ring.cx + nx*rr, y = ring.cy + ny*rr;
-    const tl = Math.min(u*0.17, spawn - rr);
-    trail(x, y, x + nx*tl, y + ny*tl, a, u*0.0034);
+    const tl = Math.min(u*0.15, spawn - rr);
+    trail(x, y, x + nx*tl, y + ny*tl, a);
     head(x, y, a);
     return;
   }
 
-  const aImpact = Math.pow(0.78, crossedAll);
-  // impact flash
-  if(dt < 0.8){
-    const fa = 0.9*Math.exp(-dt*6)*aImpact;
-    const rad = u*(0.015 + 0.05*(1 - Math.exp(-dt*6)));
-    const g = ctx.createRadialGradient(hitX, hitY, 0, hitX, hitY, rad);
-    g.addColorStop(0, `rgba(255,255,255,${fa.toFixed(4)})`);
-    g.addColorStop(0.35, rgba(light, fa*0.6));
-    g.addColorStop(1, rgba(col, 0));
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(hitX, hitY, rad, 0, TAU); ctx.fill();
-  }
-  // sparks skating along the glass
-  if(dt < 1){
+  const aImpact = Math.pow(0.8, crossedAll);
+  // a few fine sparks skating along the glass
+  if(dt < 0.9){
     const r = mulberry32(e.seed + 11);
-    ctx.fillStyle = rgba(col, 1);
-    for(let i = 0; i < 11; i++){
-      const tang = r() < 0.75;
-      const ang = tang ? e.theta + (r() < 0.5 ? -1 : 1)*(Math.PI/2) + (r()-0.5)*0.7 : e.theta + (r()-0.5)*1.2;
-      const dist = u*(0.015 + 0.05*r())*(1 - Math.exp(-dt*5));
-      const a = Math.exp(-dt*4)*(0.5 + 0.5*r())*aImpact;
-      const rad = u*0.0016*(0.6 + r());
-      ctx.globalAlpha = a;
-      ctx.beginPath(); ctx.arc(hitX + Math.cos(ang)*dist, hitY + Math.sin(ang)*dist, rad, 0, TAU); ctx.fill();
+    ctx.fillStyle = rgba(deep, 1);
+    for(let i = 0; i < 8; i++){
+      const ang = e.theta + (r() < 0.5 ? -1 : 1)*(Math.PI/2) + (r()-0.5)*0.6;
+      const dist = u*(0.012 + 0.04*r())*(1 - Math.exp(-dt*5));
+      ctx.globalAlpha = Math.exp(-dt*4.5)*(0.4 + 0.5*r())*aImpact;
+      ctx.beginPath(); ctx.arc(hitX + Math.cos(ang)*dist, hitY + Math.sin(ang)*dist, u*0.0014*(0.6 + r()), 0, TAU); ctx.fill();
     }
     ctx.globalAlpha = 1;
   }
-  // deflected particle drifts away and fades
+  // deflected bead glances off and fades
   if(dt < 1.6){
     const tx = -ny*e.side, ty = nx*e.side;
     let dx = nx*0.55 + tx*0.8, dy = ny*0.55 + ty*0.8;
@@ -844,15 +947,15 @@ function drawShot(s, rings){
     const speed = vv*Math.exp(-k*dt);
     const x = hitX + dx*dist, y = hitY + dy*dist;
     const a = Math.exp(-dt*2.4)*aImpact;
-    const tl = Math.min(dist, u*0.015 + speed*0.12);
-    trail(x, y, x - dx*tl, y - dy*tl, a, u*0.0022);
-    head(x, y, a, 0.8);
+    const tl = Math.min(dist, u*0.012 + speed*0.12);
+    trail(x, y, x - dx*tl, y - dy*tl, a);
+    head(x, y, a);
   }
 }
 
 // ---------- frame ----------
 function draw(t){
-  const { W, H, u, cx, cy } = geom();
+  const { W, H, cx, cy } = geom();
   if(scratch.width !== W || scratch.height !== H){ scratch.width = W; scratch.height = H; }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
@@ -869,7 +972,9 @@ function draw(t){
 
   const rings = ringGeom(T);
   const insts = instances(t, rings);
-  for(let k = rings.length - 1; k >= 0; k--) drawRing(k, rings, insts, t);
+  for(let k = 0; k < rings.length; k++) computeRing(k, rings, insts, t);
+  for(let k = rings.length - 1; k >= 0; k--) distortTissue(rings[k], T, breath);
+  for(let k = rings.length - 1; k >= 0; k--) drawGlass(rings[k]);
   for(const s of insts) drawShot(s, rings);
 }
 
