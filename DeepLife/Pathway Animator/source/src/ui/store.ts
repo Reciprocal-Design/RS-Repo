@@ -10,6 +10,7 @@ import { onBodyImage } from '../core/bodyImage';
 import { linkTraced, MODULES, moduleScene, shareScene, TRACED, withHero, withoutTissueMap, withTissueMap, type TissueUpload } from '../core/modules';
 import { hash, randomSeed } from '../core/rng';
 import { importCellMapSvg } from '../core/svgImport';
+import { loadSaved } from './persist';
 import defaultMapSvg from '../assets/default-tissue-map.svg?raw';
 import type { CellMap, LayerSpec, Pathway, Scene, Vec2 } from '../core/types';
 
@@ -29,8 +30,10 @@ function openingTabs(): Scene[] {
   return withSharedMap(tabs, tabs[0], { name: DEFAULT_MAP_NAME, viewBox, cells });
 }
 
-/** One scene per module tab, all from the same seed so they show the same pathway. */
-const TABS = openingTabs();
+/** One scene per module tab, all from the same seed so they show the same pathway; or the last settings, as saved. */
+const SAVED = typeof localStorage === 'undefined' ? null : loadSaved();
+const TABS = SAVED?.tabs ?? openingTabs();
+const ACTIVE = SAVED?.active ?? 0;
 
 interface AppState {
   /** One scene per module tab; `scene` is always `tabs[active]`. */
@@ -92,8 +95,8 @@ const put = (st: AppState, scene: Scene) => {
 
 export const useApp = create<AppState>((set) => ({
   tabs: TABS,
-  active: 0,
-  scene: TABS[0],
+  active: ACTIVE,
+  scene: TABS[ACTIVE],
   setTab: (index) => set((st) => (index === st.active ? {} : { active: index, scene: st.tabs[index] })),
   shareToAllTabs: () =>
     set((st) => ({ tabs: st.tabs.map((s, i) => (i === st.active ? s : shareScene(st.scene, s))) })),

@@ -62,10 +62,12 @@ describe('body', () => {
     expect(sched.fire.get('body-heart')).toBeGreaterThan(0);
   });
 
-  it('draws as vector, organs in the nucleus group, no nucleus for the body', () => {
+  it('draws as vector, organs as soft zones (no outlines), no nucleus for the body', () => {
     const s = moduleScene('body', 7);
     const svg = displayListToSvg(buildDisplayList(s, 1));
-    expect(svg).toContain('id="organ1-nucleus-outline"');
+    expect(svg).toContain('id="organ1-zone"');
+    expect(svg).toContain('<radialGradient id="grad-organ1-zone"');
+    expect(svg).not.toContain('id="organ1-nucleus');
     expect(svg).not.toContain('id="body-nucleus');
     expect(svg).not.toContain('NaN');
   });
@@ -188,9 +190,14 @@ describe('journey on an imported map', () => {
     // The tissue section is zoomed in from the whole map (zoom 1) so tissue
     // fills the frame, but stays further out than the cell shot.
     const mid = journeyState(s, 2.5 * L).tissue;
-    const tv = tissueView(s);
-    expect(mid.zoom).toBeCloseTo(tv.zoom, 9);
-    expect(mid.origin).toEqual(tv.center);
+    expect(mid.zoom).toBeCloseTo(tissueView(s).zoom, 9);
+    expect(mid.origin).toEqual(tissueView(s).center);
+    // By default the camera stands a little further back than just filling the frame (more cells show);
+    // at "Tissue zoom" 1 it fills it exactly.
+    expect(s.module.tissueZoom).toBeLessThan(1);
+    const full = { ...s, module: { ...s.module, tissueZoom: 1 } };
+    expect(tissueView(s).zoom).toBeCloseTo(tissueView(full).zoom * s.module.tissueZoom, 6);
+    const tv = tissueView(full);
     expect(tv.zoom).toBeGreaterThan(1);
     expect(tv.zoom).toBeLessThanOrEqual(heroView(s).zoom);
     // Every point of the frame lands on the map's cells (or the thin walls between them).

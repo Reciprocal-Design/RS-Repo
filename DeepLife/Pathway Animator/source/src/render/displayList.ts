@@ -278,9 +278,19 @@ export function buildDisplayList(
     if (scene.cell.visible) prims.push(...outlinePrims('membrane', c.cell.points, look, os, prefix));
     if (scene.nucleus.visible && !c.noNucleus) prims.push(...outlinePrims('nucleus', c.nucleus.points, scene.nucleus, os, prefix));
   }
-  // Organs (body view), in the nucleus style.
-  if (scene.nucleus.visible) {
-    g.organs?.forEach((o, i) => prims.push(...outlinePrims('nucleus', o.points, scene.nucleus, os, `organ${i + 1}-`)));
+  // Organs (body view): no outline, a soft radial wash in the body's purple marks each zone.
+  if (scene.nucleus.visible && g.organs?.length) {
+    const zone = makeRamp([scene.cell.glowColor, scene.cell.edgeColor])(0.35);
+    g.organs.forEach((o, i) => {
+      const pts = o.points;
+      let cx = 0, cy = 0;
+      for (const q of pts) (cx += q.x), (cy += q.y);
+      cx /= pts.length;
+      cy /= pts.length;
+      let r = 0;
+      for (const q of pts) r = Math.max(r, Math.hypot(q.x - cx, q.y - cy));
+      prims.push({ kind: 'glow', id: `organ${i + 1}-zone`, group: 'membrane', c: { x: cx, y: cy }, r: r * 1.7, color: withAlpha(zone, 0.75) });
+    });
   }
   // Body view: wireframe, anatomy lines and the resting particle field.
   const TONES = 10;

@@ -10,6 +10,7 @@ import { ModuleSection } from './ModuleSection';
 import { TissueMapSection } from './TissueMapSection';
 import { OutlineControls } from './OutlineControls';
 import { CrosstalkSection, PathwaysSection } from './PathwaysSection';
+import { clearSaved } from './persist';
 import { useApp } from './store';
 
 export function Panel() {
@@ -96,6 +97,17 @@ export function Panel() {
             <input type="color" value={scene.canvas.background} onChange={(e) => canvas({ background: e.target.value })} />
           </div>
         </div>
+        <p className="hint">Your settings in every tab are saved in this browser as you go, and come back when you reload.</p>
+        <button
+          className="btn small"
+          onClick={() => {
+            if (!confirm('Reset every tab to the default settings? Your current settings will be lost (save a scene JSON first to keep them).')) return;
+            clearSaved();
+            location.reload();
+          }}
+        >
+          Reset all settings
+        </button>
       </Section>
 
       <TissueMapSection />

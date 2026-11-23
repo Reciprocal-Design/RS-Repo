@@ -63,8 +63,8 @@ cell or generated tissue.
    (Voronoi cells of evenly scattered points, corners rounded). "New tissue shapes" re-rolls it.
 6. **Body**: organ-level connectivity (`src/core/body.ts`). An anatomical front-view outline drawn like the
    membrane in an X-ray look: a dark core, a wide glow reaching in from a bright rim ("Body glow"), and soft
-   highlights along the anatomy (collarbones, chest, ribs, hips, shoulders, knees) that model the form. Organs are
-   drawn like nuclei, and the same firing lines spread out from a chosen organ: organ to organ, up the neck, and in
+   highlights along the anatomy (collarbones, chest, ribs, hips, shoulders, knees) that model the form. Organs have no
+   outline: a soft radial wash in the body's purple marks each organ's zone, and the same firing lines spread out from a chosen organ: organ to organ, up the neck, and in
    chains out along each arm and leg to the hands and feet. About 2,600 particles fill the body, each lighting up
    in a wave as the signal reaches the network node nearest it; an optional wireframe mesh (a Delaunay
    triangulation, `src/core/delaunay.ts`) is off by default.
@@ -74,8 +74,8 @@ cell or generated tissue.
    the figure are kept. The image is saved in the scene JSON and used by the Body and journey tabs.
 7. **Cell → tissue → body** (`src/render/journey.ts`): the website's scroll sequence, in five sections of equal
    length: cell, cell → tissue (the camera pulls back from the centre cell as the neighbours fade in),
-   tissue (zoomed in just enough that tissue fills the frame, no edge of the cell layer showing; "Tissue zoom"
-   goes closer or pulls back), tissue → body (the whole tissue comes inside a circle, which shrinks to one white dot of the body, on the chosen organ, as the body fades in round it),
+   tissue ("Tissue zoom" 1× zooms in just enough that tissue fills the frame, no edge of the cell layer showing;
+   the default, 0.7×, stands a little further back so more cells show), tissue → body (the whole tissue comes inside a circle, which shrinks to one white dot of the body, on the chosen organ, as the body fades in round it),
    body (its dots fire with no lines between them). The tissue is the generated one round the single cell, or an SVG map imported under Cell map: then the
    cell nearest the map's middle is the centre cell, shown alone at the single cell's size to start with (every
    other cell, and the links to them, faded out) and starting the signal. The tissue layer fades out towards its
@@ -105,6 +105,10 @@ cell to the canvas), otherwise a tissue generated round the cell. "Neighbour opa
 are, and "Monochrome neighbours" draws them in greys. The same option on the Cell → tissue → body tab shows the
 tissue's other cells round the centre cell in the cell section, as see-through (optionally grey) outlines, which
 grow to full opacity and colour, their pathways fading in, as the camera pulls back into the tissue.
+
+**Saved settings.** Every tab's settings, and the open tab, are saved in the browser (localStorage) a moment after
+each change, so a reload comes back to where you were. "Scene → Reset all settings" goes back to the defaults. A body
+image too large for the browser's storage is left out of the saved copy (save a scene JSON to keep it).
 
 Scene JSON saves the current tab, including its module settings; a file loads into the current tab and keeps the
 tab's module.

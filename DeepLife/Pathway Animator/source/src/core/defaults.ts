@@ -32,7 +32,7 @@ export function defaultModule(kind: ModuleKind = 'custom'): ModuleSettings {
     toxicColor: '#FF2B45',
     organ: 'heart',
     sectionLength: 3,
-    tissueZoom: 1,
+    tissueZoom: 0.7,
     zoom: 1,
     bodyGlow: 0.5,
     bodyMesh: false,
