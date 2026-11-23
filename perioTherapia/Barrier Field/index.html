@@ -327,7 +327,7 @@ const DEFAULTS = {
   loop: 12, seed: 7, bg: '#ecebe9', color: '#ee6650',
   size: 0.3, lobulation: 0.5, soft: 0.5, texture: 0.4,
   rings: 3, spacing: 0.26, band: 0.3, idle: 0.3, strength: 1,
-  shots: 3, speed: 1, pierce: 0.4, aimMode: 'random', aim: 315, spread: 14, refract: 1.6, drift: 0.5,
+  shots: 3, speed: 1, pierce: 0.4, aimMode: 'random', aim: 315, spread: 14, refract: 1.6, drift: 0.5, edges: 0.6,
 };
 const P = { ...DEFAULTS };
 const SETTINGS_KEY = 'periotherapia.barrier.settings.v5';
@@ -343,6 +343,7 @@ const SLIDERS = [
   ['rings', 'Barrier layers', 1, 5, 1, v => v, 'g-rings'],
   ['spacing', 'Spacing', 0.12, 0.4, 0.005, v => v.toFixed(2), 'g-rings'],
   ['band', 'Edge bevel', 0, 1, 0.01, v => v.toFixed(2), 'g-rings'],
+  ['edges', 'Edge visibility', 0, 1, 0.01, v => v.toFixed(2), 'g-rings'],
   ['refract', 'Refraction strength', 0.2, 3, 0.05, v => v.toFixed(2), 'g-rings'],
   ['idle', 'Resting refraction', 0, 1, 0.01, v => v.toFixed(2), 'g-rings'],
   ['strength', 'Pressure response', 0.3, 1.6, 0.05, v => v.toFixed(2), 'g-rings'],
@@ -569,7 +570,6 @@ function refractDisc(ring){
   const { u, W, H } = geom();
   const { R, cx, cy, pulse, dir, dirAmt } = ring;
   const eps = P.refract*(0.025*P.idle + 0.075*pulse);
-  if(eps < 0.0004) return;
   const m = 1 + eps;
   // pressure moves the lens centre away from the hit, so the bend is strongest where it landed
   const px = cx - dir[0]*R*0.5*dirAmt, py = cy - dir[1]*R*0.5*dirAmt;
@@ -601,16 +601,64 @@ function refractDisc(ring){
   const rim = new Path2D(); rim.arc(cx, cy, R, 0, TAU); rim.arc(cx, cy, Math.max(1, R - wb), 0, TAU);
   lens(rim, 1 + eps*3.5 + 0.002*P.refract);
 
-  // hairline edges and a faint sheen, only as strong as the pressure
+  // the glass edge, as in the reference: a soft white highlight band just inside the rim
+  // (brightest where the light falls, upper right), a crisp hairline and a faint shadow outside.
+  // Always faintly there; a pulse brightens it.
   const vis = Math.min(1, pulse);
-  if(vis > 0.003){
+  const ev = Math.min(1, P.edges*(1 + 1.2*vis));
+  if(ev > 0.003){
     const deep = shade(P.color, -5, 0.1, -0.15);
-    ctx.lineWidth = Math.max(1, u*0.0009);
-    ctx.strokeStyle = `rgba(255,255,255,${(0.55*vis).toFixed(4)})`;
-    ctx.beginPath(); ctx.arc(cx, cy, R - wb*0.5, 0, TAU); ctx.stroke();
-    ctx.strokeStyle = rgba(deep, 0.16*vis);
-    ctx.beginPath(); ctx.arc(cx, cy, R + ctx.lineWidth, 0, TAU); ctx.stroke();
-    if(dirAmt > 0.01){
+    const lx = 0.7071, ly = -0.7071;                     // light direction: upper right
+    const band = Math.max(u*0.008, R*0.14*(0.4 + P.band));
+    const shadowW = band*0.5;
+    const lit = (a0, a1) => {                            // linear mask: a0 on the lit side, a1 opposite
+      const g = sctx.createLinearGradient(cx + lx*R, cy + ly*R, cx - lx*R, cy - ly*R);
+      g.addColorStop(0, `rgba(0,0,0,${a0})`); g.addColorStop(0.5, `rgba(0,0,0,${(a0 + a1)/2})`); g.addColorStop(1, `rgba(0,0,0,${a1})`);
+      return g;
+    };
+    const m = band + shadowW + 4;
+    const qx = Math.max(0, Math.floor(cx - R - m)), qy = Math.max(0, Math.floor(cy - R - m));
+    const qW = Math.min(W, Math.ceil(cx + R + m)) - qx, qH = Math.min(H, Math.ceil(cy + R + m)) - qy;
+    if(qW > 0 && qH > 0){
+      sctx.setTransform(1, 0, 0, 1, 0, 0);
+      sctx.globalCompositeOperation = 'source-over';
+      sctx.clearRect(qx, qy, qW, qH);
+
+      // highlight band inside the rim
+      const inner = new Path2D(); inner.arc(cx, cy, R, 0, TAU); inner.arc(cx, cy, Math.max(1, R - band), 0, TAU);
+      const hg = sctx.createRadialGradient(cx, cy, Math.max(0, R - band), cx, cy, R);
+      hg.addColorStop(0, 'rgba(255,255,255,0)');
+      hg.addColorStop(0.7, 'rgba(255,255,255,0.35)');
+      hg.addColorStop(1, 'rgba(255,255,255,0.85)');
+      sctx.fillStyle = hg; sctx.fill(inner, 'evenodd');
+      sctx.globalCompositeOperation = 'destination-in';
+      sctx.fillStyle = lit(1, 0.22); sctx.fillRect(qx, qy, qW, qH);
+      sctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = ev;
+      ctx.drawImage(scratch, qx, qy, qW, qH, qx, qy, qW, qH);
+
+      // soft shadow just outside, on the side away from the light
+      sctx.clearRect(qx, qy, qW, qH);
+      const outer = new Path2D(); outer.arc(cx, cy, R + shadowW, 0, TAU); outer.arc(cx, cy, R, 0, TAU);
+      const sg = sctx.createRadialGradient(cx, cy, R, cx, cy, R + shadowW);
+      sg.addColorStop(0, rgba(deep, 0.22)); sg.addColorStop(1, rgba(deep, 0));
+      sctx.fillStyle = sg; sctx.fill(outer, 'evenodd');
+      sctx.globalCompositeOperation = 'destination-in';
+      sctx.fillStyle = lit(0.15, 1); sctx.fillRect(qx, qy, qW, qH);
+      sctx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(scratch, qx, qy, qW, qH, qx, qy, qW, qH);
+      ctx.globalAlpha = 1;
+    }
+
+    // crisp rim: white line just inside, darker line on the edge
+    ctx.lineWidth = Math.max(1, u*0.0011);
+    ctx.strokeStyle = `rgba(255,255,255,${(0.8*ev).toFixed(4)})`;
+    ctx.beginPath(); ctx.arc(cx, cy, R - ctx.lineWidth*1.2, 0, TAU); ctx.stroke();
+    ctx.lineWidth = Math.max(1, u*0.0008);
+    ctx.strokeStyle = rgba(deep, 0.3*ev);
+    ctx.beginPath(); ctx.arc(cx, cy, R + 0.5, 0, TAU); ctx.stroke();
+
+    if(dirAmt > 0.01 && vis > 0.003){
       const g = ctx.createLinearGradient(cx + dir[0]*R, cy + dir[1]*R, cx - dir[0]*R, cy - dir[1]*R);
       g.addColorStop(0, `rgba(255,255,255,${(0.14*vis*dirAmt).toFixed(4)})`);
       g.addColorStop(0.5, 'rgba(255,255,255,0)');
