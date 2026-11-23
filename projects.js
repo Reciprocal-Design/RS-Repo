@@ -13,6 +13,6 @@ window.RS_META = {
   "RS/Protein Hero": { description: "Next.js hero: studio-lit interactive protein, drag to spin, leans to the cursor", status: "wip" },
   "Toregem/Progress Bar": { description: "Animated tooth growth stages, a circle denting the line as it travels", status: "wip" },
   "perioTherapia": { description: "Tumour microenvironment visuals" },
-  "perioTherapia/Barrier Field": { description: "Splat-shaped tumour slice with invisible glass barriers inside it that flex and block incoming shots", status: "wip" },
+  "perioTherapia/Barrier Field": { description: "Splat-shaped tumour slice under near-invisible layers of glass that refract when a pulse presses on them", status: "wip" },
   "Tuari/Shape Mosaic": { description: "Rebuild an image from one SVG shape at different sizes, with subtle looping motion", status: "wip" },
 };
