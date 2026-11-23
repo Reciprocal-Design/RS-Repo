@@ -698,6 +698,21 @@ function react(dt, d, amp, mode){
   const glow = 0.3*Math.exp(-dt/1.2)*(1 - Math.exp(-dt*5));  // whole barrier briefly visible
   return amp*rise*(central + front + glow);
 }
+// colour soaking into the glass: a pool at the contact point and two waves running around the ring
+function colourFlow(dt, d){
+  if(dt <= 0 || dt > 3.5) return 0;
+  const rise = 1 - Math.exp(-dt*25);
+  const ps = 0.08 + 0.35*dt;
+  const pool = Math.exp(-dt/0.7)*Math.exp(-d*d/(2*ps*ps));
+  let waves = 0;
+  for(let i = 0; i < 3; i++){
+    const di = dt - i*0.22;
+    if(di <= 0) continue;
+    const fp = Math.min(Math.PI, 1.6*di*(1 - 0.25*di/3.5));
+    waves += (0.7 - i*0.18)*Math.exp(-di/1.0)*Math.exp(-((d - fp)**2)/(2*0.09*0.09));
+  }
+  return rise*(pool + waves);
+}
 // the glass flexes: an inward dent that rings out and spreads from the impact
 function wobble(dt, d, amp, u){
   if(dt <= 0 || dt > 2.5) return 0;
@@ -708,13 +723,14 @@ function wobble(dt, d, amp, u){
 function computeRing(k, rings, insts, t){
   const { u } = geom();
   const ring = rings[k];
-  const I = ring.I = new Float32Array(MR), dR = ring.dR = new Float32Array(MR);
+  const I = ring.I = new Float32Array(MR), dR = ring.dR = new Float32Array(MR), C = ring.C = new Float32Array(MR);
+  let maxC = 0;
   const sweep = TAU*t/P.loop;
   let maxI = 0, maxD = 0;
   for(let j = 0; j < MR; j++){
     const a = j/MR*TAU;
     let v = P.idle*(0.55 + 0.45*Math.cos(a - sweep - k*1.3));
-    let w = 0;
+    let w = 0, c = 0;
     for(const s of insts){
       const b = s.e.block, d = angDist(a, s.e.theta);
       if(k > b){
@@ -724,6 +740,7 @@ function computeRing(k, rings, insts, t){
       } else if(k === b){
         v += react(s.dt, d, 1, HIT);
         w += wobble(s.dt, d, 1, u);
+        c += colourFlow(s.dt, d);
       } else {
         v += react(s.dt - 0.1*(b-k), d, 0.3*Math.pow(0.7, b-k-1), SYM);
         w += wobble(s.dt - 0.1*(b-k), d, 0.15, u);
@@ -731,9 +748,11 @@ function computeRing(k, rings, insts, t){
     }
     I[j] = Math.min(1, v*P.strength);
     dR[j] = w*P.strength;
+    C[j] = Math.min(1, c*P.strength);
+    maxC = Math.max(maxC, C[j]);
     maxI = Math.max(maxI, I[j]); maxD = Math.max(maxD, Math.abs(dR[j]));
   }
-  ring.maxI = maxI; ring.maxD = maxD;
+  ring.maxI = maxI; ring.maxD = maxD; ring.maxC = maxC;
 }
 
 // Tissue seen through the glass: the ring band is rebuilt offscreen from thin,
@@ -846,7 +865,22 @@ function drawGlass(ring){
   for(let j = 0; j <= MR; j++) cg.addColorStop(j/MR, `rgba(0,0,0,${I[j % MR].toFixed(4)})`);
   sctx.fillStyle = cg; sctx.fillRect(bx, by, bW, bH);
   sctx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(scratch, bx, by, bW, bH, bx, by, bW, bH);
 
+  // colour flowing through the glass
+  if(ring.maxC < 0.004) return;
+  const C = ring.C;
+  sctx.clearRect(bx, by, bW, bH);
+  const cb = ringPath(0); ringPath(-bw, cb);
+  const g2 = sctx.createRadialGradient(cx, cy, Math.max(0, R - bw), cx, cy, R);
+  g2.addColorStop(0, rgba(deep, 0.05)); g2.addColorStop(0.5, rgba(deep, 0.35)); g2.addColorStop(1, rgba(deep, 0.85));
+  sctx.fillStyle = g2; sctx.fill(cb, 'evenodd');
+  sctx.lineWidth = Math.max(1, u*0.0022); sctx.strokeStyle = 'rgba(255,255,255,0.8)'; sctx.stroke(ringPath(-u*0.0035));
+  sctx.globalCompositeOperation = 'destination-in';
+  const cc = sctx.createConicGradient(0, cx, cy);
+  for(let j = 0; j <= MR; j++) cc.addColorStop(j/MR, `rgba(0,0,0,${C[j % MR].toFixed(4)})`);
+  sctx.fillStyle = cc; sctx.fillRect(bx, by, bW, bH);
+  sctx.globalCompositeOperation = 'source-over';
   ctx.drawImage(scratch, bx, by, bW, bH, bx, by, bW, bH);
 }
 
@@ -925,31 +959,28 @@ function drawShot(s, rings){
   }
 
   const aImpact = Math.pow(0.8, crossedAll);
-  // a few fine sparks skating along the glass
-  if(dt < 0.9){
-    const r = mulberry32(e.seed + 11);
-    ctx.fillStyle = rgba(deep, 1);
-    for(let i = 0; i < 8; i++){
-      const ang = e.theta + (r() < 0.5 ? -1 : 1)*(Math.PI/2) + (r()-0.5)*0.6;
-      const dist = u*(0.012 + 0.04*r())*(1 - Math.exp(-dt*5));
-      ctx.globalAlpha = Math.exp(-dt*4.5)*(0.4 + 0.5*r())*aImpact;
-      ctx.beginPath(); ctx.arc(hitX + Math.cos(ang)*dist, hitY + Math.sin(ang)*dist, u*0.0014*(0.6 + r()), 0, TAU); ctx.fill();
-    }
+  // absorbed: the bead sinks into the glass where it lands
+  if(dt < 0.35){
+    const k = 1 - dt/0.35;
+    ctx.globalAlpha = aImpact*k;
+    ctx.beginPath(); ctx.arc(hitX, hitY, u*0.0042*(0.3 + 0.7*k), 0, TAU);
+    ctx.fillStyle = '#fff'; ctx.fill();
     ctx.globalAlpha = 1;
   }
-  // deflected bead glances off and fades
-  if(dt < 1.6){
-    const tx = -ny*e.side, ty = nx*e.side;
-    let dx = nx*0.55 + tx*0.8, dy = ny*0.55 + ty*0.8;
-    const dl = Math.hypot(dx, dy); dx /= dl; dy /= dl;
-    const k = 2.6, vv = v*0.42;
-    const dist = vv*(1 - Math.exp(-k*dt))/k;
-    const speed = vv*Math.exp(-k*dt);
-    const x = hitX + dx*dist, y = hitY + dy*dist;
-    const a = Math.exp(-dt*2.4)*aImpact;
-    const tl = Math.min(dist, u*0.012 + speed*0.12);
-    trail(x, y, x - dx*tl, y - dy*tl, a);
-    head(x, y, a);
+
+  // ripples spreading from the point of contact, like a drop landing in water
+  for(let i = 0; i < 3; i++){
+    const d = dt - i*0.18;
+    if(d <= 0 || d > 2.2) continue;
+    const r = u*(0.006 + 0.11*(1 - Math.exp(-d*2.2)));
+    const a = aImpact*0.6*Math.exp(-d*2.4)*(1 - i*0.25);
+    if(a < 0.004) continue;
+    ctx.lineWidth = Math.max(1, u*0.0022*(1 - i*0.25));
+    ctx.strokeStyle = rgba(deep, a);
+    ctx.beginPath(); ctx.arc(hitX, hitY, r, 0, TAU); ctx.stroke();
+    ctx.lineWidth = Math.max(1, u*0.0012);
+    ctx.strokeStyle = `rgba(255,255,255,${(a*0.75).toFixed(4)})`;
+    ctx.beginPath(); ctx.arc(hitX, hitY, Math.max(0, r - u*0.0025), 0, TAU); ctx.stroke();
   }
 }
 
