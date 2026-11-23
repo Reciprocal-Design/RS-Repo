@@ -326,7 +326,7 @@ const sctx = scratch.getContext('2d', { alpha: true });
 const DEFAULTS = {
   loop: 12, seed: 7, bg: '#ecebe9', color: '#ee6650',
   size: 0.3, lobulation: 0.5, soft: 0.5, texture: 0.4,
-  rings: 3, spacing: 0.26, band: 0.3, idle: 0.3, strength: 1,
+  rings: 3, ringInner: 0.12, ringGap: 0.08, band: 0.3, idle: 0.3, strength: 1,
   shots: 3, speed: 1, pierce: 0.4, aimMode: 'random', aim: 315, spread: 14, refract: 1.6, drift: 0.5, edges: 0.6, offset: 0.55,
   res: '1920x1080', customW: 1920, customH: 1080, manual: [],
 };
@@ -343,7 +343,8 @@ const SLIDERS = [
   ['soft', 'Edge softness', 0, 1, 0.01, v => v.toFixed(2), 'g-tissue'],
   ['texture', 'Texture', 0, 1, 0.01, v => v.toFixed(2), 'g-tissue'],
   ['rings', 'Barrier layers', 1, 5, 1, v => v, 'g-rings'],
-  ['spacing', 'Spacing', 0.12, 0.4, 0.005, v => v.toFixed(2), 'g-rings'],
+  ['ringInner', 'First circle size', 0.03, 0.45, 0.005, v => v.toFixed(3), 'g-rings'],
+  ['ringGap', 'Gap between circles', 0.015, 0.2, 0.0025, v => v.toFixed(3), 'g-rings'],
   ['band', 'Edge bevel', 0, 1, 0.01, v => v.toFixed(2), 'g-rings'],
   ['edges', 'Edge visibility', 0, 1, 0.01, v => v.toFixed(2), 'g-rings'],
   ['offset', 'Refraction offset', 0, 1, 0.01, v => v.toFixed(2), 'g-rings'],
@@ -557,7 +558,7 @@ function ringGeom(T){
   const r = mulberry32(P.seed*31 + 5);
   const rings = [];
   for(let k = 0; k < P.rings; k++){
-    const R = T.Rb*(0.4 + P.spacing*k);
+    const R = u*(P.ringInner + P.ringGap*k);   // independent of the tissue size
     const a = r()*TAU, o = k ? u*0.005*(0.4 + r()*0.6) : 0;
     rings.push({ R, cx: cx + Math.cos(a)*o, cy: cy + Math.sin(a)*o });
   }
