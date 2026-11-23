@@ -1,0 +1,1369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Barrier Field — perioTherapia</title>
+<style>
+  :root{
+    --bg: #f3f2f0;
+    --panel: #ffffff;
+    --line: #e6e3df;
+    --text: #1d1c1b;
+    --muted: #8a8580;
+    --accent: #e8604a;
+    --accent-soft: #fdeeea;
+    --warn: #a8661a;
+    --error: #c2321f;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", Consolas, monospace;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:13px/1.5 var(--sans); display:flex; min-height:100vh;
+  }
+  #stage{
+    flex:1; min-width:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:28px; gap:14px; position:relative;
+  }
+  #canvasWrap{ position:relative; max-width:100%; }
+  canvas#c{
+    display:block; max-width:calc(100vw - 400px); max-height:calc(100vh - 140px);
+    width:auto; height:auto; cursor:crosshair; border-radius:4px;
+    box-shadow:0 1px 2px rgba(0,0,0,.04), 0 12px 40px rgba(60,40,30,.08);
+  }
+  canvas#c.checker{
+    background-color:#fafafa;
+    background-image:
+      linear-gradient(45deg, #e9e9e9 25%, transparent 25%),
+      linear-gradient(-45deg, #e9e9e9 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #e9e9e9 75%),
+      linear-gradient(-45deg, transparent 75%, #e9e9e9 75%);
+    background-size:20px 20px;
+    background-position:0 0, 0 10px, 10px -10px, -10px 0;
+  }
+  #hint{
+    position:absolute; left:10px; bottom:10px; font-size:11px; color:var(--muted);
+    background:rgba(255,255,255,.75); padding:3px 8px; border-radius:20px; pointer-events:none;
+  }
+  #transport{ display:flex; gap:10px; align-items:center; width:min(720px, 100%); }
+  #transport input[type=range]{ flex:1; }
+  #timeLbl{ font:11px var(--mono); color:var(--muted); min-width:92px; text-align:right; }
+
+  #panel{
+    width:340px; flex:none; background:var(--panel); border-left:1px solid var(--line);
+    padding:22px 20px 40px; overflow-y:auto; max-height:100vh;
+  }
+  .brand{ font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); margin:0; }
+  h1{ font-size:20px; font-weight:600; letter-spacing:-.01em; margin:2px 0 4px; }
+  .sub{ color:var(--muted); font-size:12px; margin:0 0 6px; }
+  .group{ border-top:1px solid var(--line); padding:14px 0 16px; }
+  .group h2{ font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; margin:0 0 10px; }
+  .ctl{ margin-top:10px; }
+  .ctl:first-of-type{ margin-top:0; }
+  label{ display:flex; justify-content:space-between; gap:8px; font-size:12px; color:var(--muted); margin-bottom:4px; }
+  label .val{ color:var(--text); font-family:var(--mono); font-size:11px; }
+  input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:18px; background:transparent; margin:0; cursor:pointer; }
+  input[type=range]::-webkit-slider-runnable-track{ height:3px; background:#e9e5e1; border-radius:3px; }
+  input[type=range]::-moz-range-track{ height:3px; background:#e9e5e1; border-radius:3px; }
+  input[type=range]::-moz-range-progress{ height:3px; background:var(--accent); border-radius:3px; }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:14px; height:14px; margin-top:-5.5px; border-radius:50%; background:#fff; border:2px solid var(--accent); }
+  input[type=range]::-moz-range-thumb{ width:10px; height:10px; border-radius:50%; background:#fff; border:2px solid var(--accent); }
+  select, input[type=number], input[type=text]{
+    width:100%; background:#fff; border:1px solid var(--line); color:var(--text);
+    font:12px var(--sans); padding:7px 8px; border-radius:6px;
+  }
+  input[type=color]{ width:100%; height:32px; border:1px solid var(--line); border-radius:6px; background:#fff; padding:2px; }
+  .row{ display:flex; gap:8px; }
+  .row > *{ flex:1; min-width:0; }
+  button{
+    font:600 12px var(--sans); padding:9px 12px; border-radius:6px; cursor:pointer;
+    border:1px solid var(--accent); background:var(--accent); color:#fff; width:100%; transition:.15s;
+  }
+  button:hover{ filter:brightness(1.05); }
+  button.ghost{ background:#fff; color:var(--text); border-color:var(--line); }
+  button.ghost:hover{ background:var(--accent-soft); border-color:#f3c9bf; filter:none; }
+  button:disabled{ opacity:.45; cursor:default; }
+  #transport button{ width:auto; min-width:84px; }
+  :focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .toggle{ display:flex; align-items:center; justify-content:space-between; cursor:pointer; margin-top:10px; }
+  .toggle input{ accent-color:var(--accent); width:16px; height:16px; }
+  .toggle.disabled{ opacity:.45; }
+  .note{ font-size:11px; color:var(--muted); line-height:1.55; margin:6px 0 0; }
+  .note.warn{ color:var(--warn); }
+  .note b{ color:var(--text); font-weight:600; }
+  .outSize{ font-size:12px; margin-top:10px; }
+  .cmdRow{ display:flex; gap:6px; margin-top:6px; }
+  .cmdRow code{
+    flex:1; display:block; background:#f7f6f4; border:1px solid var(--line); padding:8px; border-radius:6px;
+    font:10px/1.5 var(--mono); white-space:pre-wrap; word-break:break-all;
+  }
+  .cmdRow button{ width:auto; }
+  #exProgressWrap{ margin-top:10px; }
+  progress{ width:100%; height:8px; accent-color:var(--accent); }
+  #exStatus{ font-size:11px; color:var(--muted); margin-top:4px; }
+  #exError{ color:var(--error); font-size:12px; margin-top:8px; white-space:pre-wrap; }
+  #exResult a{ display:block; color:var(--accent); margin-top:8px; }
+  #exResult video, #exResult img{ width:100%; margin-top:8px; border:1px solid var(--line); border-radius:6px; }
+  .hidden{ display:none !important; }
+
+  @media (max-width: 860px){
+    body{ flex-direction:column; }
+    #stage{ padding:16px; }
+    canvas#c{ max-width:100%; max-height:70vh; }
+    #panel{ width:auto; max-height:none; border-left:0; border-top:1px solid var(--line); padding:20px 16px 40px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="canvasWrap">
+    <canvas id="c" width="1920" height="1080"></canvas>
+    <div id="hint">Click the canvas to fire a shot from that side</div>
+  </div>
+  <div id="transport">
+    <button id="playBtn" class="ghost" type="button">Pause</button>
+    <button id="fireBtn" type="button">Fire</button>
+    <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Timeline">
+    <span id="timeLbl">0.00 / 12.00s</span>
+  </div>
+</div>
+
+<div id="panel">
+  <p class="brand">perioTherapia</p>
+  <h1>Barrier Field</h1>
+  <p class="sub">An abstract tumour microenvironment. Its barriers stay invisible until something tries to get in.</p>
+
+  <div class="group">
+    <h2>Composition</h2>
+    <select id="resolutionPreset" aria-label="Composition size">
+      <option value="1920x1080">1920 × 1080 (16:9)</option>
+      <option value="1440x840">1440 × 840 (web hero)</option>
+      <option value="1080x1080">1080 × 1080 (square)</option>
+      <option value="1080x1920">1080 × 1920 (vertical)</option>
+      <option value="custom">Custom…</option>
+    </select>
+    <div id="customResWrap" class="row hidden" style="margin-top:8px">
+      <div><label for="customWidth">Width</label><input type="number" id="customWidth" value="1920" min="200" max="3840"></div>
+      <div><label for="customHeight">Height</label><input type="number" id="customHeight" value="1080" min="200" max="3840"></div>
+    </div>
+    <div class="ctl" id="g-loop"></div>
+    <div class="ctl">
+      <label for="bgColor">Background</label>
+      <input type="color" id="bgColor" value="#ecebe9">
+    </div>
+  </div>
+
+  <div class="group">
+    <h2>Tissue</h2>
+    <div class="row">
+      <div><label for="seed">Seed</label><input type="number" id="seed" value="7" min="1" max="99999"></div>
+      <div style="display:flex;align-items:flex-end"><button id="newTissue" class="ghost" type="button">New tissue</button></div>
+    </div>
+    <div id="g-tissue"></div>
+    <div class="ctl">
+      <label for="tissueColor">Colour</label>
+      <input type="color" id="tissueColor" value="#ee6650">
+    </div>
+  </div>
+
+  <div class="group">
+    <h2>Barriers</h2>
+    <div id="g-rings"></div>
+  </div>
+
+  <div class="group">
+    <h2>Shots</h2>
+    <div id="g-shots"></div>
+    <p class="note">Clicking the canvas adds a shot to the loop, so it's included in exports.</p>
+    <button id="clearShots" class="ghost" type="button" style="margin-top:8px">Clear clicked shots (0)</button>
+  </div>
+
+  <div class="group">
+    <button id="resetBtn" class="ghost" type="button">Reset all settings</button>
+  </div>
+
+  <div class="group" id="exportPanel">
+    <h2>Export</h2>
+
+    <label for="exFormat">Format</label>
+    <select id="exFormat">
+      <option value="mp4">MP4 (H.264)</option>
+      <option value="webm">WebM (VP9)</option>
+      <option value="png-seq">PNG sequence (.zip)</option>
+      <option value="png">Single frame PNG</option>
+    </select>
+    <p id="exSupport" class="note warn hidden" role="status"></p>
+
+    <label class="toggle" for="exTransparent" id="exTransparentRow">
+      <span>Transparent background</span>
+      <input type="checkbox" id="exTransparent">
+    </label>
+    <p id="exAlphaNote" class="note"></p>
+    <div id="exMatteWrap" class="ctl">
+      <label for="exMatte">Background colour (matte)</label>
+      <input type="color" id="exMatte" value="#ecebe9">
+    </div>
+
+    <div class="ctl">
+      <label for="exSize">Size</label>
+      <select id="exSize">
+        <option value="canvas">Same as composition</option>
+        <option value="1920x1080">1080p · 1920 × 1080</option>
+        <option value="2560x1440">1440p · 2560 × 1440</option>
+        <option value="3840x2160">4K · 3840 × 2160</option>
+        <option value="1080x1080">Square · 1080 × 1080</option>
+        <option value="1080x1920">Vertical · 1080 × 1920</option>
+        <option value="custom">Custom W × H…</option>
+      </select>
+      <div id="exCustomSizeWrap" class="row hidden" style="margin-top:8px">
+        <div><label for="exW">W</label><input type="number" id="exW" value="1920" min="16" max="7680"></div>
+        <div><label for="exH">H</label><input type="number" id="exH" value="1080" min="16" max="7680"></div>
+      </div>
+      <p class="note" id="exScaleNote"></p>
+    </div>
+
+    <div class="ctl">
+      <label for="exFps">Frame rate</label>
+      <select id="exFps">
+        <option value="24">24</option>
+        <option value="25">25</option>
+        <option value="30" selected>30</option>
+        <option value="50">50</option>
+        <option value="60">60</option>
+        <option value="23.976">23.976 (24000/1001)</option>
+        <option value="29.97">29.97 (30000/1001)</option>
+        <option value="custom">Custom…</option>
+      </select>
+      <div id="exFpsCustomWrap" class="hidden" style="margin-top:8px">
+        <label for="exFpsCustom">Custom fps</label>
+        <input type="number" id="exFpsCustom" value="30" min="1" max="120" step="any">
+      </div>
+    </div>
+
+    <div id="exRangeWrap" class="ctl">
+      <div class="row">
+        <div><label for="exStart">Start (s)</label><input type="number" id="exStart" value="0" min="0" step="0.1"></div>
+        <div><label for="exEnd">End (s)</label><input type="number" id="exEnd" value="12" min="0.1" step="0.1"></div>
+        <div><label for="exLoops">Loops</label><input type="number" id="exLoops" value="1" min="1" max="20" step="1"></div>
+      </div>
+      <p class="note" id="exLoopNote"></p>
+    </div>
+    <p id="exStillNote" class="note hidden">Captures the frame shown in the preview. Pause or scrub to pick a moment.</p>
+
+    <div id="exQualityWrap" class="ctl">
+      <label for="exQuality">Quality</label>
+      <select id="exQuality">
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high" selected>High</option>
+        <option value="veryHigh">Very high</option>
+      </select>
+    </div>
+
+    <div class="ctl">
+      <label for="exName">Filename</label>
+      <input type="text" id="exName" spellcheck="false" autocomplete="off">
+      <p class="note">Saves as <span id="exFileOut" style="color:var(--text)"></span></p>
+    </div>
+
+    <div id="exFfmpegWrap" class="ctl hidden">
+      <label>ProRes 4444 with alpha (After Effects, Premiere, FCP)</label>
+      <div class="cmdRow">
+        <code id="exFfmpeg"></code>
+        <button id="exCopyFfmpeg" class="ghost" type="button" aria-label="Copy ffmpeg command">Copy</button>
+      </div>
+    </div>
+
+    <p class="outSize" id="exOutSize"></p>
+
+    <div class="row" style="margin-top:10px">
+      <div><button id="exportBtn" type="button">Export</button></div>
+      <div id="exCancelWrap" class="hidden"><button id="exCancelBtn" class="ghost" type="button">Cancel</button></div>
+    </div>
+    <button id="exRealtimeBtn" class="ghost hidden" type="button" style="margin-top:8px">Record WebM in real time (fallback)</button>
+
+    <div id="exProgressWrap" class="hidden">
+      <progress id="exProgress" value="0" max="1"></progress>
+      <div id="exStatus" aria-live="polite"></div>
+    </div>
+    <div id="exError" role="alert"></div>
+    <div id="exResult"></div>
+  </div>
+
+  <div class="group">
+    <h2>Good to know</h2>
+    <p class="note"><b>MP4 has no transparency.</b> It's flattened onto the background colour. For alpha on the web (Framer, WordPress) use WebM; for editors use the PNG sequence.</p>
+    <p class="note"><b>Transparent WebM</b> needs Chrome or Edge to make, and won't open in QuickTime, Safari or most editors. For After Effects, Premiere, DaVinci or Final Cut, export the <b>PNG sequence</b> and convert it with the ffmpeg command shown there.</p>
+    <p class="note">The animation loops seamlessly, so exporting whole loops gives a clip you can repeat. Video export uses WebCodecs: host this page over HTTPS (or localhost) rather than double-clicking the file.</p>
+  </div>
+</div>
+
+<script>
+// =====================================================================
+// Barrier Field — abstract tumour microenvironment with reactive barriers.
+// Everything on screen is a pure function of (time, settings, seed), so the
+// live preview and the exporter draw identical frames.
+// =====================================================================
+const TAU = Math.PI * 2;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: true });
+const scratch = document.createElement('canvas');
+const sctx = scratch.getContext('2d', { alpha: true });
+
+// ---------- settings ----------
+const DEFAULTS = {
+  loop: 12, seed: 7, bg: '#ecebe9', color: '#ee6650',
+  size: 0.21, lobulation: 0.7, buds: 3, lumens: 8, density: 1, texture: 0.75,
+  rings: 3, spacing: 0.07, band: 0.55, idle: 0, strength: 1,
+  shots: 3, speed: 1, pierce: 0.3,
+};
+const P = { ...DEFAULTS };
+const SETTINGS_KEY = 'periotherapia.barrier.settings.v1';
+
+// slider definitions: [key, label, min, max, step, format, container]
+const SLIDERS = [
+  ['loop', 'Loop length', 6, 30, 1, v => `${v}s`, 'g-loop'],
+  ['size', 'Size', 0.12, 0.3, 0.005, v => v.toFixed(2), 'g-tissue'],
+  ['lobulation', 'Irregular margin', 0, 1, 0.01, v => v.toFixed(2), 'g-tissue'],
+  ['buds', 'Tumour buds', 0, 8, 1, v => v, 'g-tissue'],
+  ['lumens', 'Lumens / vessels', 0, 16, 1, v => v, 'g-tissue'],
+  ['density', 'Cell density', 0.5, 1.8, 0.05, v => v.toFixed(2), 'g-tissue'],
+  ['texture', 'Texture contrast', 0, 1, 0.01, v => v.toFixed(2), 'g-tissue'],
+  ['rings', 'Barrier layers', 1, 5, 1, v => v, 'g-rings'],
+  ['spacing', 'Spacing', 0.035, 0.11, 0.0025, v => v.toFixed(3), 'g-rings'],
+  ['band', 'Glass thickness', 0.15, 1, 0.01, v => v.toFixed(2), 'g-rings'],
+  ['idle', 'Resting visibility', 0, 0.5, 0.01, v => v.toFixed(2), 'g-rings'],
+  ['strength', 'Reaction strength', 0.3, 1.6, 0.05, v => v.toFixed(2), 'g-rings'],
+  ['shots', 'Shots per loop', 0, 8, 1, v => v, 'g-shots'],
+  ['speed', 'Speed', 0.4, 2, 0.05, v => v.toFixed(2), 'g-shots'],
+  ['pierce', 'Chance to pass a layer', 0, 0.8, 0.01, v => v.toFixed(2), 'g-shots'],
+];
+for(const [key, label, min, max, step, , box] of SLIDERS){
+  const wrap = document.createElement('div');
+  wrap.className = 'ctl';
+  wrap.innerHTML = `<label for="s_${key}">${label} <span class="val" id="v_${key}"></span></label>
+    <input type="range" id="s_${key}" min="${min}" max="${max}" step="${step}">`;
+  document.getElementById(box).appendChild(wrap);
+}
+
+const ui = {};
+document.querySelectorAll('[id]').forEach(el => { ui[el.id] = el; });
+
+function loadSettings(){
+  try{
+    const d = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null');
+    if(d) for(const k of Object.keys(DEFAULTS)) if(typeof d[k] === typeof DEFAULTS[k]) P[k] = d[k];
+  } catch(e){ /* storage unavailable */ }
+}
+function saveSettings(){
+  try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(P)); } catch(e){ /* ignore */ }
+}
+function syncUI(){
+  for(const [key, , , , , fmt] of SLIDERS){
+    ui['s_' + key].value = P[key];
+    ui['v_' + key].textContent = fmt(+P[key]);
+  }
+  ui.seed.value = P.seed; ui.bgColor.value = P.bg; ui.exMatte.value = P.bg; ui.tissueColor.value = P.color;
+}
+
+// ---------- utilities ----------
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function hash2(ix, iy, s){
+  let h = Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + Math.imul(s, 1442695041);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+function vnoise(x, y, s){
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  const ux = fx*fx*(3-2*fx), uy = fy*fy*(3-2*fy);
+  const a = hash2(ix, iy, s), b = hash2(ix+1, iy, s), c = hash2(ix, iy+1, s), d = hash2(ix+1, iy+1, s);
+  return a + (b-a)*ux + (c-a)*uy + (a-b-c+d)*ux*uy;
+}
+function fbm(x, y, s){
+  return 0.55*vnoise(x, y, s) + 0.3*vnoise(x*2.03+5.1, y*2.03-3.7, s+1) + 0.15*vnoise(x*4.1-2.3, y*4.1+8.2, s+2);
+}
+function hexToRgb(hex){ const v = parseInt(hex.slice(1), 16); return [(v>>16)&255, (v>>8)&255, v&255]; }
+function rgbToHsl([r,g,b]){
+  r/=255; g/=255; b/=255;
+  const mx = Math.max(r,g,b), mn = Math.min(r,g,b), l = (mx+mn)/2;
+  if(mx === mn) return [0,0,l];
+  const d = mx-mn, s = l > 0.5 ? d/(2-mx-mn) : d/(mx+mn);
+  let h = mx === r ? (g-b)/d + (g<b?6:0) : mx === g ? (b-r)/d + 2 : (r-g)/d + 4;
+  return [h*60, s, l];
+}
+function hslToRgb([h,s,l]){
+  h = ((h%360)+360)%360/360; s = Math.min(1,Math.max(0,s)); l = Math.min(1,Math.max(0,l));
+  if(s === 0) return [l*255, l*255, l*255];
+  const q = l < 0.5 ? l*(1+s) : l+s-l*s, p = 2*l-q;
+  const f = t => { t = (t%1+1)%1; return t<1/6 ? p+(q-p)*6*t : t<1/2 ? q : t<2/3 ? p+(q-p)*(2/3-t)*6 : p; };
+  return [f(h+1/3)*255, f(h)*255, f(h-1/3)*255];
+}
+function shade(hex, dh, ds, dl){ const [h,s,l] = rgbToHsl(hexToRgb(hex)); return hslToRgb([h+dh, s+ds, l+dl]).map(Math.round); }
+const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${Math.max(0, Math.min(1, a)).toFixed(4)})`;
+const mixWhite = (c, k) => c.map(v => Math.round(v + (255-v)*k));
+function angDist(a, b){ let d = Math.abs(a - b) % TAU; return d > Math.PI ? TAU - d : d; }
+
+// ---------- render state ----------
+let exporting = false;
+let renderTransparent = false;  // true while exporting with alpha, or previewing it
+let exportMatte = null;         // matte colour while exporting
+let previewT = 0;
+let compW = 1920, compH = 1080;
+let exportUIReady = false;
+let manualShots = [];           // {T, theta, seed}
+
+function geom(){
+  const W = canvas.width, H = canvas.height, u = Math.min(W, H);
+  return { W, H, u, cx: W/2, cy: H/2 };
+}
+
+// ---------- tissue (cached; rebuilt only when shape settings or size change) ----------
+let tissue = null, tissueKey = '';
+
+function blobPoly(r, rnd, irregular, elong, rot, n){
+  const harm = [];
+  for(let k = 2; k <= 7; k++) harm.push([k, (rnd()-0.5)*irregular/k, rnd()*TAU]);
+  const pts = [];
+  const cr = Math.cos(rot), sr = Math.sin(rot);
+  for(let i = 0; i < n; i++){
+    const a = i/n*TAU;
+    let rr = 1;
+    for(const [k, amp, ph] of harm) rr += amp*Math.cos(k*a + ph);
+    const x = Math.cos(a)*r*rr*elong, y = Math.sin(a)*r*rr/elong;
+    pts.push([x*cr - y*sr, x*sr + y*cr]);
+  }
+  return pts;
+}
+function polyPath(pts, ox, oy, path = new Path2D()){
+  pts.forEach(([x,y], i) => i ? path.lineTo(ox+x, oy+y) : path.moveTo(ox+x, oy+y));
+  path.closePath();
+  return path;
+}
+
+function buildTissue(){
+  const { u } = geom();
+  const key = [canvas.width, canvas.height, P.seed, P.size, P.lobulation, P.buds, P.lumens, P.density, P.texture, P.color].join('|');
+  if(tissue && tissueKey === key) return tissue;
+
+  const rnd = mulberry32(P.seed*9973 + 17);
+  const nseed = Math.floor(rnd()*1e6);
+  const Rb = u*P.size;
+  const base = hexToRgb(P.color);
+  const deep = shade(P.color, -5, 0.12, -0.1);
+  const dark = shade(P.color, -2, 0.02, -0.2);
+  const pale = shade(P.color, 2, -0.08, 0.09);
+
+  // --- outer margin: low harmonics for the lobulated outline, high ones for a fine crenulated edge
+  const M = 1024, rArr = new Float32Array(M);
+  const coarse = [], fine = [];
+  for(let n = 2; n <= 22; n++) coarse.push([n, (0.35 + 0.65*rnd())*Math.pow(n, -1.15)*(n >= 3 && n <= 7 ? 1.6 : 1), rnd()*TAU]);
+  for(let n = 23; n <= 70; n++) fine.push([n, rnd()*Math.pow(n, -1.0), rnd()*TAU]);
+  const cs = new Float32Array(M), fs = new Float32Array(M);
+  let cmx = 1e-6, fmx = 1e-6;
+  for(let i = 0; i < M; i++){
+    const a = i/M*TAU;
+    let c = 0, f = 0;
+    for(const [n, amp, ph] of coarse) c += amp*Math.cos(n*a + ph);
+    for(const [n, amp, ph] of fine) f += amp*Math.cos(n*a + ph);
+    cs[i] = c; fs[i] = f;
+    cmx = Math.max(cmx, Math.abs(c)); fmx = Math.max(fmx, Math.abs(f));
+  }
+  const lob = 0.03 + 0.22*P.lobulation, fineAmp = 0.006 + 0.012*P.lobulation;
+  for(let i = 0; i < M; i++) rArr[i] = 1 + cs[i]/cmx*lob + fs[i]/fmx*fineAmp;
+  const rAt = a => {
+    const x = ((a/TAU)%1 + 1)%1*M, i = Math.floor(x), f = x - i;
+    return rArr[i % M]*(1-f) + rArr[(i+1) % M]*f;
+  };
+  let maxR = 0;
+  for(let i = 0; i < M; i++) maxR = Math.max(maxR, rArr[i]*Rb);
+
+  // --- tumour buds: small islands just outside the margin
+  const buds = [];
+  for(let b = 0; b < P.buds; b++){
+    const a = rnd()*TAU;
+    const br = Rb*(0.022 + 0.035*rnd());
+    const d = rAt(a)*Rb + u*(0.008 + 0.018*rnd()) + br;
+    const pts = blobPoly(br, rnd, 0.5, 1 + rnd()*0.5, rnd()*TAU, 48);
+    buds.push({ x: Math.cos(a)*d, y: Math.sin(a)*d, r: br, pts });
+    maxR = Math.max(maxR, d + br*1.5);
+  }
+
+  // --- lumens / vessels: irregular holes, kept apart and inside the margin
+  const lumens = [];
+  for(let tries = 0; tries < 400 && lumens.length < P.lumens; tries++){
+    const a = rnd()*TAU, d = Math.sqrt(rnd())*0.8*Rb;
+    const lr = Rb*(0.022 + 0.085*Math.pow(rnd(), 1.8));
+    const elong = 1 + Math.pow(rnd(), 2)*1.6;
+    const x = Math.cos(a)*d, y = Math.sin(a)*d;
+    if(d + lr*elong*1.5 > rAt(a)*Rb*0.94) continue;
+    if(lumens.some(L => Math.hypot(L.x-x, L.y-y) < (L.r*L.e + lr*elong) + u*0.018)) continue;
+    lumens.push({ x, y, r: lr, e: elong, pts: blobPoly(lr, rnd, 0.6, elong, rnd()*TAU, 64) });
+  }
+
+  const pad = u*0.02;
+  const S = Math.ceil(2*(maxR + pad)), half = S/2;
+  const tc = document.createElement('canvas');
+  tc.width = tc.height = S;
+  const t = tc.getContext('2d');
+  t.translate(half, half);
+
+  const shape = new Path2D();
+  for(let i = 0; i < M; i += 2){
+    const a = i/M*TAU, r = rArr[i]*Rb;
+    i ? shape.lineTo(Math.cos(a)*r, Math.sin(a)*r) : shape.moveTo(r, 0);
+  }
+  shape.closePath();
+  for(const b of buds) polyPath(b.pts, b.x, b.y, shape);
+
+  t.fillStyle = rgba(base, 1);
+  t.fill(shape);
+
+  t.save();
+  t.clip(shape);
+
+  // nest/stroma field: dense tumour nests vs looser stroma, as soft one-colour mottling
+  const field = (x, y) => fbm(x/(Rb*0.42) + 31.7, y/(Rb*0.42) - 12.3, nseed);
+  const N = 120, low = document.createElement('canvas');
+  low.width = low.height = N;
+  const lctx = low.getContext('2d'), img = lctx.createImageData(N, N);
+  const tex = 0.15 + 0.85*P.texture;
+  for(let j = 0; j < N; j++) for(let i = 0; i < N; i++){
+    const x = (i+0.5)/N*S - half, y = (j+0.5)/N*S - half;
+    const f = field(x, y), o = (j*N + i)*4;
+    if(f > 0.5){ const a = Math.min(1, (f-0.5)*3.4)*0.38*tex; img.data.set([deep[0], deep[1], deep[2], a*255], o); }
+    else { const a = Math.min(1, (0.5-f)*3.4)*0.5*tex; img.data.set([pale[0], pale[1], pale[2], a*255], o); }
+  }
+  lctx.putImageData(img, 0, 0);
+  t.imageSmoothingEnabled = true; t.imageSmoothingQuality = 'high';
+  t.drawImage(low, -half, -half, S, S);
+
+  // gentle light direction: redder lower-left, softer upper-right
+  const lg = t.createLinearGradient(-Rb, Rb, Rb, -Rb);
+  lg.addColorStop(0, rgba(deep, 0.55)); lg.addColorStop(0.5, rgba(deep, 0)); lg.addColorStop(1, rgba(pale, 0.35));
+  t.fillStyle = lg; t.fillRect(-half, -half, S, S);
+
+  // lumen rims (epithelial lining reads as a slightly denser ring)
+  for(const L of lumens){
+    t.lineWidth = Math.max(u*0.006, L.r*0.32);
+    t.strokeStyle = rgba(deep, 0.16*tex + 0.06);
+    t.stroke(polyPath(L.pts, L.x, L.y));
+  }
+
+  // nuclei: jittered grid, dense in nests, sparse and spindle-shaped in stroma
+  const sp = u*0.0068/Math.sqrt(P.density);
+  const buckets = [new Path2D(), new Path2D(), new Path2D()];
+  const nr = mulberry32(nseed + 99);
+  const addNucleus = (x, y, rx, ry, rot, bi) => {
+    const p = buckets[bi];
+    p.moveTo(x + rx*Math.cos(rot), y + rx*Math.sin(rot));
+    p.ellipse(x, y, rx, ry, rot, 0, TAU);
+  };
+  for(let y = -half; y < half; y += sp) for(let x = -half; x < half; x += sp){
+    const px = x + (nr()-0.5)*sp*0.9, py = y + (nr()-0.5)*sp*0.9;
+    const f = field(px, py);
+    const nest = f > 0.5;
+    if(nr() > (nest ? 0.82 : 0.28)) continue;
+    if(lumens.some(L => Math.hypot(L.x-px, L.y-py) < L.r*L.e*1.25)) continue;
+    const rx = sp*(nest ? 0.26 : 0.3)*(0.75 + nr()*0.5);
+    const ry = rx*(nest ? 0.7 + nr()*0.3 : 0.28 + nr()*0.15);
+    const rot = nest ? nr()*TAU : vnoise(px/(Rb*0.25), py/(Rb*0.25), nseed+7)*TAU*1.5;
+    addNucleus(px, py, rx, ry, rot, Math.floor(nr()*3));
+  }
+  for(const L of lumens){
+    // ring of nuclei just around each lumen
+    const step = Math.max(1, Math.round(L.pts.length*sp*0.9/(TAU*L.r*L.e)));
+    for(let i = 0; i < L.pts.length; i += step){
+      const [x, y] = L.pts[i], d = Math.hypot(x, y) || 1, k = 1 + sp*0.75/d;
+      addNucleus(L.x + x*k, L.y + y*k, sp*0.28, sp*0.16, Math.atan2(y, x), 2);
+    }
+  }
+  for(const b of buds){
+    for(let i = 0; i < 6; i++){
+      const a = nr()*TAU, d = Math.sqrt(nr())*b.r*0.6;
+      addNucleus(b.x + Math.cos(a)*d, b.y + Math.sin(a)*d, sp*0.28, sp*0.2, nr()*TAU, 2);
+    }
+  }
+  const na = 0.1 + 0.3*tex;
+  [0.55, 0.8, 1].forEach((k, i) => { t.fillStyle = rgba(dark, na*k); t.fill(buckets[i]); });
+
+  // soft inner rim for a crisp, slice-like edge
+  t.lineWidth = u*0.014; t.strokeStyle = rgba(deep, 0.1); t.stroke(shape);
+  t.restore();
+  t.lineWidth = Math.max(1, u*0.0014); t.strokeStyle = rgba(deep, 0.35); t.stroke(shape);
+
+  // cut the lumens out (real holes, so transparent exports stay transparent)
+  t.globalCompositeOperation = 'destination-out';
+  for(const L of lumens) t.fill(polyPath(L.pts, L.x, L.y));
+  t.globalCompositeOperation = 'source-over';
+
+  tissue = { canvas: tc, half, maxR, Rb };
+  tissueKey = key;
+  return tissue;
+}
+
+// ---------- barriers ----------
+const MR = 240;
+const COS = new Float32Array(MR), SIN = new Float32Array(MR);
+for(let j = 0; j < MR; j++){ COS[j] = Math.cos(j/MR*TAU); SIN[j] = Math.sin(j/MR*TAU); }
+const Ibuf = new Float32Array(MR), Rbuf = new Float32Array(MR);
+
+function ringGeom(T){
+  const { u, cx, cy } = geom();
+  const r = mulberry32(P.seed*31 + 5);
+  const off = r()*TAU;
+  const rings = [];
+  for(let k = 0; k < P.rings; k++){
+    const R = T.maxR + u*(0.045 + P.spacing*k);
+    const o = u*0.004*k;
+    rings.push({ R, cx: cx + Math.cos(off)*o, cy: cy + Math.sin(off)*o, bw: u*P.spacing*P.band*0.85 });
+  }
+  return rings;
+}
+
+const HIT = 0, PASS = 1, SYM = 2;
+function react(dt, d, amp, mode){
+  if(dt <= 0 || dt > 3.8) return 0;
+  const rise = 1 - Math.exp(-dt*35);
+  if(mode === PASS){
+    const s = 0.1 + 0.5*dt;
+    return amp*rise*Math.exp(-dt/0.32)*Math.exp(-d*d/(2*s*s));
+  }
+  if(mode === SYM){
+    const s = 0.45 + 1.2*dt;
+    return amp*rise*(Math.exp(-dt/0.6)*Math.exp(-d*d/(2*s*s)) + 0.45*Math.exp(-dt/1.0)*(1 - Math.exp(-dt*6)));
+  }
+  const s = 0.14 + 1.0*dt;
+  const central = Math.exp(-dt/0.6)*Math.exp(-d*d/(2*s*s));
+  const fp = Math.min(Math.PI, 2.4*dt);                       // light racing around the glass both ways
+  const front = 0.55*Math.exp(-dt/0.85)*Math.exp(-((d-fp)**2)/(2*0.2*0.2));
+  const glow = 0.3*Math.exp(-dt/1.2)*(1 - Math.exp(-dt*5));  // whole barrier briefly visible
+  return amp*rise*(central + front + glow);
+}
+
+// ---------- shots ----------
+function shotSpeed(u){ return u*0.95*P.speed; }
+function buildEvents(){
+  const r = mulberry32(P.seed*7919 + 3);
+  const ev = [];
+  const n = P.shots;
+  let lastTheta = r()*TAU;
+  for(let i = 0; i < n; i++){
+    const T = P.loop*(i + 0.5 + (r()-0.5)*0.5)/n;
+    let theta = lastTheta + 1.2 + r()*(TAU - 2.4);
+    lastTheta = theta;
+    ev.push({ T, theta: theta % TAU, seed: Math.floor(r()*1e9) });
+  }
+  for(const m of manualShots) ev.push(m);
+  // deterministic depth: how many layers each shot gets through
+  for(const e of ev){
+    const rr = mulberry32(e.seed);
+    let b = P.rings - 1;
+    while(b > 0 && rr() < P.pierce) b--;
+    e.block = b;
+    e.side = rr() < 0.5 ? -1 : 1;
+  }
+  return ev;
+}
+
+function instances(t, rings){
+  const { W, H, u } = geom();
+  const v = shotSpeed(u), spawn = Math.hypot(W, H)/2 + u*0.12;
+  const out = [];
+  for(const e of buildEvents()){
+    const ring = rings[Math.min(e.block, rings.length-1)];
+    const approach = (spawn - ring.R)/v;
+    for(const off of [-P.loop, 0, P.loop]){
+      const dt = t - (e.T + off);
+      if(dt > -approach && dt < 3.8) out.push({ e, dt, ring, v, spawn });
+    }
+  }
+  return out;
+}
+
+function drawRing(k, rings, insts, t){
+  const { u, W, H } = geom();
+  const ring = rings[k];
+  const col = hexToRgb(P.color);
+  const sweep = TAU*t/P.loop;
+  let maxI = 0;
+  for(let j = 0; j < MR; j++){
+    const a = j/MR*TAU;
+    let I = P.idle*(0.55 + 0.45*Math.cos(a - sweep - k*1.3));
+    let dR = 0;
+    for(const s of insts){
+      const b = s.e.block, d = angDist(a, s.e.theta);
+      if(k > b){
+        I += react(s.dt + (ring.R - s.ring.R)/s.v, d, 0.45, PASS);
+      } else if(k === b){
+        I += react(s.dt, d, 1, HIT);
+        if(s.dt > 0 && s.dt < 2.5){
+          const w = 0.3 + 0.6*s.dt;
+          dR -= u*0.009*P.strength*Math.exp(-s.dt*3.2)*Math.sin(s.dt*17)*Math.exp(-d*d/(2*w*w));
+        }
+      } else {
+        I += react(s.dt - 0.1*(b-k), d, 0.3*Math.pow(0.7, b-k-1), SYM);
+      }
+    }
+    I = Math.min(1, I*P.strength);
+    Ibuf[j] = I; Rbuf[j] = ring.R + dR;
+    if(I > maxI) maxI = I;
+  }
+  if(maxI < 0.004) return;
+
+  const { R, cx, cy, bw } = ring;
+  const gw = bw*0.8;
+  const m = R + gw + u*0.02;
+  const bx = Math.max(0, Math.floor(cx - m)), by = Math.max(0, Math.floor(cy - m));
+  const bx2 = Math.min(W, Math.ceil(cx + m)), by2 = Math.min(H, Math.ceil(cy + m));
+  const bW = bx2 - bx, bH = by2 - by;
+  if(bW <= 0 || bH <= 0) return;
+
+  const ringPath = (off, p = new Path2D()) => {
+    for(let j = 0; j < MR; j++){
+      const r = Rbuf[j] + off, x = cx + r*COS[j], y = cy + r*SIN[j];
+      j ? p.lineTo(x, y) : p.moveTo(x, y);
+    }
+    p.closePath();
+    return p;
+  };
+
+  sctx.setTransform(1, 0, 0, 1, 0, 0);
+  sctx.globalCompositeOperation = 'source-over';
+  sctx.clearRect(bx, by, bW, bH);
+
+  // soft white bloom just outside the glass edge
+  const outer = ringPath(gw); ringPath(0, outer);
+  const wg = sctx.createRadialGradient(cx, cy, R, cx, cy, R + gw);
+  wg.addColorStop(0, 'rgba(255,255,255,0.95)'); wg.addColorStop(1, 'rgba(255,255,255,0)');
+  sctx.fillStyle = wg; sctx.fill(outer, 'evenodd');
+
+  // coloured glass band, strongest at the edge and fading inward
+  const band = ringPath(0); ringPath(-bw, band);
+  const g = sctx.createRadialGradient(cx, cy, Math.max(0, R - bw), cx, cy, R);
+  g.addColorStop(0, rgba(col, 0)); g.addColorStop(0.55, rgba(col, 0.22)); g.addColorStop(1, rgba(col, 0.78));
+  sctx.fillStyle = g; sctx.fill(band, 'evenodd');
+
+  // hairline edge + inner specular line
+  sctx.lineWidth = Math.max(1, u*0.0012); sctx.strokeStyle = rgba(col, 0.95); sctx.stroke(ringPath(0));
+  sctx.lineWidth = Math.max(1, u*0.0016); sctx.strokeStyle = 'rgba(255,255,255,0.85)'; sctx.stroke(ringPath(-u*0.0038));
+
+  // reveal only where the barrier is reacting
+  sctx.globalCompositeOperation = 'destination-in';
+  const cg = sctx.createConicGradient(0, cx, cy);
+  for(let j = 0; j <= MR; j++) cg.addColorStop(j/MR, `rgba(0,0,0,${Ibuf[j % MR].toFixed(4)})`);
+  sctx.fillStyle = cg; sctx.fillRect(bx, by, bW, bH);
+  sctx.globalCompositeOperation = 'source-over';
+
+  ctx.drawImage(scratch, bx, by, bW, bH, bx, by, bW, bH);
+}
+
+function drawShot(s, rings){
+  const { u } = geom();
+  const { e, dt, ring, v, spawn } = s;
+  const col = hexToRgb(P.color), light = mixWhite(col, 0.5);
+  const nx = Math.cos(e.theta), ny = Math.sin(e.theta);
+  const hitX = ring.cx + nx*ring.R, hitY = ring.cy + ny*ring.R;
+
+  const head = (x, y, a, size = 1) => {
+    const rad = u*0.03*size;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
+    g.addColorStop(0, `rgba(255,255,255,${a})`);
+    g.addColorStop(0.12, rgba(light, a));
+    g.addColorStop(0.3, rgba(col, 0.45*a));
+    g.addColorStop(0.6, rgba(col, 0.12*a));
+    g.addColorStop(1, rgba(col, 0));
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, rad, 0, TAU); ctx.fill();
+  };
+  const trail = (x1, y1, x2, y2, a, w) => {
+    const g = ctx.createLinearGradient(x1, y1, x2, y2);
+    g.addColorStop(0, rgba(col, 0.75*a)); g.addColorStop(1, rgba(col, 0));
+    ctx.strokeStyle = g; ctx.lineWidth = w; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  };
+
+  // energy lost passing each outer layer
+  const crossedAll = rings.length - 1 - e.block;
+  if(dt < 0){
+    const rr = ring.R + v*(-dt);
+    const crossed = rings.filter((r, k) => k > e.block && r.R > rr).length;
+    const a = Math.pow(0.78, crossed)*Math.min(1, (spawn - rr)/(u*0.15));
+    const x = ring.cx + nx*rr, y = ring.cy + ny*rr;
+    const tl = Math.min(u*0.17, spawn - rr);
+    trail(x, y, x + nx*tl, y + ny*tl, a, u*0.0034);
+    head(x, y, a);
+    return;
+  }
+
+  const aImpact = Math.pow(0.78, crossedAll);
+  // impact flash
+  if(dt < 0.8){
+    const fa = 0.9*Math.exp(-dt*6)*aImpact;
+    const rad = u*(0.015 + 0.05*(1 - Math.exp(-dt*6)));
+    const g = ctx.createRadialGradient(hitX, hitY, 0, hitX, hitY, rad);
+    g.addColorStop(0, `rgba(255,255,255,${fa.toFixed(4)})`);
+    g.addColorStop(0.35, rgba(light, fa*0.6));
+    g.addColorStop(1, rgba(col, 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(hitX, hitY, rad, 0, TAU); ctx.fill();
+  }
+  // sparks skating along the glass
+  if(dt < 1){
+    const r = mulberry32(e.seed + 11);
+    ctx.fillStyle = rgba(col, 1);
+    for(let i = 0; i < 11; i++){
+      const tang = r() < 0.75;
+      const ang = tang ? e.theta + (r() < 0.5 ? -1 : 1)*(Math.PI/2) + (r()-0.5)*0.7 : e.theta + (r()-0.5)*1.2;
+      const dist = u*(0.015 + 0.05*r())*(1 - Math.exp(-dt*5));
+      const a = Math.exp(-dt*4)*(0.5 + 0.5*r())*aImpact;
+      const rad = u*0.0016*(0.6 + r());
+      ctx.globalAlpha = a;
+      ctx.beginPath(); ctx.arc(hitX + Math.cos(ang)*dist, hitY + Math.sin(ang)*dist, rad, 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  // deflected particle drifts away and fades
+  if(dt < 1.6){
+    const tx = -ny*e.side, ty = nx*e.side;
+    let dx = nx*0.55 + tx*0.8, dy = ny*0.55 + ty*0.8;
+    const dl = Math.hypot(dx, dy); dx /= dl; dy /= dl;
+    const k = 2.6, vv = v*0.42;
+    const dist = vv*(1 - Math.exp(-k*dt))/k;
+    const speed = vv*Math.exp(-k*dt);
+    const x = hitX + dx*dist, y = hitY + dy*dist;
+    const a = Math.exp(-dt*2.4)*aImpact;
+    const tl = Math.min(dist, u*0.015 + speed*0.12);
+    trail(x, y, x - dx*tl, y - dy*tl, a, u*0.0022);
+    head(x, y, a, 0.8);
+  }
+}
+
+// ---------- frame ----------
+function draw(t){
+  const { W, H, u, cx, cy } = geom();
+  if(scratch.width !== W || scratch.height !== H){ scratch.width = W; scratch.height = H; }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.clearRect(0, 0, W, H);
+  if(!renderTransparent){ ctx.fillStyle = exportMatte || P.bg; ctx.fillRect(0, 0, W, H); }
+
+  const T = buildTissue();
+  const breath = 1 + 0.005*Math.sin(TAU*t/P.loop*Math.max(1, Math.round(P.loop/6)));
+  ctx.save();
+  ctx.translate(cx, cy); ctx.scale(breath, breath);
+  ctx.drawImage(T.canvas, -T.half, -T.half);
+  ctx.restore();
+
+  const rings = ringGeom(T);
+  const insts = instances(t, rings);
+  for(let k = rings.length - 1; k >= 0; k--) drawRing(k, rings, insts, t);
+  for(const s of insts) drawShot(s, rings);
+}
+
+// ---------- preview loop ----------
+let playing = true, lastNow = null;
+function frame(now){
+  if(!exporting){
+    if(playing && lastNow != null) previewT = (previewT + Math.min(0.1, (now - lastNow)/1000)) % P.loop;
+    lastNow = now;
+    draw(previewT);
+    ui.scrub.value = Math.round(previewT/P.loop*1000);
+    ui.timeLbl.textContent = `${previewT.toFixed(2)} / ${P.loop.toFixed(2)}s`;
+  } else lastNow = null;
+  requestAnimationFrame(frame);
+}
+
+function setPlaying(p){ playing = p; ui.playBtn.textContent = p ? 'Pause' : 'Play'; }
+ui.playBtn.addEventListener('click', () => setPlaying(!playing));
+ui.scrub.addEventListener('input', () => { previewT = ui.scrub.value/1000*P.loop; setPlaying(false); });
+
+function fireAt(theta){
+  const { W, H, u } = geom();
+  const T = buildTissue(), rings = ringGeom(T);
+  const v = shotSpeed(u), spawn = Math.hypot(W, H)/2 + u*0.12;
+  const seed = (Math.random()*1e9) | 0;
+  // estimate the layer it reaches so it appears from off-canvas right away
+  const rr = mulberry32(seed); let b = P.rings - 1; while(b > 0 && rr() < P.pierce) b--;
+  const approach = (spawn - rings[b].R)/v;
+  manualShots.push({ T: (previewT + approach) % P.loop, theta: ((theta % TAU) + TAU) % TAU, seed });
+  ui.clearShots.textContent = `Clear clicked shots (${manualShots.length})`;
+  setPlaying(true);
+}
+canvas.addEventListener('click', ev => {
+  if(exporting) return;
+  const r = canvas.getBoundingClientRect();
+  const x = (ev.clientX - r.left)/r.width*canvas.width, y = (ev.clientY - r.top)/r.height*canvas.height;
+  fireAt(Math.atan2(y - canvas.height/2, x - canvas.width/2));
+});
+ui.fireBtn.addEventListener('click', () => fireAt(Math.random()*TAU));
+ui.clearShots.addEventListener('click', () => { manualShots = []; ui.clearShots.textContent = 'Clear clicked shots (0)'; });
+document.addEventListener('keydown', ev => {
+  if(ev.target.matches('input, select, textarea, button')) return;
+  if(ev.code === 'Space'){ ev.preventDefault(); setPlaying(!playing); }
+  if(ev.key === 'f' || ev.key === 'F') fireAt(Math.random()*TAU);
+});
+
+// ---------- settings wiring ----------
+for(const [key, , , , , fmt] of SLIDERS){
+  ui['s_' + key].addEventListener('input', () => {
+    P[key] = +ui['s_' + key].value;
+    ui['v_' + key].textContent = fmt(P[key]);
+    if(key === 'loop'){ previewT %= P.loop; if(exportUIReady) syncLoopRange(); }
+    saveSettings();
+    if(exportUIReady) updateExportUI();
+  });
+}
+ui.seed.addEventListener('change', () => { P.seed = Math.max(1, Math.round(+ui.seed.value) || 1); ui.seed.value = P.seed; saveSettings(); });
+ui.newTissue.addEventListener('click', () => { P.seed = 1 + Math.floor(Math.random()*99998); ui.seed.value = P.seed; saveSettings(); });
+ui.tissueColor.addEventListener('input', () => { P.color = ui.tissueColor.value; saveSettings(); });
+ui.bgColor.addEventListener('input', () => { P.bg = ui.bgColor.value; ui.exMatte.value = P.bg; saveSettings(); });
+ui.exMatte.addEventListener('input', () => { P.bg = ui.exMatte.value; ui.bgColor.value = P.bg; saveSettings(); });
+ui.resetBtn.addEventListener('click', () => {
+  Object.assign(P, DEFAULTS); manualShots = [];
+  ui.clearShots.textContent = 'Clear clicked shots (0)';
+  syncUI(); saveSettings(); if(exportUIReady){ syncLoopRange(); updateExportUI(); }
+});
+
+function applyResolution(){
+  const preset = ui.resolutionPreset.value;
+  let w, h;
+  if(preset === 'custom'){ w = Math.round(+ui.customWidth.value) || 1920; h = Math.round(+ui.customHeight.value) || 1080; }
+  else [w, h] = preset.split('x').map(Number);
+  w = Math.min(3840, Math.max(200, w)); h = Math.min(3840, Math.max(200, h));
+  compW = w; compH = h;
+  if(!exporting){ canvas.width = w; canvas.height = h; }
+  if(exportUIReady) updateExportUI();
+}
+ui.resolutionPreset.addEventListener('change', () => {
+  ui.customResWrap.classList.toggle('hidden', ui.resolutionPreset.value !== 'custom');
+  applyResolution();
+});
+ui.customWidth.addEventListener('change', applyResolution);
+ui.customHeight.addEventListener('change', applyResolution);
+
+loadSettings();
+syncUI();
+applyResolution();
+requestAnimationFrame(frame);
+
+// =====================================================================
+// Export
+// Deterministic: every frame is draw(start + i/fps), never a screen recording.
+// Video uses WebCodecs via Mediabunny; PNG zips use fflate. Loaded on demand.
+// =====================================================================
+const MEDIABUNNY_URL = 'https://cdn.jsdelivr.net/npm/mediabunny@1.61.0/+esm';
+const FFLATE_URL = 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/+esm';
+const APP_NAME = 'periotherapia-barrier-field';
+const EXPORT_KEY = 'periotherapia.barrier.export.v1';
+const hasWebCodecs = typeof VideoEncoder !== 'undefined';
+const isChromium = !!(navigator.userAgentData && navigator.userAgentData.brands &&
+  navigator.userAgentData.brands.some(b => /Chromium/.test(b.brand)));
+
+let libsPromise = null;
+function loadLibs(){
+  if(!libsPromise){
+    libsPromise = Promise.all([import(MEDIABUNNY_URL), import(FFLATE_URL)])
+      .then(([mb, ff]) => ({ mb, ff }))
+      .catch(err => {
+        libsPromise = null;
+        throw new Error(`Couldn't load the export library from cdn.jsdelivr.net (${err.message}). Check your connection and try again.`);
+      });
+  }
+  return libsPromise;
+}
+
+const app = {
+  canvas,
+  get duration(){ return P.loop; },
+  async renderAt(t){ draw(t); },
+  beginExport({ width, height, transparent, matte }){
+    exporting = true;
+    const prevTransparent = renderTransparent;
+    renderTransparent = transparent;
+    exportMatte = transparent ? null : matte;
+    canvas.width = width; canvas.height = height;
+    return () => {
+      canvas.width = compW; canvas.height = compH;
+      renderTransparent = prevTransparent;
+      exportMatte = null;
+      exporting = false;
+      draw(previewT);
+    };
+  },
+};
+
+const FPS_PRESETS = { '24':[24,1], '25':[25,1], '30':[30,1], '50':[50,1], '60':[60,1], '23.976':[24000,1001], '29.97':[30000,1001] };
+const even = n => Math.max(2, Math.round(n/2)*2);
+const tick = () => new Promise(r => setTimeout(r));
+const EXT = { mp4:'mp4', webm:'webm', 'png-seq':'zip', png:'png' };
+
+function syncLoopRange(){
+  const n = Math.max(1, Math.round(+ui.exLoops.value) || 1);
+  ui.exEnd.value = +((+ui.exStart.value || 0) + n*P.loop).toFixed(3);
+}
+
+function readExportSettings(){
+  const format = ui.exFormat.value;
+  const isVideo = format === 'mp4' || format === 'webm';
+  let w, h;
+  const size = ui.exSize.value;
+  if(size === 'canvas'){ w = compW; h = compH; }
+  else if(size === 'custom'){ w = Math.round(+ui.exW.value); h = Math.round(+ui.exH.value); }
+  else [w, h] = size.split('x').map(Number);
+  const reqW = w, reqH = h;
+  if(isVideo){ w = even(w); h = even(h); }
+
+  let num, den;
+  if(ui.exFps.value === 'custom'){ num = +ui.exFpsCustom.value; den = 1; }
+  else [num, den] = FPS_PRESETS[ui.exFps.value];
+  const fps = num/den;
+  const fpsLabel = den === 1 ? String(num) : String(+(num/den).toFixed(3));
+  const fpsFfmpeg = den === 1 ? String(num) : `${num}/${den}`;
+
+  const start = Math.max(0, +ui.exStart.value || 0);
+  const end = +ui.exEnd.value || 0;
+  const total = format === 'png' ? 1 : Math.max(1, Math.round((end - start)*fps));
+  const autoName = `${APP_NAME}_${w}x${h}_${fpsLabel}fps`;
+  const name = (ui.exName.value.trim() || autoName).replace(/[^\w.\-]+/g, '_');
+
+  let error = null;
+  if(!(w >= 16 && h >= 16) || w > 7680 || h > 7680) error = 'Size must be between 16 and 7680 px on each side.';
+  else if(!(fps > 0 && fps <= 240)) error = 'Frame rate must be between 1 and 240.';
+  else if(format !== 'png' && !(end > start)) error = 'End time must be after the start time.';
+
+  return {
+    format, isVideo, width:w, height:h, resized: w !== reqW || h !== reqH,
+    fps, fpsLabel, fpsFfmpeg, start, end, total,
+    transparent: ui.exTransparent.checked && format !== 'mp4',
+    matte: ui.exMatte.value, quality: ui.exQuality.value, name, autoName, error,
+  };
+}
+
+const EXPORT_IDS = ['exFormat','exTransparent','exSize','exW','exH','exFps','exFpsCustom','exLoops','exQuality'];
+function saveExportSettings(){
+  try{
+    const d = {};
+    EXPORT_IDS.forEach(id => { d[id] = ui[id].type === 'checkbox' ? ui[id].checked : ui[id].value; });
+    localStorage.setItem(EXPORT_KEY, JSON.stringify(d));
+  } catch(e){ /* settings just won't be remembered */ }
+}
+function loadExportSettings(){
+  try{
+    const d = JSON.parse(localStorage.getItem(EXPORT_KEY) || 'null');
+    if(!d) return;
+    Object.entries(d).forEach(([id, v]) => {
+      const el = ui[id]; if(!el) return;
+      if(el.type === 'checkbox') el.checked = !!v;
+      else if(el.tagName === 'SELECT'){ if([...el.options].some(o => o.value === v)) el.value = v; }
+      else el.value = v;
+    });
+  } catch(e){ /* ignore */ }
+}
+
+let supportToken = 0;
+function updateExportUI(){
+  if(!hasWebCodecs){
+    [...ui.exFormat.options].forEach(o => { if(o.value === 'mp4' || o.value === 'webm') o.disabled = true; });
+    if(ui.exFormat.value === 'mp4' || ui.exFormat.value === 'webm') ui.exFormat.value = 'png-seq';
+  }
+  const s = readExportSettings();
+  const isMp4 = s.format === 'mp4';
+
+  ui.exTransparent.disabled = isMp4;
+  ui.exTransparentRow.classList.toggle('disabled', isMp4);
+  ui.exMatteWrap.classList.toggle('hidden', s.transparent);
+  ui.exAlphaNote.textContent =
+    isMp4 ? "MP4 can't carry transparency, so frames are flattened onto the background colour below."
+    : (s.format === 'webm' && s.transparent) ? "Transparent WebM plays in Chrome/Firefox and on the web, but not in QuickTime, Safari or most editors. Use the PNG sequence for editing."
+    : '';
+  ui.exAlphaNote.classList.toggle('hidden', !ui.exAlphaNote.textContent);
+
+  // preview shows the checkerboard whenever the export will be transparent
+  renderTransparent = s.transparent;
+  canvas.classList.toggle('checker', s.transparent);
+
+  ui.exCustomSizeWrap.classList.toggle('hidden', ui.exSize.value !== 'custom');
+  ui.exFpsCustomWrap.classList.toggle('hidden', ui.exFps.value !== 'custom');
+  ui.exRangeWrap.classList.toggle('hidden', s.format === 'png');
+  ui.exStillNote.classList.toggle('hidden', s.format !== 'png');
+  ui.exQualityWrap.classList.toggle('hidden', !s.isVideo);
+  ui.exScaleNote.textContent = ui.exSize.value === 'canvas' ? '' :
+    `Composition is ${compW} × ${compH}. Everything scales with the shorter side, so the framing stays the same.`;
+  const loops = (s.end - s.start)/P.loop;
+  ui.exLoopNote.textContent = Math.abs(loops - Math.round(loops)) < 1e-6
+    ? `One loop is ${P.loop}s. Whole loops repeat seamlessly.`
+    : `One loop is ${P.loop}s. This range isn't a whole number of loops, so it won't repeat seamlessly.`;
+
+  const ext = EXT[s.format];
+  ui.exName.placeholder = s.autoName;
+  ui.exFileOut.textContent = s.format === 'png-seq' ? `${s.name}.zip (${s.name}_00001.png …)` : `${s.name}.${ext}`;
+  ui.exFfmpegWrap.classList.toggle('hidden', s.format !== 'png-seq');
+  ui.exFfmpeg.textContent = `ffmpeg -framerate ${s.fpsFfmpeg} -i ${s.name}_%05d.png -c:v prores_ks -profile:v 4444 -pix_fmt yuva444p10le ${s.name}.mov`;
+
+  if(s.error){ ui.exOutSize.textContent = s.error; ui.exOutSize.style.color = 'var(--error)'; }
+  else {
+    ui.exOutSize.style.color = '';
+    const dur = s.format === 'png' ? '' : ` · ${s.total} frames · ${(s.total/s.fps).toFixed(2)}s`;
+    ui.exOutSize.textContent = `Output: ${s.width} × ${s.height} px${s.resized ? ' (rounded to even for video)' : ''}${dur}`;
+  }
+  ui.exportBtn.textContent = { mp4:'Export MP4', webm:'Export WebM', 'png-seq':'Export PNG sequence', png:'Export PNG' }[s.format];
+  ui.exportBtn.disabled = exporting || !!s.error;
+  ui.exRealtimeBtn.classList.toggle('hidden', hasWebCodecs);
+  checkSupport(s);
+  saveExportSettings();
+}
+
+async function checkSupport(s){
+  const token = ++supportToken;
+  const msgs = [];
+  if(!hasWebCodecs){
+    msgs.push('Video export needs a recent Chrome, Edge or Safari served over HTTPS. PNG sequence still works.');
+  } else if(s.isVideo && !s.error){
+    if(s.format === 'webm' && s.transparent && !isChromium) msgs.push('Transparent WebM is a Chrome/Edge feature. Use Chrome for this export.');
+    try{
+      const { mb } = await loadLibs();
+      const ok = await mb.canEncodeVideo(s.format === 'webm' ? 'vp9' : 'avc', {
+        width: s.width, height: s.height, frameRate: s.fps, quality: qualityFor(mb, s.quality),
+        ...(s.format === 'webm' && s.transparent ? { alpha: 'keep' } : {}),
+      });
+      if(!ok) msgs.push(encodeHelp(s.format === 'webm', s.width, s.height));
+    } catch(err){ msgs.push(err.message); }
+  }
+  if(token !== supportToken) return;
+  ui.exSupport.textContent = msgs.join(' ');
+  ui.exSupport.classList.toggle('hidden', msgs.length === 0);
+}
+function qualityFor(mb, q){
+  return { low: mb.QUALITY_LOW, medium: mb.QUALITY_MEDIUM, high: mb.QUALITY_HIGH, veryHigh: mb.QUALITY_VERY_HIGH }[q] || mb.QUALITY_HIGH;
+}
+function encodeHelp(webm, w, h){
+  const smaller = w*h > 1920*1080 ? 'Try 1080p' : 'Try a different size';
+  return `This browser can't encode ${webm ? 'VP9' : 'H.264'} at ${w} × ${h}. ${smaller}${webm ? '' : ' or WebM'}, or use Chrome.`;
+}
+
+const canvasToPng = c => new Promise((res, rej) =>
+  c.toBlob(b => b ? res(b) : rej(new Error('PNG encode failed — the canvas may be too large for this browser.')), 'image/png'));
+
+async function exportMedia(o, onProgress, signal, dir){
+  const t0 = performance.now();
+  const progress = i => onProgress({ frame: i, total: o.total, eta: i ? ((performance.now()-t0)/i)*(o.total-i)/1000 : null });
+  const aborted = () => new DOMException('Export cancelled', 'AbortError');
+  const libs = o.format === 'png' ? null : await loadLibs();
+  await document.fonts.ready;
+  const restore = app.beginExport({ width:o.width, height:o.height, transparent:o.transparent, matte:o.matte });
+  try{
+    if(o.format === 'png'){
+      await app.renderAt(previewT);
+      progress(1);
+      return { blob: await canvasToPng(app.canvas), ext:'png' };
+    }
+    if(o.format === 'png-seq') return dir ? await pngToFolder() : await pngZip();
+    return await video();
+  } finally { restore(); }
+
+  async function video(){
+    const { mb } = libs;
+    const webm = o.format === 'webm';
+    const codec = webm ? 'vp9' : 'avc';
+    const alpha = webm && o.transparent ? { alpha:'keep' } : {};
+    const quality = qualityFor(mb, o.quality);
+    if(!(await mb.canEncodeVideo(codec, { width:o.width, height:o.height, frameRate:o.fps, quality, ...alpha }))){
+      throw new Error(encodeHelp(webm, o.width, o.height));
+    }
+    const output = new mb.Output({
+      format: webm ? new mb.WebMOutputFormat() : new mb.Mp4OutputFormat({ fastStart:'in-memory' }),
+      target: new mb.BufferTarget(),
+    });
+    const source = new mb.CanvasSource(app.canvas, { codec, quality, ...alpha });
+    output.addVideoTrack(source, { frameRate: o.fps });
+    await output.start();
+    for(let i = 0; i < o.total; i++){
+      if(signal.aborted){ await output.cancel(); throw aborted(); }
+      await app.renderAt(o.start + i/o.fps);
+      await source.add(i/o.fps, 1/o.fps);
+      progress(i+1);
+      if(i % 4 === 0) await tick();
+    }
+    await output.finalize();
+    return { blob: new Blob([output.target.buffer], { type: webm ? 'video/webm' : 'video/mp4' }), ext: webm ? 'webm' : 'mp4' };
+  }
+
+  async function pngZip(){
+    const { Zip, ZipPassThrough } = libs.ff;
+    const chunks = [];
+    let zipErr = null;
+    const zip = new Zip((err, chunk) => { if(err){ zipErr = err; return; } chunks.push(chunk); });
+    for(let i = 0; i < o.total; i++){
+      if(signal.aborted){ zip.terminate(); throw aborted(); }
+      if(zipErr) throw zipErr;
+      await app.renderAt(o.start + i/o.fps);
+      const png = new Uint8Array(await (await canvasToPng(app.canvas)).arrayBuffer());
+      const f = new ZipPassThrough(frameName(i));
+      zip.add(f); f.push(png, true);
+      progress(i+1);
+      if(i % 4 === 0) await tick();
+    }
+    zip.end();
+    if(zipErr) throw zipErr;
+    return { blob: new Blob(chunks, { type:'application/zip' }), ext:'zip' };
+  }
+
+  async function pngToFolder(){
+    for(let i = 0; i < o.total; i++){
+      if(signal.aborted) throw aborted();
+      await app.renderAt(o.start + i/o.fps);
+      const blob = await canvasToPng(app.canvas);
+      const fh = await dir.getFileHandle(frameName(i), { create:true });
+      const w = await fh.createWritable();
+      await w.write(blob); await w.close();
+      progress(i+1);
+      if(i % 4 === 0) await tick();
+    }
+    return { blob:null, folder: dir.name };
+  }
+
+  function frameName(i){ return `${o.name}_${String(i+1).padStart(5, '0')}.png`; }
+}
+
+// Fallback only when WebCodecs is missing: records in real time, may drop frames, alpha not guaranteed.
+async function recordRealtime(o, onProgress, signal){
+  if(!canvas.captureStream || !window.MediaRecorder) throw new Error("This browser can't record video at all. Use the PNG sequence instead.");
+  const mimeType = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(m => MediaRecorder.isTypeSupported(m));
+  if(!mimeType) throw new Error("This browser can't record WebM. Use the PNG sequence instead.");
+  const duration = o.end - o.start;
+  const restore = app.beginExport({ width:o.width, height:o.height, transparent:o.transparent, matte:o.matte });
+  try{
+    const stream = canvas.captureStream(o.fps);
+    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: { low:4e6, medium:8e6, high:16e6, veryHigh:32e6 }[o.quality] });
+    const chunks = [];
+    recorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
+    const stopped = new Promise(r => recorder.onstop = r);
+    recorder.start();
+    const wasCancelled = await new Promise(resolve => {
+      const t0 = performance.now();
+      function step(now){
+        if(signal.aborted) return resolve(true);
+        const t = Math.min((now - t0)/1000, duration);
+        draw(o.start + t);
+        onProgress({ frame: Math.round(t*o.fps), total: o.total, eta: duration - t });
+        if(t < duration) requestAnimationFrame(step); else resolve(false);
+      }
+      requestAnimationFrame(step);
+    });
+    recorder.stop();
+    await stopped;
+    if(wasCancelled) throw new DOMException('Export cancelled', 'AbortError');
+    return { blob: new Blob(chunks, { type:'video/webm' }), ext:'webm' };
+  } finally { restore(); }
+}
+
+let lastUrl = null;
+function offerDownload(blob, filename, isVideo){
+  if(lastUrl) URL.revokeObjectURL(lastUrl);
+  const url = lastUrl = URL.createObjectURL(blob);
+  try{
+    const a = Object.assign(document.createElement('a'), { href:url, download:filename });
+    document.body.appendChild(a); a.click(); a.remove();
+  } catch(e){ /* visible link below still works */ }
+  const link = Object.assign(document.createElement('a'), { href:url, download:filename, textContent:`Save ${filename} (${(blob.size/1048576).toFixed(1)} MB)` });
+  ui.exResult.appendChild(link);
+  if(isVideo) ui.exResult.appendChild(Object.assign(document.createElement('video'), { src:url, controls:true, loop:true, muted:true, playsInline:true }));
+  else if(filename.endsWith('.png')) ui.exResult.appendChild(Object.assign(document.createElement('img'), { src:url, alt:'Exported frame' }));
+}
+
+function explainError(err, s){
+  const msg = err && err.message ? err.message : String(err);
+  if(/can't encode|Couldn't load|PNG encode/.test(msg)) return msg;
+  if(err && (err.name === 'NotSupportedError' || /not supported|unsupported/i.test(msg)))
+    return `Export failed: ${msg}\nThis browser doesn't support that codec at ${s.width} × ${s.height}. Try a smaller size, a different format, or Chrome.`;
+  if(/memory|allocation|Array buffer/i.test(msg))
+    return `Export failed: ${msg}\nRan out of memory. Try a shorter range, a smaller size, or (in Chrome) the PNG sequence written to a folder.`;
+  return `Export failed: ${msg}\nTry a smaller size or shorter range, or another format. Chrome has the most complete support.`;
+}
+
+let abortCtl = null;
+function setBusy(busy){
+  ui.exportBtn.disabled = busy;
+  ui.exRealtimeBtn.disabled = busy;
+  ui.exCancelWrap.classList.toggle('hidden', !busy);
+  ui.panel.querySelectorAll('input, select, button').forEach(el => {
+    if(el !== ui.exCancelBtn) el.disabled = busy;
+  });
+  ui.fireBtn.disabled = busy;
+  if(!busy) updateExportUI();
+}
+function onProgress({ frame, total, eta }){
+  ui.exProgress.max = total; ui.exProgress.value = frame;
+  ui.exStatus.textContent = `Frame ${frame} / ${total}` + (eta != null && frame < total ? ` · ~${Math.ceil(eta)}s left` : '');
+}
+
+async function runExport(realtime){
+  const s = readExportSettings();
+  if(s.error){ ui.exError.textContent = s.error; return; }
+  let dir = null;
+  if(!realtime && s.format === 'png-seq' && (s.total > 1500 || s.width*s.height >= 3840*2160) && window.showDirectoryPicker){
+    try{ dir = await window.showDirectoryPicker({ mode:'readwrite' }); }
+    catch(err){ if(err.name === 'AbortError') return; dir = null; }
+  }
+  ui.exError.textContent = '';
+  ui.exResult.innerHTML = '';
+  ui.exProgressWrap.classList.remove('hidden');
+  onProgress({ frame:0, total:s.total, eta:null });
+  setBusy(true);
+  abortCtl = new AbortController();
+  try{
+    const res = realtime ? await recordRealtime(s, onProgress, abortCtl.signal)
+                         : await exportMedia(s, onProgress, abortCtl.signal, dir);
+    if(res.folder) ui.exStatus.textContent = `Done — wrote ${s.total} frames to “${res.folder}”.`;
+    else {
+      ui.exStatus.textContent = `Done — ${s.total} frame${s.total === 1 ? '' : 's'}.` + (realtime ? ' Recorded in real time; frames may have been dropped.' : '');
+      offerDownload(res.blob, `${s.name}.${res.ext}`, res.ext === 'mp4' || res.ext === 'webm');
+    }
+  } catch(err){
+    if(err && err.name === 'AbortError') ui.exStatus.textContent = 'Export cancelled.';
+    else { console.error(err); ui.exError.textContent = explainError(err, s); ui.exStatus.textContent = ''; }
+  } finally {
+    abortCtl = null;
+    exporting = false;
+    setBusy(false);
+  }
+}
+
+ui.exportBtn.addEventListener('click', () => runExport(false));
+ui.exRealtimeBtn.addEventListener('click', () => runExport(true));
+ui.exCancelBtn.addEventListener('click', () => { if(abortCtl) abortCtl.abort(); });
+ui.exCopyFfmpeg.addEventListener('click', async () => {
+  try{ await navigator.clipboard.writeText(ui.exFfmpeg.textContent); }
+  catch(e){
+    const r = document.createRange(); r.selectNodeContents(ui.exFfmpeg);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    document.execCommand && document.execCommand('copy');
+  }
+  ui.exCopyFfmpeg.textContent = 'Copied';
+  setTimeout(() => { ui.exCopyFfmpeg.textContent = 'Copy'; }, 1500);
+});
+ui.exLoops.addEventListener('input', syncLoopRange);
+ui.exStart.addEventListener('input', syncLoopRange);
+['exFormat','exTransparent','exMatte','exSize','exW','exH','exFps','exFpsCustom','exStart','exEnd','exLoops','exQuality','exName']
+  .forEach(id => { ui[id].addEventListener('input', updateExportUI); ui[id].addEventListener('change', updateExportUI); });
+
+loadExportSettings();
+syncLoopRange();
+exportUIReady = true;
+updateExportUI();
+</script>
+</body>
+</html>
