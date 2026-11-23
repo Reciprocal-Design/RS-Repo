@@ -161,7 +161,7 @@
     <h2>Tissue</h2>
     <div class="row">
       <div><label for="seed">Seed</label><input type="number" id="seed" value="7" min="1" max="99999"></div>
-      <div style="display:flex;align-items:flex-end"><button id="newTissue" class="ghost" type="button">New tissue</button></div>
+      <div style="display:flex;align-items:flex-end"><button id="newTissue" class="ghost" type="button">New shape</button></div>
     </div>
     <div id="g-tissue"></div>
     <div class="ctl">
@@ -317,22 +317,20 @@ const sctx = scratch.getContext('2d', { alpha: true });
 // ---------- settings ----------
 const DEFAULTS = {
   loop: 12, seed: 7, bg: '#ecebe9', color: '#ee6650',
-  size: 0.23, lobulation: 0.6, buds: 5, lumens: 7, density: 1, texture: 0.75,
+  size: 0.3, lobulation: 0.5, soft: 0.5, texture: 0.4,
   rings: 3, spacing: 0.26, band: 0.3, idle: 0.3, strength: 1,
   shots: 3, speed: 1, pierce: 0.4,
 };
 const P = { ...DEFAULTS };
-const SETTINGS_KEY = 'periotherapia.barrier.settings.v3';
+const SETTINGS_KEY = 'periotherapia.barrier.settings.v4';
 
 // slider definitions: [key, label, min, max, step, format, container]
 const SLIDERS = [
   ['loop', 'Loop length', 6, 30, 1, v => `${v}s`, 'g-loop'],
-  ['size', 'Size', 0.12, 0.27, 0.005, v => v.toFixed(2), 'g-tissue'],
-  ['lobulation', 'Splash', 0, 1, 0.01, v => v.toFixed(2), 'g-tissue'],
-  ['buds', 'Droplets', 0, 12, 1, v => v, 'g-tissue'],
-  ['lumens', 'Lumens / vessels', 0, 16, 1, v => v, 'g-tissue'],
-  ['density', 'Cell density', 0.5, 1.8, 0.05, v => v.toFixed(2), 'g-tissue'],
-  ['texture', 'Texture contrast', 0, 1, 0.01, v => v.toFixed(2), 'g-tissue'],
+  ['size', 'Size', 0.15, 0.38, 0.005, v => v.toFixed(2), 'g-tissue'],
+  ['lobulation', 'Warp', 0, 1, 0.01, v => v.toFixed(2), 'g-tissue'],
+  ['soft', 'Edge softness', 0, 1, 0.01, v => v.toFixed(2), 'g-tissue'],
+  ['texture', 'Texture', 0, 1, 0.01, v => v.toFixed(2), 'g-tissue'],
   ['rings', 'Barrier layers', 1, 5, 1, v => v, 'g-rings'],
   ['spacing', 'Spacing', 0.12, 0.4, 0.005, v => v.toFixed(2), 'g-rings'],
   ['band', 'Edge bevel', 0, 1, 0.01, v => v.toFixed(2), 'g-rings'],
@@ -430,231 +428,79 @@ function geom(){
   return { W, H, u, cx: W/2, cy: H/2 };
 }
 
-// ---------- tissue (cached; rebuilt only when shape settings or size change) ----------
-// The splat is a metaball field: a lumpy body, tapered arms ending in bulbs, and loose droplets.
+// ---------- tissue (cached; rebuilt only when its settings or the canvas size change) ----------
+// An abstract mass: a gently warped circle of one colour that fades out softly,
+// so its edge is never seen. Only the glass on top gives it any hard lines.
 let tissue = null, tissueKey = '';
-
-function blobPoly(r, rnd, irregular, elong, rot, n){
-  const harm = [];
-  for(let k = 2; k <= 7; k++) harm.push([k, (rnd()-0.5)*irregular/k, rnd()*TAU]);
-  const pts = [];
-  const cr = Math.cos(rot), sr = Math.sin(rot);
-  for(let i = 0; i < n; i++){
-    const a = i/n*TAU;
-    let rr = 1;
-    for(const [k, amp, ph] of harm) rr += amp*Math.cos(k*a + ph);
-    const x = Math.cos(a)*r*rr*elong, y = Math.sin(a)*r*rr/elong;
-    pts.push([x*cr - y*sr, x*sr + y*cr]);
-  }
-  return pts;
-}
-function polyPath(pts, ox, oy, path = new Path2D()){
-  pts.forEach(([x,y], i) => i ? path.lineTo(ox+x, oy+y) : path.moveTo(ox+x, oy+y));
-  path.closePath();
-  return path;
-}
-
-const FIELD_T = 0.3;                       // iso level of the metaball field
-const VIS = 1 - Math.cbrt(FIELD_T);        // visible radius / influence radius, squared ratio
-function splatBalls(rnd){
-  const balls = [];
-  // ball(x, y, visible radius) in units of the core radius
-  const ball = (x, y, v) => balls.push({ x, y, R: v/Math.sqrt(VIS) });
-  const lob = P.lobulation;
-
-  // body: one main mass plus a few lumps so it never reads as a circle
-  ball((rnd()-0.5)*0.08, (rnd()-0.5)*0.08, 0.7);
-  const lumps = 4 + Math.floor(rnd()*3);
-  for(let i = 0; i < lumps; i++){
-    const a = i/lumps*TAU + (rnd()-0.5)*0.8, d = 0.3 + rnd()*0.22;
-    ball(Math.cos(a)*d, Math.sin(a)*d, 0.32 + rnd()*0.2);
-  }
-
-  // arms: tapered streams that end in a rounded bulb
-  const tips = [];
-  const nArms = 3 + Math.round(lob*6);
-  const a0 = rnd()*TAU;
-  for(let i = 0; i < nArms; i++){
-    const a = a0 + i/nArms*TAU + (rnd()-0.5)*(TAU/nArms)*0.7;
-    const len = 0.12 + (0.15 + 0.5*lob)*Math.pow(rnd(), 1.2);
-    const curve = (rnd()-0.5)*0.35;
-    const vStart = 0.16 + rnd()*0.1, vNeck = 0.05 + rnd()*0.035;
-    const d0 = 0.6, d1 = 0.85 + len;
-    const steps = Math.max(3, Math.ceil((d1 - d0)/0.035));
-    let x = 0, y = 0;
-    for(let s = 0; s <= steps; s++){
-      const f = s/steps;
-      const d = d0 + (d1 - d0)*f, aa = a + curve*f*f;
-      x = Math.cos(aa)*d; y = Math.sin(aa)*d;
-      ball(x, y, vStart + (vNeck - vStart)*Math.pow(f, 0.8));
-    }
-    const bulb = vNeck + 0.04 + rnd()*0.07*(0.5 + lob);
-    const ab = a + curve;
-    ball(Math.cos(ab)*(d1 + bulb*0.4), Math.sin(ab)*(d1 + bulb*0.4), bulb);
-    tips.push({ a: ab, d: d1 + bulb*0.4, r: bulb });
-  }
-
-  // droplets flung past the arms
-  for(let i = 0; i < P.buds; i++){
-    const tip = tips[Math.floor(rnd()*tips.length)];
-    const near = rnd() < 0.7;
-    const a = near ? tip.a + (rnd()-0.5)*0.35 : rnd()*TAU;
-    const d = near ? tip.d + tip.r + 0.08 + rnd()*0.2 : 1.05 + rnd()*0.4;
-    ball(Math.cos(a)*d, Math.sin(a)*d, 0.025 + rnd()*0.045);
-  }
-  return balls;
-}
 
 function buildTissue(){
   const { u } = geom();
-  const key = [canvas.width, canvas.height, P.seed, P.size, P.lobulation, P.buds, P.lumens, P.density, P.texture, P.color].join('|');
+  const key = [canvas.width, canvas.height, P.seed, P.size, P.lobulation, P.soft, P.texture, P.color].join('|');
   if(tissue && tissueKey === key) return tissue;
 
   const rnd = mulberry32(P.seed*9973 + 17);
   const nseed = Math.floor(rnd()*1e6);
   const Rb = u*P.size;
+
+  // outline: a few low harmonics only, normalised so "warp" sets the deviation
+  const M = 720, rArr = new Float32Array(M);
+  const harm = [];
+  for(let n = 2; n <= 5; n++) harm.push([n, (0.4 + 0.6*rnd())/n, rnd()*TAU]);
+  let mx = 1e-6;
+  for(let i = 0; i < M; i++){
+    const a = i/M*TAU;
+    let v = 0;
+    for(const [n, amp, ph] of harm) v += amp*Math.cos(n*a + ph);
+    rArr[i] = v; mx = Math.max(mx, Math.abs(v));
+  }
+  const warp = 0.015 + 0.11*P.lobulation;
+  for(let i = 0; i < M; i++) rArr[i] = 1 + rArr[i]/mx*warp;
+
+  const feather = 0.12 + 0.55*P.soft;              // fraction of the radius the edge fades over
+  const S = Math.ceil(2*Rb*(1 + warp)*(1 + 0.4*feather) + u*0.04), half = S/2;
+
   const base = hexToRgb(P.color);
-  const deep = shade(P.color, -5, 0.12, -0.1);
-  const dark = shade(P.color, -2, 0.02, -0.2);
-  const pale = shade(P.color, 2, -0.08, 0.09);
-
-  const balls = splatBalls(rnd).map(b => ({ x: b.x*Rb, y: b.y*Rb, R: b.R*Rb }));
-  let ext = 0;
-  for(const b of balls) ext = Math.max(ext, Math.hypot(b.x, b.y) + b.R);
-  const pad = u*0.02;
-  const S = Math.ceil(2*(ext + pad)), half = S/2;
-
-  // --- metaball field, splatted ball by ball (compact kernel keeps this cheap)
-  const field = new Float32Array(S*S);
-  for(const b of balls){
-    const cx = b.x + half, cy = b.y + half, R2 = b.R*b.R;
-    const x0 = Math.max(0, Math.floor(cx - b.R)), x1 = Math.min(S-1, Math.ceil(cx + b.R));
-    const y0 = Math.max(0, Math.floor(cy - b.R)), y1 = Math.min(S-1, Math.ceil(cy + b.R));
-    for(let y = y0; y <= y1; y++){
-      const dy = y + 0.5 - cy, row = y*S;
-      for(let x = x0; x <= x1; x++){
-        const dx = x + 0.5 - cx, q = (dx*dx + dy*dy)/R2;
-        if(q < 1){ const k = 1 - q; field[row + x] += k*k*k; }
-      }
-    }
-  }
-  const inside = (x, y) => {
-    const ix = Math.floor(x + half), iy = Math.floor(y + half);
-    return ix >= 0 && iy >= 0 && ix < S && iy < S && field[iy*S + ix] >= FIELD_T;
-  };
-
-  // coverage mask (anti-aliased via distance estimate) and a soft darker rim at the cut edge
-  const maskC = document.createElement('canvas'); maskC.width = maskC.height = S;
-  const rimC = document.createElement('canvas'); rimC.width = rimC.height = S;
-  const mImg = maskC.getContext('2d').createImageData(S, S);
-  const rImg = rimC.getContext('2d').createImageData(S, S);
-  const rimPx = u*0.008;
-  for(let y = 1; y < S-1; y++){
-    for(let x = 1; x < S-1; x++){
-      const i = y*S + x, f = field[i];
-      if(f <= 0) continue;
-      const gx = (field[i+1] - field[i-1])*0.5, gy = (field[i+S] - field[i-S])*0.5;
-      const g = Math.hypot(gx, gy) || 1e-6;
-      const dist = (f - FIELD_T)/g;            // approx. pixels inside the edge
-      const cov = Math.min(1, Math.max(0, dist + 0.5));
-      if(cov <= 0) continue;
-      const o = i*4;
-      mImg.data[o] = mImg.data[o+1] = mImg.data[o+2] = 255; mImg.data[o+3] = cov*255;
-      if(dist < rimPx){
-        const r = 1 - Math.max(0, dist)/rimPx;
-        const a = 0.12*r*r + (dist < 1.6 ? 0.3 : 0);
-        rImg.data[o] = deep[0]; rImg.data[o+1] = deep[1]; rImg.data[o+2] = deep[2]; rImg.data[o+3] = a*cov*255;
-      }
-    }
-  }
-  maskC.getContext('2d').putImageData(mImg, 0, 0);
-  rimC.getContext('2d').putImageData(rImg, 0, 0);
-
-  // --- lumens / vessels inside the body
-  const lumens = [];
-  for(let tries = 0; tries < 500 && lumens.length < P.lumens; tries++){
-    const a = rnd()*TAU, d = Math.sqrt(rnd())*0.75*Rb;
-    const lr = Rb*(0.022 + 0.08*Math.pow(rnd(), 1.8));
-    const elong = 1 + Math.pow(rnd(), 2)*1.6;
-    const x = Math.cos(a)*d, y = Math.sin(a)*d;
-    const m = lr*elong*1.6;
-    if(![[0,0],[m,0],[-m,0],[0,m],[0,-m]].every(([ox, oy]) => inside(x+ox, y+oy))) continue;
-    if(lumens.some(L => Math.hypot(L.x-x, L.y-y) < (L.r*L.e + lr*elong) + u*0.018)) continue;
-    lumens.push({ x, y, r: lr, e: elong, pts: blobPoly(lr, rnd, 0.6, elong, rnd()*TAU, 64) });
-  }
+  const deep = shade(P.color, -6, 0.14, -0.08);
+  const pale = shade(P.color, 3, -0.06, 0.07);
+  const tex = P.texture;
 
   const tc = document.createElement('canvas');
   tc.width = tc.height = S;
   const t = tc.getContext('2d');
-  t.translate(half, half);
-  t.fillStyle = rgba(base, 1);
-  t.fillRect(-half, -half, S, S);
+  const img = t.createImageData(S, S), d = img.data;
+  const lx = -0.7071, ly = 0.7071;                    // light falls from upper right, deepest lower left
+  const smooth = x => x <= 0 ? 0 : x >= 1 ? 1 : x*x*(3 - 2*x);
+  const grainR = mulberry32(nseed + 5);
 
-  // nest/stroma field as soft one-colour mottling
-  const nf = (x, y) => fbm(x/(Rb*0.42) + 31.7, y/(Rb*0.42) - 12.3, nseed);
-  const N = 120, low = document.createElement('canvas');
-  low.width = low.height = N;
-  const lctx = low.getContext('2d'), img = lctx.createImageData(N, N);
-  const tex = 0.15 + 0.85*P.texture;
-  for(let j = 0; j < N; j++) for(let i = 0; i < N; i++){
-    const x = (i+0.5)/N*S - half, y = (j+0.5)/N*S - half;
-    const f = nf(x, y), o = (j*N + i)*4;
-    if(f > 0.5){ const a = Math.min(1, (f-0.5)*3.4)*0.38*tex; img.data.set([deep[0], deep[1], deep[2], a*255], o); }
-    else { const a = Math.min(1, (0.5-f)*3.4)*0.5*tex; img.data.set([pale[0], pale[1], pale[2], a*255], o); }
-  }
-  lctx.putImageData(img, 0, 0);
-  t.imageSmoothingEnabled = true; t.imageSmoothingQuality = 'high';
-  t.drawImage(low, -half, -half, S, S);
+  for(let y = 0; y < S; y++){
+    const py = y + 0.5 - half;
+    for(let x = 0; x < S; x++){
+      const px = x + 0.5 - half;
+      const dist = Math.hypot(px, py);
+      const a = Math.atan2(py, px);
+      const fi = ((a/TAU)%1 + 1)%1*M, i0 = Math.floor(fi), f = fi - i0;
+      const edge = Rb*(rArr[i0 % M]*(1 - f) + rArr[(i0+1) % M]*f);
+      const q = dist/edge;
+      // soft falloff: solid core, long feathered edge
+      const alpha = 1 - smooth((q - (1 - feather))/(feather*1.4));
+      if(alpha <= 0.001){ grainR(); continue; }
 
-  const lg = t.createLinearGradient(-Rb, Rb, Rb, -Rb);
-  lg.addColorStop(0, rgba(deep, 0.55)); lg.addColorStop(0.5, rgba(deep, 0)); lg.addColorStop(1, rgba(pale, 0.35));
-  t.fillStyle = lg; t.fillRect(-half, -half, S, S);
-
-  for(const L of lumens){
-    t.lineWidth = Math.max(u*0.006, L.r*0.32);
-    t.strokeStyle = rgba(deep, 0.16*tex + 0.06);
-    t.stroke(polyPath(L.pts, L.x, L.y));
-  }
-
-  // nuclei: dense in nests, sparse and spindle-shaped in stroma
-  const sp = u*0.0068/Math.sqrt(P.density);
-  const buckets = [new Path2D(), new Path2D(), new Path2D()];
-  const nr = mulberry32(nseed + 99);
-  const addNucleus = (x, y, rx, ry, rot, bi) => {
-    const p = buckets[bi];
-    p.moveTo(x + rx*Math.cos(rot), y + rx*Math.sin(rot));
-    p.ellipse(x, y, rx, ry, rot, 0, TAU);
-  };
-  for(let y = -half; y < half; y += sp) for(let x = -half; x < half; x += sp){
-    const px = x + (nr()-0.5)*sp*0.9, py = y + (nr()-0.5)*sp*0.9;
-    const keep = nr();
-    if(!inside(px, py)) continue;
-    const f = nf(px, py), nest = f > 0.5;
-    if(keep > (nest ? 0.82 : 0.28)) continue;
-    if(lumens.some(L => Math.hypot(L.x-px, L.y-py) < L.r*L.e*1.25)) continue;
-    const rx = sp*(nest ? 0.26 : 0.3)*(0.75 + nr()*0.5);
-    const ry = rx*(nest ? 0.7 + nr()*0.3 : 0.28 + nr()*0.15);
-    const rot = nest ? nr()*TAU : vnoise(px/(Rb*0.25), py/(Rb*0.25), nseed+7)*TAU*1.5;
-    addNucleus(px, py, rx, ry, rot, Math.floor(nr()*3));
-  }
-  for(const L of lumens){
-    const step = Math.max(1, Math.round(L.pts.length*sp*0.9/(TAU*L.r*L.e)));
-    for(let i = 0; i < L.pts.length; i += step){
-      const [x, y] = L.pts[i], d = Math.hypot(x, y) || 1, k = 1 + sp*0.75/d;
-      addNucleus(L.x + x*k, L.y + y*k, sp*0.28, sp*0.16, Math.atan2(y, x), 2);
+      // tone: directional shading, a slightly richer core and soft large-scale variation
+      const dir = (px*lx + py*ly)/Rb;                 // -1 upper right … +1 lower left
+      const n = fbm(px/(Rb*0.55) + 9.1, py/(Rb*0.55) - 4.2, nseed) - 0.5;
+      let kDeep = Math.max(0, dir*0.5 + 0.1) + Math.max(0, 0.35 - q*0.35) + n*0.5*tex;
+      let kPale = Math.max(0, -dir*0.45) + Math.max(0, q - 0.75)*0.6 - n*0.4*tex;
+      kDeep = Math.min(0.9, Math.max(0, kDeep)); kPale = Math.min(0.8, Math.max(0, kPale));
+      let r = base[0] + (deep[0] - base[0])*kDeep + (pale[0] - base[0])*kPale;
+      let g = base[1] + (deep[1] - base[1])*kDeep + (pale[1] - base[1])*kPale;
+      let b = base[2] + (deep[2] - base[2])*kDeep + (pale[2] - base[2])*kPale;
+      // fine grain, so the glass has something to bend
+      const gr = (grainR() - 0.5)*14*tex;
+      const o = (y*S + x)*4;
+      d[o] = r + gr; d[o+1] = g + gr; d[o+2] = b + gr; d[o+3] = alpha*255;
     }
   }
-  const na = 0.1 + 0.3*tex;
-  [0.55, 0.8, 1].forEach((k, i) => { t.fillStyle = rgba(dark, na*k); t.fill(buckets[i]); });
-
-  t.setTransform(1, 0, 0, 1, 0, 0);
-  t.drawImage(rimC, 0, 0);
-  t.globalCompositeOperation = 'destination-in';
-  t.drawImage(maskC, 0, 0);
-  t.globalCompositeOperation = 'destination-out';
-  t.translate(half, half);
-  for(const L of lumens) t.fill(polyPath(L.pts, L.x, L.y));
-  t.globalCompositeOperation = 'source-over';
+  t.putImageData(img, 0, 0);
 
   tissue = { canvas: tc, half, Rb };
   tissueKey = key;
@@ -708,7 +554,7 @@ function clearOrFill(x, y, w, h){
 function refractDisc(ring){
   const { u, W, H } = geom();
   const { R, cx, cy, pulse, dir, dirAmt } = ring;
-  const eps = 0.012*P.idle + 0.035*pulse;
+  const eps = 0.012*P.idle + 0.05*pulse;
   if(eps < 0.0004) return;
   const m = 1 + eps;
   // pressure moves the lens centre away from the hit, so the bend is strongest where it landed
