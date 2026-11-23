@@ -178,6 +178,14 @@
   <div class="group">
     <h2>Pulses</h2>
     <div id="g-shots"></div>
+    <div class="ctl">
+      <label for="aimMode">Comes from</label>
+      <select id="aimMode">
+        <option value="random">All directions</option>
+        <option value="point">One point</option>
+      </select>
+    </div>
+    <div id="g-aim"></div>
     <p class="note">Clicking the canvas sends a pulse from that side and adds it to the loop, so it's included in exports.</p>
     <button id="clearShots" class="ghost" type="button" style="margin-top:8px">Clear clicked pulses (0)</button>
   </div>
@@ -319,12 +327,13 @@ const DEFAULTS = {
   loop: 12, seed: 7, bg: '#ecebe9', color: '#ee6650',
   size: 0.3, lobulation: 0.5, soft: 0.5, texture: 0.4,
   rings: 3, spacing: 0.26, band: 0.3, idle: 0.3, strength: 1,
-  shots: 3, speed: 1, pierce: 0.4,
+  shots: 3, speed: 1, pierce: 0.4, aimMode: 'random', aim: 315, spread: 14, refract: 1.6, drift: 0.5,
 };
 const P = { ...DEFAULTS };
-const SETTINGS_KEY = 'periotherapia.barrier.settings.v4';
+const SETTINGS_KEY = 'periotherapia.barrier.settings.v5';
 
 // slider definitions: [key, label, min, max, step, format, container]
+const compass = v => ['top','top right','right','bottom right','bottom','bottom left','left','top left'][Math.round(v/45) % 8];
 const SLIDERS = [
   ['loop', 'Loop length', 6, 30, 1, v => `${v}s`, 'g-loop'],
   ['size', 'Size', 0.15, 0.38, 0.005, v => v.toFixed(2), 'g-tissue'],
@@ -334,11 +343,15 @@ const SLIDERS = [
   ['rings', 'Barrier layers', 1, 5, 1, v => v, 'g-rings'],
   ['spacing', 'Spacing', 0.12, 0.4, 0.005, v => v.toFixed(2), 'g-rings'],
   ['band', 'Edge bevel', 0, 1, 0.01, v => v.toFixed(2), 'g-rings'],
+  ['refract', 'Refraction strength', 0.2, 3, 0.05, v => v.toFixed(2), 'g-rings'],
   ['idle', 'Resting refraction', 0, 1, 0.01, v => v.toFixed(2), 'g-rings'],
   ['strength', 'Pressure response', 0.3, 1.6, 0.05, v => v.toFixed(2), 'g-rings'],
   ['shots', 'Pulses per loop', 0, 8, 1, v => v, 'g-shots'],
   ['speed', 'Speed', 0.4, 2, 0.05, v => v.toFixed(2), 'g-shots'],
   ['pierce', 'Chance to pass a layer', 0, 0.8, 0.01, v => v.toFixed(2), 'g-shots'],
+  ['aim', 'Direction', 0, 359, 1, v => `${v}° ${compass(v)}`, 'g-aim'],
+  ['spread', 'Spread', 0, 90, 1, v => `±${v}°`, 'g-aim'],
+  ['drift', 'Movement', 0, 1, 0.01, v => v.toFixed(2), 'g-tissue'],
 ];
 for(const [key, label, min, max, step, , box] of SLIDERS){
   const wrap = document.createElement('div');
@@ -365,6 +378,7 @@ function syncUI(){
     ui['s_' + key].value = P[key];
     ui['v_' + key].textContent = fmt(+P[key]);
   }
+  ui.aimMode.value = P.aimMode; ui['g-aim'].classList.toggle('hidden', P.aimMode !== 'point');
   ui.seed.value = P.seed; ui.bgColor.value = P.bg; ui.exMatte.value = P.bg; ui.tissueColor.value = P.color;
 }
 
@@ -554,7 +568,7 @@ function clearOrFill(x, y, w, h){
 function refractDisc(ring){
   const { u, W, H } = geom();
   const { R, cx, cy, pulse, dir, dirAmt } = ring;
-  const eps = 0.012*P.idle + 0.05*pulse;
+  const eps = P.refract*(0.025*P.idle + 0.075*pulse);
   if(eps < 0.0004) return;
   const m = 1 + eps;
   // pressure moves the lens centre away from the hit, so the bend is strongest where it landed
@@ -585,7 +599,7 @@ function refractDisc(ring){
   // the bevelled rim bends light harder: a thin band that compresses what's beneath
   const wb = u*(0.002 + 0.01*P.band);
   const rim = new Path2D(); rim.arc(cx, cy, R, 0, TAU); rim.arc(cx, cy, Math.max(1, R - wb), 0, TAU);
-  lens(rim, 1 + eps*3.5 + 0.002);
+  lens(rim, 1 + eps*3.5 + 0.002*P.refract);
 
   // hairline edges and a faint sheen, only as strong as the pressure
   const vis = Math.min(1, pulse);
@@ -616,6 +630,8 @@ function buildEvents(){
     const T = P.loop*(i + 0.5 + (r()-0.5)*0.5)/n;
     let theta = lastTheta + 1.2 + r()*(TAU - 2.4);
     lastTheta = theta;
+    const jitter = r() - 0.5;
+    if(P.aimMode === 'point') theta = (P.aim - 90 + jitter*2*P.spread)*Math.PI/180 + TAU;
     ev.push({ T, theta: theta % TAU, seed: Math.floor(r()*1e9) });
   }
   for(const m of manualShots) ev.push(m);
@@ -686,11 +702,15 @@ function draw(t){
   const T = buildTissue();
   const ph = TAU*t/P.loop;
   const n1 = Math.max(1, Math.round(P.loop/9)), n2 = Math.max(1, Math.round(P.loop/6)), n3 = Math.max(1, Math.round(P.loop/7));
-  const breath = 1 + 0.006*Math.sin(ph*n2);
-  const rot = 0.018*Math.sin(ph*n1 + 0.7);
-  const ox = u*0.004*Math.sin(ph*n3 + 1.3), oy = u*0.004*Math.cos(ph*n1 + 0.4);
+  const mv = 0.15 + 0.85*P.drift;
+  const breath = 1 + 0.012*mv*Math.sin(ph*n2);
+  const squash = 0.03*mv*Math.sin(ph*n3 + 2.1);
+  const rot = 0.06*mv*Math.sin(ph*n1 + 0.7);
+  // wanders on a slow looping path, so the glass keeps finding a different part of the gradient
+  const ox = u*0.06*mv*Math.sin(ph*n1 + 1.3) + u*0.015*mv*Math.sin(ph*n2*2 + 0.2);
+  const oy = u*0.045*mv*Math.sin(ph*n3 + 0.4) + u*0.012*mv*Math.cos(ph*n2 + 2.5);
   ctx.save();
-  ctx.translate(cx + ox, cy + oy); ctx.rotate(rot); ctx.scale(breath, breath);
+  ctx.translate(cx + ox, cy + oy); ctx.rotate(rot); ctx.scale(breath*(1 + squash), breath*(1 - squash));
   ctx.drawImage(T.canvas, -T.half, -T.half);
   ctx.restore();
 
@@ -756,6 +776,7 @@ for(const [key, , , , , fmt] of SLIDERS){
 }
 ui.seed.addEventListener('change', () => { P.seed = Math.max(1, Math.round(+ui.seed.value) || 1); ui.seed.value = P.seed; saveSettings(); });
 ui.newTissue.addEventListener('click', () => { P.seed = 1 + Math.floor(Math.random()*99998); ui.seed.value = P.seed; saveSettings(); });
+ui.aimMode.addEventListener('change', () => { P.aimMode = ui.aimMode.value; ui['g-aim'].classList.toggle('hidden', P.aimMode !== 'point'); saveSettings(); });
 ui.tissueColor.addEventListener('input', () => { P.color = ui.tissueColor.value; saveSettings(); });
 ui.bgColor.addEventListener('input', () => { P.bg = ui.bgColor.value; ui.exMatte.value = P.bg; saveSettings(); });
 ui.exMatte.addEventListener('input', () => { P.bg = ui.exMatte.value; ui.bgColor.value = P.bg; saveSettings(); });
