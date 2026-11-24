@@ -177,3 +177,5 @@ dialog::backdrop{background:rgba(3,2,8,.7)}
 .style-switch{display:flex;gap:6px}
 .style-switch .chip{flex:none;padding:7px 14px}
 .frontkey i.edge{border:0;border-radius:0;height:0;border-top:2px solid var(--tumour);box-shadow:none}
+.switches{display:grid;gap:8px}
+.switch-row{display:grid;grid-template-columns:64px auto;align-items:center;gap:10px}

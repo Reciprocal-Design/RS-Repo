@@ -8,6 +8,7 @@ A neon density map of a tumour section. Each dot is a 20 µm patch of tissue: th
 
 - **Two styles.** Neon (black ground, saturated colours) and Clinical (light grey ground, muted pinks, periwinkles and graphite fibres). Switch in the panel, or open the page with `?style=clinical` or `?style=neon`. The last choice is remembered.
 - **The cursor carries the antibody.** Moving across the tissue sends out ripples from your path. As each ripple spreads, the collagen rings it crosses come down in a six-petal pattern, breaking into fibre fragments that drift apart and thin out. Dense collagen needs more passes than loose fibres.
+- **Edges.** Fade keeps the tissue floating on the background; Bleed fills every empty spot with a small background dot so the grid runs to all four edges of the canvas. Switch in the panel or with `?edge=bleed` / `?edge=fade`. Applies to exports too.
 - **Tumour boundary.** A thin outline traces where the tumour started, so its bounds stay visible as it clears.
 - **Movement, not hovering.** Holding the cursor still delivers nothing; the amount scales with how far you move. On touch screens, drag.
 - **Antibody dose bar** (0–20 mg/kg) sets the ripples: a higher dose sends wider, stronger ripples. At 0 the cursor does nothing.
