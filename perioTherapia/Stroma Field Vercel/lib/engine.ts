@@ -1,0 +1,446 @@
+/* Stroma Field engine: tissue generation, the cursor-driven treatment model and the
+   canvas renderer. Framework-free so the live page and the exporter share it.
+
+   - Tissue: a seeded 84 × 84 grid. Each cell has a type (core colour), a density
+     (dot size) and a collagen level (ring thickness and colour).
+   - Treatment: moving the cursor delivers antibody. Exposure builds up under the
+     cursor's path, dense collagen needs more passes, and the ring breaks apart as it
+     opens. Tumour cells whose ring is open die back over the next few seconds, and
+     about half are replaced by T cells. Exposure fades slowly, so untouched barriers
+     grow back.
+   - Everything is deterministic for a given seed and pointer path, so exports replay
+     exactly. */
+
+export const TAU = Math.PI * 2;
+export const N = 84;
+export const M = N * N;
+export const UM = 20; // µm per grid step
+export const LOOP = 6; // ambient motion period (s)
+export const MAX_DOSE = 20; // mg/kg
+export const DAYS_PER_S = 2;
+
+export const clamp = (x: number, a: number, b: number) => (x < a ? a : x > b ? b : x);
+export const sm = (a: number, b: number, x: number) => {
+  const t = clamp((x - a) / (b - a), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+
+/* ---------- palette ---------- */
+export const PALETTE = {
+  ink: "#06050c",
+  inner: ["#ff2fd0", "#9b5cff", "#4f86ff", "#28efe0", "#e9fff7", "#6c4b78"], // tumour, CAF, macrophage, T cell, vessel, dying
+  fibLo: "#b6ff3b",
+  fibMid: "#ffd60a",
+  fibHi: "#ff6f1a",
+  speck: "#c9c2ff",
+};
+const hex = (h: string) => {
+  const n = parseInt(h.replace("#", ""), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+const mixHex = (a: string, b: string, t: number) => {
+  const A = hex(a), B = hex(b);
+  return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(",")})`;
+};
+const FIB_LV = 6;
+const FIB = Array.from({ length: FIB_LV }, (_, i) => {
+  const t = i / (FIB_LV - 1);
+  return t < 0.5 ? mixHex(PALETTE.fibLo, PALETTE.fibMid, t * 2) : mixHex(PALETTE.fibMid, PALETTE.fibHi, (t - 0.5) * 2);
+});
+const ALPHAS = [0.3, 0.55, 0.8, 1];
+
+/* ---------- seeded noise ---------- */
+export function mulberry32(a: number) {
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function makeNoise(rand: () => number) {
+  const p = Array.from({ length: 256 }, (_, i) => i);
+  for (let i = 255; i > 0; i--) {
+    const j = (rand() * (i + 1)) | 0;
+    [p[i], p[j]] = [p[j], p[i]];
+  }
+  const perm = new Uint8Array(512);
+  for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
+  const vals = new Float32Array(256);
+  for (let i = 0; i < 256; i++) vals[i] = rand();
+  const fade = (t: number) => t * t * (3 - 2 * t);
+  const n2 = (x: number, y: number) => {
+    const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, X = xi & 255, Y = yi & 255;
+    const a = vals[perm[perm[X] + Y]], b = vals[perm[perm[X + 1] + Y]];
+    const c = vals[perm[perm[X] + Y + 1]], d = vals[perm[perm[X + 1] + Y + 1]];
+    const u = fade(xf), v = fade(yf);
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+  };
+  return (x: number, y: number, oct = 4) => {
+    let s = 0, amp = 0.5, f = 1, norm = 0;
+    for (let o = 0; o < oct; o++) {
+      s += amp * n2(x * f + o * 17.3, y * f + o * 9.1);
+      norm += amp;
+      amp *= 0.5;
+      f *= 2.03;
+    }
+    return s / norm;
+  };
+}
+function rankNorm(a: Float32Array) {
+  const idx = Array.from(a.keys()).sort((x, y) => a[x] - a[y]);
+  const out = new Float32Array(a.length);
+  idx.forEach((k, r) => (out[k] = r / (a.length - 1)));
+  return out;
+}
+
+/* ---------- tissue ---------- */
+export type Tissue = {
+  seed: number;
+  TY: Int8Array; // -1 empty, 0 tumour, 1 CAF, 2 macrophage, 3 T cell, 4 vessel
+  RB: Float32Array; // base radius (fraction of grid pitch)
+  C0: Float32Array; // collagen 0..1
+  RES: Float32Array; // exposure needed to open the ring
+  PH: Float32Array;
+  RO: Float32Array;
+  DIR: Int8Array;
+  INF: Uint8Array; // tumour cell replaced by a T cell when it dies
+  KR: Float32Array; // max kill (a few cells resist)
+  FL: Uint8Array; // ring colour level
+  TUM: Int32Array;
+  RINGED: Int32Array;
+  preT: number;
+  sumC0: number;
+};
+
+export function generate(seed: number): Tissue {
+  const rand = mulberry32(seed * 7919 + 13);
+  const fbm = makeNoise(rand);
+  const o = Array.from({ length: 18 }, () => rand() * 200);
+  const f = () => new Float32Array(M);
+  const env = f(), tn = f(), fr = f(), vr = f(), tex = f(), n1 = f(), n2 = f(), n3 = f();
+  for (let j = 0; j < N; j++)
+    for (let i = 0; i < N; i++) {
+      const k = j * N + i, u = (i + 0.5) / N, v = (j + 0.5) / N, r = Math.hypot(u - 0.5, v - 0.5) * 2;
+      env[k] = fbm(u * 1.7 + o[0], v * 1.7 + o[1], 4) - 0.32 * Math.max(0, r - 0.5);
+      tn[k] = fbm(u * 2.5 + o[2], v * 2.5 + o[3], 4) + 0.18 * fbm(u * 7 + o[4], v * 7 + o[5], 2);
+      fr[k] = 1 - Math.abs(2 * fbm(u * 3.1 + o[6], v * 3.1 + o[7], 4) - 1);
+      vr[k] = 1 - Math.abs(2 * fbm(u * 2.2 + o[8], v * 2.2 + o[9], 3) - 1);
+      tex[k] = fbm(u * 11 + o[10], v * 11 + o[11], 2);
+      n1[k] = fbm(u * 6 + o[12], v * 6 + o[13], 2);
+      n2[k] = fbm(u * 4.5 + o[14], v * 4.5 + o[15], 3);
+      n3[k] = fbm(u * 5 + o[16], v * 5 + o[17], 3);
+    }
+  const E = rankNorm(env), TN = rankNorm(tn), FR = rankNorm(fr), VR = rankNorm(vr), TX = rankNorm(tex);
+  const R1 = rankNorm(n1), R2 = rankNorm(n2), R3 = rankNorm(n3);
+
+  const D = f(), C0 = f(), RIM = f();
+  const TY = new Int8Array(M).fill(-1), RB = f();
+  const isT = new Uint8Array(M), vessel = new Uint8Array(M), tissue = new Uint8Array(M);
+  for (let k = 0; k < M; k++) {
+    D[k] = clamp(clamp((E[k] - 0.17) / 0.5, 0, 1) * (0.7 + 0.6 * TX[k]), 0, 1);
+    tissue[k] = D[k] > 0.08 ? 1 : 0;
+    isT[k] = tissue[k] && TN[k] > 0.66 && D[k] > 0.2 ? 1 : 0;
+    const rim = isT[k] ? 0 : sm(0.48, 0.66, TN[k]);
+    RIM[k] = rim;
+    const fib = sm(0.8, 0.985, FR[k]);
+    C0[k] = tissue[k]
+      ? clamp(0.06 + 0.85 * rim + 0.62 * fib + (isT[k] ? 0.22 + 0.25 * R1[k] : 0.1 * R1[k]), 0, 1) * sm(0.08, 0.3, D[k])
+      : 0;
+    vessel[k] = tissue[k] && !isT[k] && VR[k] > 0.958 && D[k] > 0.18 ? 1 : 0;
+  }
+
+  // distance to the nearest vessel (cells), for placing T cells near vessels
+  const vd = new Float32Array(M).fill(1e9);
+  const queue: number[] = [];
+  for (let k = 0; k < M; k++) if (vessel[k]) (vd[k] = 0), queue.push(k);
+  for (let qi = 0; qi < queue.length; qi++) {
+    const k = queue[qi], x = k % N, y = (k / N) | 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+      const n = ny * N + nx;
+      if (vd[n] > vd[k] + 1) (vd[n] = vd[k] + 1), queue.push(n);
+    }
+  }
+
+  const PH = f(), RO = f(), KR = f(), RES = f();
+  const DIR = new Int8Array(M), INF = new Uint8Array(M), FL = new Uint8Array(M);
+  const TUM: number[] = [], RINGED: number[] = [];
+  let preT = 0, sumC0 = 0;
+  for (let k = 0; k < M; k++) {
+    PH[k] = TAU * (2.2 * E[k] + 0.35 * rand());
+    RO[k] = rand() * TAU;
+    DIR[k] = rand() < 0.5 ? 1 : -1;
+    KR[k] = 0.9 + 0.1 * rand();
+    FL[k] = Math.min(FIB_LV - 1, Math.floor(C0[k] * FIB_LV));
+    RES[k] = 0.35 + 1.6 * Math.pow(C0[k], 1.3);
+    if (C0[k] > 0.04) RINGED.push(k);
+    sumC0 += C0[k];
+    const r = rand();
+    if (tissue[k]) {
+      if (vessel[k]) {
+        TY[k] = 4;
+        RB[k] = 0.1 + 0.05 * rand();
+        continue;
+      }
+      if (isT[k]) {
+        if (r < 0.06) TY[k] = 2;
+        else if (r < 0.09) (TY[k] = 3), preT++;
+        else (TY[k] = 0), TUM.push(k), (INF[k] = rand() < 0.55 ? 1 : 0);
+        RB[k] = 0.14 + 0.22 * D[k];
+        continue;
+      }
+      const sCaf = 0.3 + 0.75 * C0[k] + 0.35 * R1[k] + 0.25 * rand();
+      const sMy = 0.12 + 0.85 * RIM[k] + 0.45 * R2[k] + 0.25 * rand();
+      const sT = 0.95 * Math.exp(-vd[k] / 4.5) + 0.45 * R3[k] - 0.12 + 0.25 * rand();
+      TY[k] = sCaf >= sMy && sCaf >= sT ? 1 : sMy >= sT ? 2 : 3;
+      RB[k] = 0.1 + 0.25 * D[k];
+    } else if (r < 0.2 * sm(-0.3, 0.08, D[k] - 0.1 + E[k] * 0.5)) {
+      const q = rand();
+      TY[k] = q < 0.4 ? 1 : q < 0.7 ? 2 : 3;
+      RB[k] = 0.05 + 0.07 * rand();
+    }
+  }
+  return { seed, TY, RB, C0, RES, PH, RO, DIR, INF, KR, FL, TUM: Int32Array.from(TUM), RINGED: Int32Array.from(RINGED), preT, sumC0 };
+}
+
+/* ---------- treatment state ---------- */
+const SPECKS = 480;
+export type Sim = {
+  E: Float32Array; // antibody exposure
+  BF: Float32Array; // ring remaining, 0.1..1
+  K: Float32Array; // tumour kill, 0..1
+  simT: number;
+  lx: number; // last pointer position (grid units), NaN when absent
+  ly: number;
+  sx: Float32Array; sy: Float32Array; svx: Float32Array; svy: Float32Array; sl: Float32Array; // antibody specks
+  sNext: number;
+  rand: () => number;
+  delivered: number;
+};
+export function createSim(T: Tissue): Sim {
+  return {
+    E: new Float32Array(M), BF: new Float32Array(M).fill(1), K: new Float32Array(M),
+    simT: 0, lx: NaN, ly: NaN,
+    sx: new Float32Array(SPECKS), sy: new Float32Array(SPECKS), svx: new Float32Array(SPECKS), svy: new Float32Array(SPECKS), sl: new Float32Array(SPECKS),
+    sNext: 0, rand: mulberry32(T.seed * 31 + 5), delivered: 0,
+  };
+}
+export function cloneSim(S: Sim): Sim {
+  return { ...S, E: S.E.slice(), BF: S.BF.slice(), K: S.K.slice(), sx: S.sx.slice(), sy: S.sy.slice(), svx: S.svx.slice(), svy: S.svy.slice(), sl: new Float32Array(SPECKS), rand: mulberry32(1) };
+}
+
+/** Advance the treatment by dt seconds. pointer is in grid units, or null when the cursor is away. */
+export function stepSim(T: Tissue, S: Sim, dt: number, pointer: { x: number; y: number } | null, dose: number) {
+  const d01 = clamp(dose / MAX_DOSE, 0, 1);
+  S.simT += dt;
+  if (pointer && Number.isFinite(S.lx)) {
+    const dx = pointer.x - S.lx, dy = pointer.y - S.ly;
+    const travel = Math.min(4, Math.hypot(dx, dy));
+    if (d01 > 0 && travel > 0.002) {
+      const R = 2 + 3.6 * d01; // brush radius in cells
+      const amount = travel * (0.16 + 0.62 * d01);
+      S.delivered += amount;
+      const steps = Math.max(1, Math.ceil(travel / 0.5));
+      const reach = Math.ceil(R * 2);
+      for (let s = 1; s <= steps; s++) {
+        const px = S.lx + (dx * s) / steps, py = S.ly + (dy * s) / steps;
+        const i0 = Math.max(0, Math.floor(px - reach)), i1 = Math.min(N - 1, Math.ceil(px + reach));
+        const j0 = Math.max(0, Math.floor(py - reach)), j1 = Math.min(N - 1, Math.ceil(py + reach));
+        for (let j = j0; j <= j1; j++)
+          for (let i = i0; i <= i1; i++) {
+            const k = j * N + i;
+            const ddx = i + 0.5 - px, ddy = j + 0.5 - py;
+            const w = Math.exp(-(ddx * ddx + ddy * ddy) / (R * R));
+            if (w < 0.01) continue;
+            S.E[k] = Math.min(T.RES[k] * 1.6, S.E[k] + (amount / steps) * w);
+          }
+      }
+      // shed a few antibody specks along the stroke
+      const n = Math.min(10, Math.round(travel * 4 * (0.3 + d01)));
+      for (let q = 0; q < n; q++) {
+        const id = S.sNext++ % SPECKS, a = S.rand() * TAU, sp = (0.6 + S.rand() * 2.4) * (0.6 + d01);
+        const t = S.rand();
+        S.sx[id] = S.lx + dx * t; S.sy[id] = S.ly + dy * t;
+        S.svx[id] = Math.cos(a) * sp + dx * 2; S.svy[id] = Math.sin(a) * sp + dy * 2;
+        S.sl[id] = 0.6 + 0.6 * S.rand();
+      }
+    }
+  }
+  S.lx = pointer ? pointer.x : NaN;
+  S.ly = pointer ? pointer.y : NaN;
+
+  // barrier: opens fast under exposure, grows back slowly as exposure fades
+  const { RES, RINGED } = T;
+  for (let n = 0; n < RINGED.length; n++) {
+    const k = RINGED[n];
+    S.E[k] = Math.max(0, S.E[k] - dt * 0.03);
+    const target = 1 - 0.9 * sm(0.15, 1, S.E[k] / RES[k]);
+    const rate = target < S.BF[k] ? 3.2 : 0.12;
+    S.BF[k] += (target - S.BF[k]) * Math.min(1, rate * dt);
+  }
+  // tumour cells die back where their ring has opened
+  const { TUM, KR } = T;
+  for (let n = 0; n < TUM.length; n++) {
+    const k = TUM[n];
+    const open = (1 - S.BF[k]) / 0.9;
+    if (open > 0.3 && S.K[k] < KR[k]) S.K[k] = Math.min(KR[k], S.K[k] + dt * 0.26 * sm(0.3, 0.85, open));
+  }
+  // specks drift and fade
+  const damp = Math.pow(0.05, dt);
+  for (let i = 0; i < SPECKS; i++) {
+    if (S.sl[i] <= 0) continue;
+    S.sx[i] += S.svx[i] * dt; S.sy[i] += S.svy[i] * dt;
+    S.svx[i] *= damp; S.svy[i] *= damp;
+    S.sl[i] -= dt * 0.9;
+  }
+}
+
+export function metrics(T: Tissue, S: Sim) {
+  let burden = 0, inf = 0;
+  for (const k of T.TUM) {
+    burden += 1 - S.K[k];
+    if (T.INF[k] && S.K[k] > 0.85) inf++;
+  }
+  let rem = 0;
+  for (const k of T.RINGED) rem += T.C0[k] * S.BF[k];
+  const tumN = T.TUM.length || 1;
+  return {
+    burden: (100 * burden) / tumN,
+    barrier: (100 * rem) / (T.sumC0 || 1),
+    tcell: (100 * (inf + T.preT)) / (tumN + T.preT),
+  };
+}
+
+/* ---------- view ---------- */
+export type View = { p: number; ox: number; oy: number; W: number; H: number; unit: number };
+export function computeView(W: number, H: number, unit: number, exportMode: boolean): View {
+  let p = Math.max(W / N, H / N);
+  if (!exportMode) p = Math.max(p, 11 * unit);
+  return { p, ox: W / 2 - (N / 2) * p, oy: H / 2 - (N / 2) * p, W, H, unit };
+}
+
+/** Scripted cursor sweep used by the treatment export: a slow figure that covers the visible field. */
+export function sweepPointer(t: number, view: View) {
+  const cols = view.W / view.p, rows = view.H / view.p;
+  return {
+    x: N / 2 + cols * 0.36 * Math.sin((TAU * t) / 7.5) + cols * 0.06 * Math.sin((TAU * t) / 1.9),
+    y: N / 2 + rows * 0.32 * Math.sin((TAU * t) / 4.3 + 0.7) + rows * 0.05 * Math.cos((TAU * t) / 2.3),
+  };
+}
+
+/* ---------- renderer ---------- */
+export function draw(
+  ctx: CanvasRenderingContext2D,
+  T: Tissue,
+  S: Sim,
+  view: View,
+  t: number,
+  { bg = PALETTE.ink as string | null, reduceMotion = false } = {},
+) {
+  const { p, ox, oy, W, H, unit } = view;
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 1;
+  if (bg) {
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+  } else ctx.clearRect(0, 0, W, H);
+  const ph = (TAU * t) / LOOP;
+  const m = reduceMotion ? 0.2 : 1;
+  const inner = Array.from({ length: 6 * 4 }, () => new Path2D());
+  const rings = Array.from({ length: FIB_LV }, () => new Path2D());
+  const i0 = Math.max(0, Math.floor(-ox / p) - 1), i1 = Math.min(N - 1, Math.ceil((W - ox) / p) + 1);
+  const j0 = Math.max(0, Math.floor(-oy / p) - 1), j1 = Math.min(N - 1, Math.ceil((H - oy) / p) + 1);
+  const gap = p * 0.045, minTh = 0.4 * unit;
+  const { TY, RB, C0, PH, RO, DIR, INF, FL } = T;
+  const { BF, K } = S;
+
+  for (let j = j0; j <= j1; j++)
+    for (let i = i0; i <= i1; i++) {
+      const k = j * N + i;
+      let ty = TY[k];
+      if (ty < 0) continue;
+      const phase = PH[k];
+      const x = ox + (i + 0.5) * p + m * p * 0.07 * Math.sin(ph + phase);
+      const y = oy + (j + 0.5) * p + m * p * 0.07 * Math.cos(ph + phase * 1.7);
+      let r = p * RB[k] * (1 + m * 0.09 * Math.sin(2 * ph + phase * 2));
+      let a = 1;
+      if (ty === 0) {
+        const kk = K[k];
+        if (kk < 0.55) (r *= 1 - 0.45 * kk), (a = 1 - 0.3 * kk);
+        else if (kk < 0.85 || !INF[k]) {
+          const q = clamp((kk - 0.55) / 0.45, 0, 1);
+          ty = 5;
+          r *= Math.max(0.25, 0.62 - 0.45 * q);
+          a = 0.9 - 0.45 * q;
+        } else (ty = 3), (r *= 0.9 * sm(0.85, 1, kk));
+      }
+      if (r > 0.25 * unit) {
+        const lv = a > 0.9 ? 3 : a > 0.67 ? 2 : a > 0.42 ? 1 : 0;
+        const path = inner[ty * 4 + lv];
+        path.moveTo(x + r, y);
+        path.arc(x, y, r, 0, TAU);
+      }
+      const c0 = C0[k];
+      if (c0 > 0.04) {
+        const bf = BF[k], op = (1 - bf) / 0.9;
+        const th = p * 0.22 * c0 * bf * (1 + m * 0.06 * Math.sin(ph + phase));
+        if (th > minTh) {
+          const path = rings[FL[k]];
+          const ri = Math.max(r, p * 0.06) + gap, ro = ri + th;
+          if (op < 0.03) {
+            path.moveTo(x + ro, y);
+            path.arc(x, y, ro, 0, TAU);
+            path.moveTo(x + ri, y);
+            path.arc(x, y, ri, TAU, 0, true);
+          } else {
+            // the ring breaks into fibre fragments that drift apart as it opens
+            const nseg = 6, span = (TAU / nseg) * (1 - 0.78 * op), rot = RO[k] + ph * DIR[k];
+            const spread = 1 + 0.35 * op;
+            for (let s = 0; s < nseg; s++) {
+              const a0 = rot + (s * TAU) / nseg, a1 = a0 + span;
+              const ri2 = ri * spread, ro2 = ri2 + th;
+              path.moveTo(x + ro2 * Math.cos(a0), y + ro2 * Math.sin(a0));
+              path.arc(x, y, ro2, a0, a1);
+              path.arc(x, y, ri2, a1, a0, true);
+              path.closePath();
+            }
+          }
+        }
+      }
+    }
+  ctx.globalAlpha = 0.96;
+  for (let l = 0; l < FIB_LV; l++) {
+    ctx.fillStyle = FIB[l];
+    ctx.fill(rings[l]);
+  }
+  for (let ty = 0; ty < 6; ty++)
+    for (let lv = 0; lv < 4; lv++) {
+      ctx.globalAlpha = ALPHAS[lv];
+      ctx.fillStyle = PALETTE.inner[ty];
+      ctx.fill(inner[ty * 4 + lv]);
+    }
+
+  // antibody specks shed by the cursor
+  const specks = [new Path2D(), new Path2D(), new Path2D()];
+  const sr = Math.max(0.8 * unit, p * 0.07);
+  for (let s = 0; s < S.sl.length; s++) {
+    const l = S.sl[s];
+    if (l <= 0) continue;
+    const x = ox + S.sx[s] * p, y = oy + S.sy[s] * p;
+    if (x < -p || y < -p || x > W + p || y > H + p) continue;
+    const b = l > 0.66 ? 0 : l > 0.33 ? 1 : 2;
+    specks[b].moveTo(x + sr, y);
+    specks[b].arc(x, y, sr, 0, TAU);
+  }
+  ctx.globalCompositeOperation = "lighter";
+  ctx.fillStyle = PALETTE.speck;
+  [0.85, 0.5, 0.22].forEach((al, b) => {
+    ctx.globalAlpha = al;
+    ctx.fill(specks[b]);
+  });
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 1;
+}
