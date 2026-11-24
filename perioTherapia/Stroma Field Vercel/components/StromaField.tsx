@@ -10,6 +10,7 @@ import type { ExportApp } from "@/lib/exportMedia";
 
 const SEED_KEY = "stroma-field-vercel.seed";
 const STYLE_KEY = "stroma-field-vercel.style";
+const EDGE_KEY = "stroma-field-vercel.edge";
 const SWEEP_DT = 1 / 120;
 
 type Engine = {
@@ -26,6 +27,7 @@ type Engine = {
   hold: Sim | null;
   sweep: Sim | null;
   style: StyleName;
+  bleed: boolean;
 };
 
 export default function StromaField() {
@@ -47,6 +49,14 @@ export default function StromaField() {
     if (eng.current) eng.current.style = st;
     try {
       localStorage.setItem(STYLE_KEY, st);
+    } catch {}
+  }, []);
+  const [bleed, setBleedState] = useState(false);
+  const setBleed = useCallback((b: boolean) => {
+    setBleedState(b);
+    if (eng.current) eng.current.bleed = b;
+    try {
+      localStorage.setItem(EDGE_KEY, b ? "bleed" : "fade");
     } catch {}
   }, []);
   const theme = THEMES[style];
@@ -98,8 +108,16 @@ export default function StromaField() {
         if (saved === "neon" || saved === "clinical") st = saved;
       } catch {}
     setStyleState(st);
+    let bl = false;
+    const qe = new URLSearchParams(location.search).get("edge");
+    if (qe === "bleed" || qe === "fade") bl = qe === "bleed";
+    else
+      try {
+        bl = localStorage.getItem(EDGE_KEY) === "bleed";
+      } catch {}
+    setBleedState(bl);
     const T = generate(seed);
-    const e: Engine = { T, S: createSim(T), view: computeView(2, 2, 1, false), dpr: 1, animT: 0, pointer: null, hist: [], exporting: false, exportBg: THEMES[st].bg, clip: "sweep", hold: null, sweep: null, style: st };
+    const e: Engine = { T, S: createSim(T), view: computeView(2, 2, 1, false), dpr: 1, animT: 0, pointer: null, hist: [], exporting: false, exportBg: THEMES[st].bg, clip: "sweep", hold: null, sweep: null, style: st, bleed: bl };
     eng.current = e;
     const reduce = matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -142,7 +160,7 @@ export default function StromaField() {
           if (e.hist.length > 240) e.hist.shift();
         }
       }
-      draw(ctx, e.T, e.S, e.view, e.animT, { bg: THEMES[e.style].bg, reduceMotion: reduce.matches, style: e.style });
+      draw(ctx, e.T, e.S, e.view, e.animT, { bg: THEMES[e.style].bg, reduceMotion: reduce.matches, style: e.style, bleed: e.bleed });
       uiAcc += dt;
       if (uiAcc > 0.1) {
         uiAcc = 0;
@@ -220,7 +238,7 @@ export default function StromaField() {
     async renderAt(t: number) {
       const e = eng.current!, ctx = canvasRef.current!.getContext("2d")!;
       if (e.clip === "loop") {
-        draw(ctx, e.T, e.hold!, e.view, t, { bg: e.exportBg, style: e.style });
+        draw(ctx, e.T, e.hold!, e.view, t, { bg: e.exportBg, style: e.style, bleed: e.bleed });
         return;
       }
       // scripted sweep: replay the treatment deterministically from untouched tissue up to t
@@ -235,7 +253,7 @@ export default function StromaField() {
         const dt = Math.min(SWEEP_DT, t - S.simT);
         stepSim(e.T, S, dt, sweepPointer(S.simT + dt, e.view), dose);
       }
-      draw(ctx, e.T, S, e.view, t, { bg: e.exportBg, style: e.style });
+      draw(ctx, e.T, S, e.view, t, { bg: e.exportBg, style: e.style, bleed: e.bleed });
     },
     beginExport({ width, height, transparent, matte }) {
       const e = eng.current!, canvas = canvasRef.current!, stage = stageRef.current!;
@@ -299,12 +317,24 @@ export default function StromaField() {
           <p>A simulated tumour section. Each dot is a 20 µm patch of tissue: the core shows its main cell type, the ring shows the collagen wrapped around it. Your cursor carries the antibody.</p>
         </header>
 
-        <div className="style-switch" role="group" aria-label="Colour style">
-          {(["neon", "clinical"] as const).map((st) => (
-            <button key={st} type="button" className="chip" aria-pressed={style === st} onClick={() => setStyle(st)}>
-              {st === "neon" ? "Neon" : "Clinical"}
-            </button>
-          ))}
+        <div className="switches">
+          <div className="switch-row">
+            <span className="label" id="styleLabel">Style</span>
+            <div className="style-switch" role="group" aria-labelledby="styleLabel">
+              {(["neon", "clinical"] as const).map((st) => (
+                <button key={st} type="button" className="chip" aria-pressed={style === st} onClick={() => setStyle(st)}>
+                  {st === "neon" ? "Neon" : "Clinical"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="switch-row">
+            <span className="label" id="edgeLabel">Edges</span>
+            <div className="style-switch" role="group" aria-labelledby="edgeLabel">
+              <button type="button" className="chip" aria-pressed={!bleed} onClick={() => setBleed(false)}>Fade</button>
+              <button type="button" className="chip" aria-pressed={bleed} onClick={() => setBleed(true)}>Bleed</button>
+            </div>
+          </div>
         </div>
 
         <section className="dose" aria-labelledby="doseLabel">

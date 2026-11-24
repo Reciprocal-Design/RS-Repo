@@ -33,6 +33,7 @@ export type Theme = {
   fib: [string, string, string]; // loose → dense collagen
   outline: string; // tumour boundary
   ringAlpha: number;
+  field: string; // background dots when the grid bleeds to the edges
 };
 export const THEMES: Record<StyleName, Theme> = {
   neon: {
@@ -41,6 +42,7 @@ export const THEMES: Record<StyleName, Theme> = {
     fib: ["#b6ff3b", "#ffd60a", "#ff6f1a"],
     outline: "rgba(236,226,255,.8)",
     ringAlpha: 0.96,
+    field: "#5b4a9e",
   },
   clinical: {
     bg: "#cdcdd1",
@@ -48,6 +50,7 @@ export const THEMES: Record<StyleName, Theme> = {
     fib: ["#b0b1c1", "#7f8199", "#4d4f66"],
     outline: "rgba(196,64,140,.8)",
     ringAlpha: 0.85,
+    field: "#93a6ee",
   },
 };
 export const PALETTE = { ink: THEMES.neon.bg, inner: THEMES.neon.inner };
@@ -119,6 +122,7 @@ export type Tissue = {
   seed: number;
   TY: Int8Array; // -1 empty, 0 tumour, 1 CAF, 2 macrophage, 3 T cell, 4 vessel
   RB: Float32Array; // base radius (fraction of grid pitch)
+  FR: Float32Array; // radius of the background dot an empty cell gets in bleed mode
   C0: Float32Array; // collagen 0..1
   RES: Float32Array; // exposure needed to open the ring
   PH: Float32Array;
@@ -223,7 +227,9 @@ export function generate(seed: number): Tissue {
       RB[k] = 0.05 + 0.07 * rand();
     }
   }
-  return { seed, TY, RB, C0, RES, PH, RO, DIR, INF, KR, FL, TUM: Int32Array.from(TUM), RINGED: Int32Array.from(RINGED), preT, sumC0, OUTLINE: tumourOutline(isT) };
+  const FRB = new Float32Array(M);
+  for (let k = 0; k < M; k++) FRB[k] = TY[k] < 0 ? 0.07 + 0.07 * TX[k] + 0.04 * clamp(D[k] / 0.08, 0, 1) : 0;
+  return { seed, TY, RB, FR: FRB, C0, RES, PH, RO, DIR, INF, KR, FL, TUM: Int32Array.from(TUM), RINGED: Int32Array.from(RINGED), preT, sumC0, OUTLINE: tumourOutline(isT) };
 }
 
 /** Smooth contour around the tumour nests: marching squares over a blurred tumour mask. */
@@ -409,7 +415,7 @@ export function draw(
   S: Sim,
   view: View,
   t: number,
-  { bg = THEMES.neon.bg as string | null, reduceMotion = false, style = "neon" as StyleName } = {},
+  { bg = THEMES.neon.bg as string | null, reduceMotion = false, style = "neon" as StyleName, bleed = false } = {},
 ) {
   const theme = THEMES[style], fibCols = FIB[style];
   const { p, ox, oy, W, H, unit } = view;
@@ -428,12 +434,22 @@ export function draw(
   const gap = p * 0.045, minTh = 0.4 * unit;
   const { TY, RB, C0, PH, RO, DIR, INF, FL } = T;
   const { BF, K } = S;
+  const field = new Path2D();
 
   for (let j = j0; j <= j1; j++)
     for (let i = i0; i <= i1; i++) {
       const k = j * N + i;
       let ty = TY[k];
-      if (ty < 0) continue;
+      if (ty < 0) {
+        if (!bleed) continue;
+        const ph0 = PH[k];
+        const fx = ox + (i + 0.5) * p + m * p * 0.05 * Math.sin(ph + ph0);
+        const fy = oy + (j + 0.5) * p + m * p * 0.05 * Math.cos(ph + ph0 * 1.7);
+        const fr = p * T.FR[k] * (1 + m * 0.12 * Math.sin(2 * ph + ph0 * 2));
+        field.moveTo(fx + fr, fy);
+        field.arc(fx, fy, fr, 0, TAU);
+        continue;
+      }
       const phase = PH[k];
       const x = ox + (i + 0.5) * p + m * p * 0.07 * Math.sin(ph + phase);
       const y = oy + (j + 0.5) * p + m * p * 0.07 * Math.cos(ph + phase * 1.7);
@@ -483,6 +499,11 @@ export function draw(
         }
       }
     }
+  if (bleed) {
+    ctx.globalAlpha = style === "clinical" ? 0.75 : 0.6;
+    ctx.fillStyle = theme.field;
+    ctx.fill(field);
+  }
   ctx.globalAlpha = theme.ringAlpha;
   for (let l = 0; l < FIB_LV; l++) {
     ctx.fillStyle = fibCols[l];
