@@ -11,6 +11,8 @@ import type { ExportApp } from "@/lib/exportMedia";
 const SEED_KEY = "stroma-field-vercel.seed";
 const STYLE_KEY = "stroma-field-vercel.style";
 const EDGE_KEY = "stroma-field-vercel.edge";
+const BG_KEY = (st: StyleName) => `stroma-field-vercel.bg.${st}`;
+const HEX = /^#?[0-9a-f]{6}$/i;
 const SWEEP_DT = 1 / 120;
 
 type Engine = {
@@ -28,6 +30,7 @@ type Engine = {
   sweep: Sim | null;
   style: StyleName;
   bleed: boolean;
+  bg: string;
 };
 
 export default function StromaField() {
@@ -59,7 +62,29 @@ export default function StromaField() {
       localStorage.setItem(EDGE_KEY, b ? "bleed" : "fade");
     } catch {}
   }, []);
+  const [bgColor, setBgColorState] = useState<string | null>(null); // null = the style's own background
   const theme = THEMES[style];
+  const bg = bgColor ?? theme.bg;
+  const setBgColor = useCallback((c: string | null) => {
+    setBgColorState(c);
+    try {
+      const k = BG_KEY(eng.current?.style ?? "neon");
+      if (c) localStorage.setItem(k, c);
+      else localStorage.removeItem(k);
+    } catch {}
+  }, []);
+  // load the saved background whenever the style changes
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(BG_KEY(style));
+      setBgColorState(saved && HEX.test(saved) ? saved : null);
+    } catch {
+      setBgColorState(null);
+    }
+  }, [style]);
+  useEffect(() => {
+    if (eng.current) eng.current.bg = bg;
+  }, [bg]);
   useEffect(() => {
     document.documentElement.dataset.style = style;
   }, [style]);
@@ -116,8 +141,15 @@ export default function StromaField() {
         bl = localStorage.getItem(EDGE_KEY) === "bleed";
       } catch {}
     setBleedState(bl);
+    const qb = new URLSearchParams(location.search).get("bg");
+    if (qb && HEX.test(qb)) {
+      try {
+        localStorage.setItem(BG_KEY(st), qb.startsWith("#") ? qb : "#" + qb);
+      } catch {}
+      setBgColorState(qb.startsWith("#") ? qb : "#" + qb);
+    }
     const T = generate(seed);
-    const e: Engine = { T, S: createSim(T), view: computeView(2, 2, 1, false), dpr: 1, animT: 0, pointer: null, hist: [], exporting: false, exportBg: THEMES[st].bg, clip: "sweep", hold: null, sweep: null, style: st, bleed: bl };
+    const e: Engine = { T, S: createSim(T), view: computeView(2, 2, 1, false), dpr: 1, animT: 0, pointer: null, hist: [], exporting: false, exportBg: THEMES[st].bg, clip: "sweep", hold: null, sweep: null, style: st, bleed: bl, bg: THEMES[st].bg };
     eng.current = e;
     const reduce = matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -160,7 +192,7 @@ export default function StromaField() {
           if (e.hist.length > 240) e.hist.shift();
         }
       }
-      draw(ctx, e.T, e.S, e.view, e.animT, { bg: THEMES[e.style].bg, reduceMotion: reduce.matches, style: e.style, bleed: e.bleed });
+      draw(ctx, e.T, e.S, e.view, e.animT, { bg: e.bg, reduceMotion: reduce.matches, style: e.style, bleed: e.bleed });
       uiAcc += dt;
       if (uiAcc > 0.1) {
         uiAcc = 0;
@@ -265,7 +297,7 @@ export default function StromaField() {
       canvas.width = width;
       canvas.height = height;
       e.view = computeView(width, height, Math.max(1, Math.min(width, height) / 1080), true);
-      e.exportBg = transparent ? null : matte || THEMES[e.style].bg;
+      e.exportBg = transparent ? null : matte || e.bg;
       return () => {
         e.exporting = false;
         e.hold = e.sweep = null;
@@ -282,7 +314,7 @@ export default function StromaField() {
 
   return (
     <div className="app" data-style={style}>
-      <main className="stage" ref={stageRef}>
+      <main className="stage" ref={stageRef} style={{ background: bg }}>
         <canvas
           id="map"
           ref={canvasRef}
@@ -331,8 +363,16 @@ export default function StromaField() {
           <div className="switch-row">
             <span className="label" id="edgeLabel">Edges</span>
             <div className="style-switch" role="group" aria-labelledby="edgeLabel">
-              <button type="button" className="chip" aria-pressed={!bleed} onClick={() => setBleed(false)}>Fade</button>
+              <button type="button" className="chip" aria-pressed={!bleed} onClick={() => setBleed(false)}>Cropped</button>
               <button type="button" className="chip" aria-pressed={bleed} onClick={() => setBleed(true)}>Bleed</button>
+            </div>
+          </div>
+          <div className="switch-row">
+            <span className="label" id="bgLabel">Ground</span>
+            <div className="bg-pick">
+              <input type="color" aria-labelledby="bgLabel" value={bg} onChange={(ev) => setBgColor(ev.target.value)} />
+              <span className="num">{bg.toUpperCase()}</span>
+              <button type="button" className="chip" disabled={!bgColor} onClick={() => setBgColor(null)}>Reset</button>
             </div>
           </div>
         </div>
@@ -407,7 +447,7 @@ export default function StromaField() {
         <p className="fine">An abstract illustration of stromal barriers, not a pharmacological model. One simulated day passes every half second.</p>
       </aside>
 
-      <ExportPanel open={exportOpen} onClose={() => setExportOpen(false)} app={app} setClip={app.setClip} doseLabel={doseLabel} matte={theme.bg} />
+      <ExportPanel open={exportOpen} onClose={() => setExportOpen(false)} app={app} setClip={app.setClip} doseLabel={doseLabel} matte={bg} />
     </div>
   );
 }

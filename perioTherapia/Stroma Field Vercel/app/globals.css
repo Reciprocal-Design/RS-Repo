@@ -179,3 +179,8 @@ dialog::backdrop{background:rgba(3,2,8,.7)}
 .frontkey i.edge{border:0;border-radius:0;height:0;border-top:2px solid var(--tumour);box-shadow:none}
 .switches{display:grid;gap:8px}
 .switch-row{display:grid;grid-template-columns:64px auto;align-items:center;gap:10px}
+.bg-pick{display:flex;align-items:center;gap:8px}
+.bg-pick input[type=color]{width:40px;height:30px;padding:2px;border:1px solid var(--line);border-radius:4px;background:var(--ink-3);cursor:pointer}
+.bg-pick .num{font-size:12px;color:var(--mute);min-width:62px}
+.bg-pick .chip{flex:none;padding:7px 12px}
+.chip:disabled{opacity:.4;cursor:default}
