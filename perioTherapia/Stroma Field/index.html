@@ -1,0 +1,1112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Stroma Field — perioTherapia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: the live tissue field fills the screen edge to edge; an instrument column sits on the right and drops below the field on phones */
+:root{
+  --ink:#06050c; --ink-2:#0d0b17; --ink-3:#161328; --line:#272240; --text:#eeebf8; --mute:#9a94b6; --faint:#625c80;
+  --tumour:#ff2fd0; --caf:#9b5cff; --myeloid:#4f86ff; --tcell:#28efe0; --vessel:#e9fff7; --dead:#6c4b78;
+  --fib-lo:#b6ff3b; --fib-mid:#ffd60a; --fib-hi:#ff6f1a; --front:#f6f2ff;
+  --ab:#ffffff; --ab-soft:#b8b0ff; --warn:#ffb020; --bad:#ff5a6e;
+  --f-display:"Bricolage Grotesque","Instrument Sans",system-ui,sans-serif;
+  --f-body:"Instrument Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+html{box-sizing:border-box;height:100%;background:var(--ink)}
+*,*::before,*::after{box-sizing:inherit}
+body{height:100%;margin:0;background:var(--ink);color:var(--text);font-family:var(--f-body);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--tcell);outline-offset:2px}
+
+.app{display:grid;grid-template-columns:minmax(0,1fr) 344px;height:100%}
+.stage{position:relative;min-width:0;min-height:0;overflow:hidden;background:var(--ink)}
+.stage.checker{background:repeating-conic-gradient(#1b1926 0 25%,#262335 0 50%) 0 0/22px 22px}
+#map{display:block;width:100%;height:100%;object-fit:contain;cursor:crosshair;outline:none;touch-action:manipulation}
+#map:focus-visible{box-shadow:inset 0 0 0 2px var(--tcell)}
+
+.hud{position:absolute;display:flex;align-items:center;gap:8px;font:500 11px/1 var(--f-mono);letter-spacing:.04em;color:var(--mute);background:rgba(6,5,12,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.06);border-radius:4px;padding:7px 9px;pointer-events:none;font-variant-numeric:tabular-nums}
+.hud-tl{top:max(14px,env(safe-area-inset-top,0px));left:max(16px,env(safe-area-inset-left,0px))}
+.hud-bl{bottom:max(14px,env(safe-area-inset-bottom,0px));left:max(16px,env(safe-area-inset-left,0px))}
+.hud .live{display:inline-flex;align-items:center;gap:6px;color:var(--text);text-transform:uppercase;letter-spacing:.08em}
+.hud .live::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--tumour);box-shadow:0 0 8px var(--tumour)}
+.hud .live.paused::before{background:var(--faint);box-shadow:none}
+.scalebar{display:block;height:6px;border:1.5px solid var(--text);border-top:0;width:60px}
+.stage.exporting .hud,.stage.exporting .probe{visibility:hidden}
+
+.probe{position:absolute;left:0;top:0;width:200px;padding:9px 11px;border-radius:6px;background:rgba(13,11,23,.9);border:1px solid var(--line);font:12px/1.4 var(--f-mono);color:var(--mute);pointer-events:none;font-variant-numeric:tabular-nums;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.probe b{display:flex;align-items:center;gap:7px;font:600 13px/1.25 var(--f-body);color:var(--text);margin-bottom:5px}
+.probe b i{width:9px;height:9px;border-radius:50%;flex:none}
+.probe div{display:flex;justify-content:space-between;gap:10px}
+.probe span:last-child{color:var(--text)}
+
+.panel{min-width:0;border-left:1px solid var(--line);background:var(--ink-2);overflow-y:auto;padding-block:22px 26px;padding-left:22px;padding-right:max(22px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:26px}
+.brand h1{font:700 30px/1 var(--f-display);letter-spacing:-.02em;margin:0 0 8px;text-wrap:balance}
+.brand h1 span{color:var(--tumour)}
+.brand p{margin:0;color:var(--mute);max-width:36ch}
+.label{font:500 11px/1 var(--f-mono);letter-spacing:.09em;text-transform:uppercase;color:var(--mute);margin:0}
+
+.dose .head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px}
+.dose output{font:500 26px/1 var(--f-mono);font-variant-numeric:tabular-nums;color:var(--ab)}
+.dose output small{font-size:12px;color:var(--mute);margin-left:3px}
+.gauge{position:relative;height:58px;border-radius:6px;background:var(--ink-3);border:1px solid var(--line);overflow:hidden}
+.gauge:has(input:focus-visible){outline:2px solid var(--tcell);outline-offset:3px}
+.gauge .fill{position:absolute;inset:0 auto 0 0;width:0;background:linear-gradient(90deg,rgba(184,176,255,.35),var(--ab-soft) 55%,var(--ab));box-shadow:0 0 22px rgba(220,215,255,.35)}
+.gauge .segs{position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 calc(5% - 2px),var(--ink-2) calc(5% - 2px) 5%);pointer-events:none}
+.gauge input{position:absolute;inset:0;width:100%;height:100%;margin:0;background:transparent;-webkit-appearance:none;appearance:none;cursor:ew-resize}
+.gauge input:focus-visible{outline:none}
+.gauge input::-webkit-slider-runnable-track{height:100%;background:transparent}
+.gauge input::-moz-range-track{height:100%;background:transparent}
+.gauge input::-webkit-slider-thumb{-webkit-appearance:none;width:6px;height:58px;border-radius:2px;background:var(--ab);box-shadow:0 0 0 2px var(--ink),0 0 14px rgba(255,255,255,.8)}
+.gauge input::-moz-range-thumb{width:6px;height:56px;border:0;border-radius:2px;background:var(--ab);box-shadow:0 0 0 2px var(--ink),0 0 14px rgba(255,255,255,.8)}
+.ticks{display:flex;justify-content:space-between;margin-top:6px;font:11px/1 var(--f-mono);color:var(--faint);font-variant-numeric:tabular-nums}
+.tissue-level{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;margin-top:14px;font-size:12.5px;color:var(--mute)}
+.mini{height:5px;border-radius:3px;background:var(--ink-3);overflow:hidden}
+.mini i{display:block;height:100%;width:0;background:var(--ab-soft)}
+.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;color:var(--text)}
+.presets{display:flex;gap:6px;margin-top:14px}
+.chip{flex:1;padding:7px 0;border-radius:4px;border:1px solid var(--line);background:transparent;color:var(--mute);font:500 12px/1 var(--f-mono);cursor:pointer}
+.chip:hover{color:var(--text);border-color:var(--faint)}
+.chip[aria-pressed="true"]{color:var(--ink);background:var(--ab);border-color:var(--ab)}
+.help{margin:12px 0 0;color:var(--mute);font-size:13px}
+
+.burden{display:grid;grid-template-columns:1fr auto;align-items:end;gap:4px 12px}
+.burden .big{font:500 46px/1 var(--f-mono);letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:var(--tumour)}
+.burden .big small{font-size:18px;color:var(--mute);margin-left:2px}
+.burden .day{font:500 12px/1 var(--f-mono);color:var(--mute);text-align:right;padding-bottom:6px}
+.state{display:inline-block;margin-top:2px;padding:3px 7px;border-radius:3px;font:500 10.5px/1.2 var(--f-mono);letter-spacing:.06em;text-transform:uppercase;border:1px solid currentColor}
+.state[data-s="stable"]{color:var(--mute)}
+.state[data-s="shrinking"]{color:var(--tcell)}
+.state[data-s="regrowing"]{color:var(--warn)}
+#spark{grid-column:1/-1;width:100%;height:54px;display:block;margin-top:8px}
+.kv{margin:16px 0 0;display:grid;gap:12px}
+.kv div{display:grid;grid-template-columns:1fr auto;gap:6px 12px;align-items:baseline}
+.kv dt{color:var(--mute)}
+.kv dd{margin:0;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.kv .mini{grid-column:1/-1}
+.kv .mini.fib i{background:linear-gradient(90deg,var(--fib-lo),var(--fib-mid),var(--fib-hi))}
+.kv .mini.cyan i{background:var(--tcell)}
+
+.key ul{list-style:none;margin:12px 0 0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:9px 12px}
+.key li{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--text);min-width:0}
+.dot{width:12px;height:12px;border-radius:50%;flex:none}
+.ringkey{margin-top:16px;display:grid;grid-template-columns:auto 1fr;gap:6px 12px;align-items:center}
+.ring-sample{width:24px;height:24px;border-radius:50%;border:5px solid var(--fib-mid);background:radial-gradient(circle,var(--caf) 0 38%,transparent 40%);grid-row:span 2}
+.ramp{height:8px;border-radius:4px;background:linear-gradient(90deg,var(--fib-lo),var(--fib-mid),var(--fib-hi))}
+.ramp-labels{display:flex;justify-content:space-between;font-size:11.5px;color:var(--mute)}
+.frontkey{grid-column:1/-1;display:flex;align-items:center;gap:9px;font-size:13px;color:var(--mute);margin-top:6px}
+.frontkey i{width:12px;height:12px;border-radius:50%;border:3px solid var(--front);box-shadow:0 0 8px var(--front);flex:none}
+.frontkey em{font-style:normal;color:var(--text)}
+.abkey i{border:0;width:5px;height:5px;margin:0 3.5px;background:var(--ab);box-shadow:0 0 6px var(--ab)}
+
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btn{padding:10px 12px;border-radius:5px;border:1px solid var(--line);background:var(--ink-3);color:var(--text);font:500 13px/1 var(--f-body);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn:hover{border-color:var(--faint)}
+.btn.primary{background:var(--text);color:var(--ink);border-color:var(--text)}
+.btn.primary:hover{background:#fff}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+kbd{font:500 10.5px/1 var(--f-mono);color:var(--faint);border:1px solid var(--line);border-radius:3px;padding:2px 4px}
+.btn.primary kbd{color:#4a4560;border-color:#c9c4dc}
+.fine{margin:0;color:var(--faint);font-size:12px}
+
+dialog{width:min(660px,calc(100vw - 24px));max-height:calc(100% - 24px);padding:0;border:1px solid var(--line);border-radius:10px;background:var(--ink-2);color:var(--text);box-shadow:0 30px 80px rgba(0,0,0,.6)}
+dialog::backdrop{background:rgba(3,2,8,.7)}
+.xp{display:flex;flex-direction:column;gap:18px;padding:22px}
+.xp header{display:flex;justify-content:space-between;align-items:center}
+.xp h2{font:700 22px/1 var(--f-display);margin:0}
+.xp .close{width:34px;height:34px;padding:0;border-radius:5px;border:1px solid var(--line);background:transparent;cursor:pointer;font-size:18px;line-height:1}
+.xgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px 16px}
+.f{display:flex;flex-direction:column;gap:6px;min-width:0}
+.f > span{font:500 11px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.f input,.f select{width:100%;min-width:0;padding:9px 10px;border-radius:5px;border:1px solid var(--line);background:var(--ink-3);font-variant-numeric:tabular-nums}
+.f input[type=color]{padding:3px;height:38px;cursor:pointer}
+.full{grid-column:1/-1}
+.clips{display:grid;grid-template-columns:1fr 1fr;gap:8px;border:0;padding:0;margin:0}
+.clips legend{font:500 11px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mute);padding:0;margin-bottom:6px}
+.clip{display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid var(--line);border-radius:6px;cursor:pointer;background:var(--ink-3)}
+.clip:has(input:checked){border-color:var(--ab-soft);box-shadow:inset 0 0 0 1px var(--ab-soft)}
+.clip input{margin:3px 0 0;accent-color:var(--ab-soft)}
+.clip strong{display:block;font-weight:600}
+.clip em{display:block;font-style:normal;color:var(--mute);font-size:12.5px;margin-top:2px}
+.pair{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:end}
+.pair .x{padding-bottom:10px;color:var(--mute)}
+.check{display:flex;align-items:center;gap:9px;padding-top:20px;cursor:pointer}
+.check input{width:16px;height:16px;accent-color:var(--ab-soft)}
+.check:has(input:disabled){color:var(--faint);cursor:not-allowed}
+.summary{margin:0;font:500 13px/1.4 var(--f-mono);font-variant-numeric:tabular-nums;color:var(--text);padding:10px 12px;border-radius:6px;background:var(--ink-3);border:1px solid var(--line)}
+.notes{display:grid;gap:6px;margin:0;padding:0;list-style:none;color:var(--mute);font-size:12.5px}
+.notes li{padding-left:14px;position:relative}
+.notes li::before{content:"";position:absolute;left:2px;top:.6em;width:5px;height:5px;border-radius:50%;background:var(--faint)}
+.notes li.warn{color:var(--warn)}
+.notes li.warn::before{background:var(--warn)}
+.cmd{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
+.cmd code{display:block;overflow-x:auto;white-space:nowrap;padding:9px 10px;border-radius:5px;background:#000;border:1px solid var(--line);font:12px/1.4 var(--f-mono);color:var(--fib-lo)}
+.prog{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;font:12px/1 var(--f-mono);color:var(--mute);font-variant-numeric:tabular-nums}
+.prog .mini{height:8px}
+.prog .mini i{background:linear-gradient(90deg,var(--ab-soft),var(--ab))}
+.err{margin:0;padding:10px 12px;border-radius:6px;border:1px solid var(--bad);color:var(--bad);font-size:13px}
+.ok{margin:0;color:var(--tcell);font-size:13px}
+.xp footer{display:flex;justify-content:flex-end;gap:8px}
+.xp footer .btn{min-width:110px}
+
+@media (max-width:860px){
+  html,body{height:auto}
+  .app{display:block;height:auto}
+  .stage{height:clamp(340px,62vh,640px)}
+  .panel{border-left:0;border-top:1px solid var(--line);overflow:visible;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+  .probe{width:180px}
+}
+@media (max-width:540px){
+  .xgrid,.clips{grid-template-columns:1fr}
+  .check{padding-top:0}
+  .key ul{grid-template-columns:1fr 1fr}
+}
+@media (hover:none){kbd{display:none}}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+
+</head>
+<body>
+<div class="app">
+  <main class="stage" id="stage">
+    <canvas id="map" tabindex="0" aria-label="Animated tissue density map. Click or tap to move the probe; arrow keys move it too."></canvas>
+    <div class="hud hud-tl"><span class="live" id="liveTag">Live</span><span id="hudDay">Day 0.0</span><span aria-hidden="true">·</span><span id="hudField">1.68 × 1.36 mm</span></div>
+    <div class="hud hud-bl"><span class="scalebar" id="scalebar"></span><span id="scaleLbl">200 µm</span></div>
+    <div class="probe" id="probe" aria-live="polite"></div>
+  </main>
+
+  <aside class="panel" aria-label="Controls and readouts">
+    <header class="brand">
+      <h1>Stroma <span>Field</span></h1>
+      <p>A simulated tumour section. Each dot is a 20 µm patch of tissue: the core shows its main cell type, the ring shows the collagen wrapped around it.</p>
+    </header>
+
+    <section class="dose" aria-labelledby="doseLabel">
+      <div class="head"><h2 class="label" id="doseLabel">Antibody dose</h2><output id="doseOut" for="dose">0.0<small>mg/kg</small></output></div>
+      <div class="gauge">
+        <div class="fill" id="doseFill"></div>
+        <div class="segs"></div>
+        <input type="range" id="dose" min="0" max="20" step="0.5" value="0" aria-labelledby="doseLabel" aria-describedby="doseHelp">
+      </div>
+      <div class="ticks" aria-hidden="true"><span>0</span><span>5</span><span>10</span><span>15</span><span>20</span></div>
+      <div class="tissue-level"><span>Antibody in tissue</span><span class="mini"><i id="cFill"></i></span><span class="num" id="cOut">0%</span></div>
+      <div class="presets" role="group" aria-label="Dose presets">
+        <button class="chip" data-dose="0" aria-pressed="true">Off</button>
+        <button class="chip" data-dose="4" aria-pressed="false">4</button>
+        <button class="chip" data-dose="10" aria-pressed="false">10</button>
+        <button class="chip" data-dose="20" aria-pressed="false">20</button>
+      </div>
+      <p class="help" id="doseHelp">Raise the dose to break down the collagen rings. Where the barrier opens, the drug reaches tumour cells, they die back and T cells move in. Low doses only clear tissue close to blood vessels.</p>
+    </section>
+
+    <section aria-labelledby="burdenLabel">
+      <div class="burden">
+        <div><h2 class="label" id="burdenLabel">Tumour burden</h2></div>
+        <div class="day" id="dayOut">Day 0.0</div>
+        <div class="big"><span id="burdenOut">100</span><small>%</small></div>
+        <div><span class="state" id="trend" data-s="stable">Stable</span></div>
+        <canvas id="spark" aria-hidden="true"></canvas>
+      </div>
+      <dl class="kv">
+        <div><dt>Collagen barrier intact</dt><dd id="barrierOut">100%</dd><span class="mini fib"><i id="barrierBar" style="width:100%"></i></span></div>
+        <div><dt>Antibody penetration from vessels</dt><dd id="depthOut">0 µm</dd></div>
+        <div><dt>T cells inside tumour nests</dt><dd id="tcellOut">0%</dd><span class="mini cyan"><i id="tcellBar"></i></span></div>
+      </dl>
+    </section>
+
+    <section class="key" aria-labelledby="keyLabel">
+      <h2 class="label" id="keyLabel">Core: cell type</h2>
+      <ul>
+        <li><span class="dot" style="background:var(--tumour)"></span>Tumour cell</li>
+        <li><span class="dot" style="background:var(--caf)"></span>Fibroblast (CAF)</li>
+        <li><span class="dot" style="background:var(--myeloid)"></span>Macrophage</li>
+        <li><span class="dot" style="background:var(--tcell)"></span>Cytotoxic T cell</li>
+        <li><span class="dot" style="background:var(--vessel)"></span>Blood vessel</li>
+        <li><span class="dot" style="background:var(--dead)"></span>Dying cell</li>
+      </ul>
+      <div class="ringkey">
+        <span class="ring-sample" aria-hidden="true"></span>
+        <h2 class="label">Ring: collagen barrier</h2>
+        <div><div class="ramp"></div><div class="ramp-labels"><span>Loose fibres</span><span>Dense, cross-linked</span></div></div>
+        <div class="frontkey"><i></i><span><em>White ring</em>: antibody front digesting the barrier</span></div>
+        <div class="frontkey abkey"><i></i><span><em>White specks</em>: antibody leaving the vessels</span></div>
+      </div>
+    </section>
+
+    <section class="actions" aria-label="Simulation controls">
+      <button class="btn" id="playBtn" type="button">Pause <kbd>Space</kbd></button>
+      <button class="btn" id="restartBtn" type="button">Restart <kbd>R</kbd></button>
+      <button class="btn" id="seedBtn" type="button">New tissue <kbd>N</kbd></button>
+      <button class="btn primary" id="exportBtn" type="button">Export <kbd>E</kbd></button>
+    </section>
+    <p class="fine">An abstract illustration of stromal barriers, not a pharmacological model. One simulated day passes every half second.</p>
+  </aside>
+</div>
+
+<dialog id="xDlg" aria-labelledby="xTitle">
+  <form class="xp" id="xForm" novalidate>
+    <header><h2 id="xTitle">Export</h2><button class="close" type="button" id="xClose" aria-label="Close export">×</button></header>
+    <fieldset class="clips">
+      <legend>Clip</legend>
+      <label class="clip"><input type="radio" name="clip" value="course" checked><span><strong>Treatment course</strong><em id="courseDesc">15 s, day 0 to 30</em></span></label>
+      <label class="clip"><input type="radio" name="clip" value="loop"><span><strong>Current state, looping</strong><em>6 s seamless loop of what you see now</em></span></label>
+    </fieldset>
+    <div class="xgrid">
+      <label class="f"><span>Format</span>
+        <select id="xFormat">
+          <option value="mp4">MP4 (H.264)</option>
+          <option value="webm">WebM (VP9)</option>
+          <option value="png-seq">PNG sequence (.zip)</option>
+          <option value="png">Single frame (PNG)</option>
+          <option value="realtime" hidden>WebM, realtime recording (fallback)</option>
+        </select>
+      </label>
+      <label class="f" id="qualityWrap"><span>Quality</span>
+        <select id="xQuality">
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high" selected>High</option>
+          <option value="veryHigh">Very high</option>
+        </select>
+      </label>
+      <label class="f"><span>Size</span>
+        <select id="xSize">
+          <option value="1920x1080">1080p · 1920 × 1080</option>
+          <option value="2560x1440">1440p · 2560 × 1440</option>
+          <option value="3840x2160">4K · 3840 × 2160</option>
+          <option value="1080x1080">Square · 1080 × 1080</option>
+          <option value="1080x1920">Vertical · 1080 × 1920</option>
+          <option value="custom">Custom</option>
+        </select>
+      </label>
+      <div class="pair" id="customWrap" hidden>
+        <label class="f"><span>Width</span><input id="xW" type="number" min="16" max="7680" step="2" value="1920"></label>
+        <span class="x">×</span>
+        <label class="f"><span>Height</span><input id="xH" type="number" min="16" max="7680" step="2" value="1080"></label>
+      </div>
+      <label class="f"><span>Frame rate</span>
+        <select id="xFps">
+          <option value="24">24</option>
+          <option value="23.976">23.976</option>
+          <option value="25">25</option>
+          <option value="29.97">29.97</option>
+          <option value="30" selected>30</option>
+          <option value="50">50</option>
+          <option value="60">60</option>
+          <option value="custom">Custom</option>
+        </select>
+      </label>
+      <label class="f" id="fpsCustomWrap" hidden><span>Custom fps</span><input id="xFpsCustom" type="number" min="1" max="120" step="0.001" value="30"></label>
+      <label class="check" id="alphaWrap"><input type="checkbox" id="xAlpha"><span>Transparent background</span></label>
+      <label class="f" id="matteWrap"><span>Background colour</span><input type="color" id="xMatte" value="#06050c"></label>
+      <label class="f"><span>Start (s)</span><input id="xStart" type="number" min="0" step="0.1" value="0"></label>
+      <label class="f"><span>End (s)</span><input id="xEnd" type="number" min="0" step="0.1" value="15"></label>
+      <label class="f" id="loopsWrap" hidden><span>Loops</span><input id="xLoops" type="number" min="1" max="20" step="1" value="2"></label>
+      <label class="f full"><span>Filename</span><input id="xName" type="text" spellcheck="false" autocomplete="off"></label>
+    </div>
+    <p class="summary" id="xSummary"></p>
+    <ul class="notes" id="xNotes"></ul>
+    <div class="cmd" id="cmdWrap" hidden><code id="cmdText"></code><button class="btn" type="button" id="cmdCopy">Copy</button></div>
+    <div class="prog" id="progWrap" hidden><span class="mini"><i id="progBar"></i></span><span id="progText">0 / 0</span></div>
+    <p class="err" id="xErr" role="alert" hidden></p>
+    <p class="ok" id="xOk" role="status" hidden></p>
+    <footer><button class="btn" type="button" id="xCancel">Close</button><button class="btn primary" type="submit" id="xGo">Export</button></footer>
+  </form>
+</dialog>
+
+<script type="module">
+/* ============================================================
+   Stroma Field: time-driven, deterministic renderer.
+   draw(t, state) is a pure function of t, the tissue seed and
+   the treatment state {F: penetration front, C: antibody level}.
+   ============================================================ */
+const TAU = Math.PI * 2;
+const N = 84, M = N * N;          // tissue grid (cells per side)
+const UM = 20;                     // µm per grid step
+const LOOP = 6;                    // ambient motion period (s)
+const COURSE = 15;                 // treatment course length (s)
+const DAYS_PER_S = 2;
+const MAX_DOSE = 20;               // mg/kg
+const MB_URL = 'https://cdn.jsdelivr.net/npm/mediabunny@1.65.2/dist/bundles/mediabunny.min.mjs';
+const FFLATE_URL = 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js';
+
+const $ = s => document.querySelector(s);
+const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
+const sm = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+
+const rs = getComputedStyle(document.documentElement);
+const tok = n => rs.getPropertyValue(n).trim();
+const hex = h => { h = h.replace('#', ''); if (h.length === 3) h = [...h].map(c => c + c).join(''); const n = parseInt(h, 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
+const mixHex = (a, b, t) => { const A = hex(a), B = hex(b); return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(',')})`; };
+const INNER = ['--tumour', '--caf', '--myeloid', '--tcell', '--vessel', '--dead'].map(tok);
+const TYPE_NAME = ['Tumour cell', 'Fibroblast (CAF)', 'Macrophage', 'Cytotoxic T cell', 'Blood vessel', 'Dying tumour cell'];
+const FIB_LV = 6;
+const FIB = Array.from({ length: FIB_LV }, (_, i) => { const t = i / (FIB_LV - 1); return t < .5 ? mixHex(tok('--fib-lo'), tok('--fib-mid'), t * 2) : mixHex(tok('--fib-mid'), tok('--fib-hi'), (t - .5) * 2); });
+const FRONT = tok('--front'), INK = tok('--ink'), AB = tok('--ab');
+const ALPHAS = [0.3, 0.55, 0.8, 1];
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+
+/* ---------- seeded noise ---------- */
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function makeNoise(rand) {
+  const p = Array.from({ length: 256 }, (_, i) => i);
+  for (let i = 255; i > 0; i--) { const j = (rand() * (i + 1)) | 0; [p[i], p[j]] = [p[j], p[i]]; }
+  const perm = new Uint8Array(512); for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
+  const vals = new Float32Array(256); for (let i = 0; i < 256; i++) vals[i] = rand();
+  const fade = t => t * t * (3 - 2 * t);
+  const n2 = (x, y) => {
+    const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, X = xi & 255, Y = yi & 255;
+    const a = vals[perm[perm[X] + Y]], b = vals[perm[perm[X + 1] + Y]], c = vals[perm[perm[X] + Y + 1]], d = vals[perm[perm[X + 1] + Y + 1]];
+    const u = fade(xf), v = fade(yf);
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+  };
+  return (x, y, oct = 4) => { let s = 0, amp = .5, f = 1, norm = 0; for (let o = 0; o < oct; o++) { s += amp * n2(x * f + o * 17.3, y * f + o * 9.1); norm += amp; amp *= .5; f *= 2.03; } return s / norm; };
+}
+function rankNorm(a) {
+  const idx = Array.from(a.keys()).sort((x, y) => a[x] - a[y]);
+  const out = new Float32Array(a.length); idx.forEach((k, r) => { out[k] = r / (a.length - 1); }); return out;
+}
+
+/* ---------- tissue ---------- */
+let T = null; // current tissue
+const NB = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, Math.SQRT2], [-1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, -1, Math.SQRT2]];
+
+function dijkstra(sources, cost) {
+  const dist = new Float32Array(M).fill(Infinity), par = new Int32Array(M).fill(-1), done = new Uint8Array(M);
+  const heap = []; // [d, k]
+  const push = (d, k) => { heap.push([d, k]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+  for (const s of sources) { dist[s] = 0; push(0, s); }
+  while (heap.length) {
+    const [d, k] = pop(); if (done[k]) continue; done[k] = 1;
+    const x = k % N, y = (k / N) | 0;
+    for (const [dx, dy, len] of NB) {
+      const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+      const n = ny * N + nx; const nd = d + len * 0.5 * (cost[k] + cost[n]);
+      if (nd < dist[n]) { dist[n] = nd; par[n] = k; push(nd, n); }
+    }
+  }
+  return { dist, par };
+}
+
+function generate(seed) {
+  const rand = mulberry32(seed * 7919 + 13);
+  const fbm = makeNoise(rand);
+  const o = Array.from({ length: 18 }, () => rand() * 200);
+  const env = new Float32Array(M), tn = new Float32Array(M), fr = new Float32Array(M), vr = new Float32Array(M), tex = new Float32Array(M), n1 = new Float32Array(M), n2 = new Float32Array(M), n3 = new Float32Array(M);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const k = j * N + i, u = (i + .5) / N, v = (j + .5) / N, r = Math.hypot(u - .5, v - .5) * 2;
+    env[k] = fbm(u * 1.7 + o[0], v * 1.7 + o[1], 4) - .32 * Math.max(0, r - .5);
+    tn[k] = fbm(u * 2.5 + o[2], v * 2.5 + o[3], 4) + .18 * fbm(u * 7 + o[4], v * 7 + o[5], 2);
+    fr[k] = 1 - Math.abs(2 * fbm(u * 3.1 + o[6], v * 3.1 + o[7], 4) - 1);
+    vr[k] = 1 - Math.abs(2 * fbm(u * 2.2 + o[8], v * 2.2 + o[9], 3) - 1);
+    tex[k] = fbm(u * 11 + o[10], v * 11 + o[11], 2);
+    n1[k] = fbm(u * 6 + o[12], v * 6 + o[13], 2);
+    n2[k] = fbm(u * 4.5 + o[14], v * 4.5 + o[15], 3);
+    n3[k] = fbm(u * 5 + o[16], v * 5 + o[17], 3);
+  }
+  const E = rankNorm(env), TN = rankNorm(tn), FR = rankNorm(fr), VR = rankNorm(vr), TX = rankNorm(tex), R1 = rankNorm(n1), R2 = rankNorm(n2), R3 = rankNorm(n3);
+
+  const D = new Float32Array(M), C0 = new Float32Array(M), TY = new Int8Array(M).fill(-1), RB = new Float32Array(M);
+  const isT = new Uint8Array(M), vessel = new Uint8Array(M), tissue = new Uint8Array(M), RIM = new Float32Array(M);
+  for (let k = 0; k < M; k++) {
+    const d = clamp((E[k] - .17) / .5, 0, 1) * (.7 + .6 * TX[k]);
+    D[k] = clamp(d, 0, 1);
+    tissue[k] = D[k] > .08 ? 1 : 0;
+    isT[k] = tissue[k] && TN[k] > .66 && D[k] > .2 ? 1 : 0;
+    const rim = isT[k] ? 0 : sm(.48, .66, TN[k]);
+    RIM[k] = rim;
+    const fib = sm(.8, .985, FR[k]);
+    C0[k] = tissue[k] ? clamp(.06 + .85 * rim + .62 * fib + (isT[k] ? .22 + .25 * R1[k] : .1 * R1[k]), 0, 1) * sm(.08, .3, D[k]) : 0;
+    vessel[k] = tissue[k] && !isT[k] && VR[k] > .958 && D[k] > .18 ? 1 : 0;
+  }
+  let sources = []; for (let k = 0; k < M; k++) if (vessel[k]) sources.push(k);
+  if (sources.length < 12) { sources = []; for (let i = 0; i < N; i++) sources.push(i, (N - 1) * N + i); }
+  const unit = new Float32Array(M).fill(1);
+  const geo = dijkstra(sources, unit);
+  const cost = new Float32Array(M);
+  for (let k = 0; k < M; k++) cost[k] = 1 + 11 * Math.pow(C0[k], 1.5) + (tissue[k] ? 0 : .8);
+  const flow = dijkstra(sources, cost);
+
+  // normalise arrival so the 95th percentile of tissue = 1
+  const arr = []; for (let k = 0; k < M; k++) if (tissue[k] && isFinite(flow.dist[k])) arr.push(flow.dist[k]);
+  arr.sort((a, b) => a - b);
+  const a95 = arr[Math.floor(arr.length * .95)] || 1;
+  const AN = new Float32Array(M); for (let k = 0; k < M; k++) AN[k] = isFinite(flow.dist[k]) ? flow.dist[k] / a95 : 9;
+
+  const PH = new Float32Array(M), RO = new Float32Array(M), DIR = new Int8Array(M), INF = new Uint8Array(M), KR = new Float32Array(M), FL = new Uint8Array(M);
+  const TUM = []; let preT = 0;
+  for (let k = 0; k < M; k++) {
+    PH[k] = TAU * (2.2 * E[k] + .35 * rand());
+    RO[k] = rand() * TAU; DIR[k] = rand() < .5 ? 1 : -1;
+    KR[k] = .9 + .1 * rand();
+    FL[k] = Math.min(FIB_LV - 1, Math.floor(C0[k] * FIB_LV));
+    const r = rand();
+    if (tissue[k]) {
+      if (vessel[k]) { TY[k] = 4; RB[k] = .1 + .05 * rand(); continue; }
+      if (isT[k]) {
+        if (r < .06) TY[k] = 2;
+        else if (r < .09) { TY[k] = 3; preT++; }
+        else { TY[k] = 0; TUM.push(k); INF[k] = rand() < .55 ? 1 : 0; }
+        RB[k] = .14 + .22 * D[k];
+        continue;
+      }
+      const vd = geo.dist[k];
+      const sCaf = .3 + .75 * C0[k] + .35 * R1[k] + .25 * rand();
+      const sMy = .12 + .85 * RIM[k] + .45 * R2[k] + .25 * rand();
+      const sT = .95 * Math.exp(-vd / 4.5) + .45 * R3[k] - .12 + .25 * rand();
+      TY[k] = sCaf >= sMy && sCaf >= sT ? 1 : sMy >= sT ? 2 : 3;
+      RB[k] = .1 + .25 * D[k];
+    } else if (r < .2 * sm(-.3, .08, D[k] - .1 + E[k] * .5)) {
+      const q = rand(); TY[k] = q < .35 ? 1 : q < .6 ? 2 : q < .85 ? 3 : 0;
+      if (TY[k] === 0) TY[k] = 2;
+      RB[k] = .05 + .07 * rand();
+    }
+  }
+
+  // penetration depth lookup: geometric distance reached as the front advances
+  const order = []; for (let k = 0; k < M; k++) if (tissue[k] && AN[k] < 9) order.push(k);
+  order.sort((a, b) => AN[a] - AN[b]);
+  const depthA = new Float32Array(order.length), depthUm = new Float32Array(order.length);
+  let mx = 0; order.forEach((k, i) => { depthA[i] = AN[k]; mx = Math.max(mx, geo.dist[k] * UM); depthUm[i] = mx; });
+
+  // antibody particles: each follows the flow tree from a vessel outwards
+  const NP = 760, paths = [], per = new Float32Array(NP), off = new Float32Array(NP), wob = new Float32Array(NP);
+  let tries = 0;
+  while (paths.length < NP && tries++ < NP * 20) {
+    const k = order[(rand() * order.length) | 0]; if (k === undefined) break;
+    const p = []; let c = k; while (c !== -1 && p.length < 90) { p.push(c); c = flow.par[c]; }
+    if (p.length < 5) continue;
+    p.reverse();
+    const i = paths.length; paths.push(Int32Array.from(p));
+    per[i] = LOOP / (1 + ((rand() * 3) | 0)); off[i] = rand(); wob[i] = rand() * TAU;
+  }
+
+  let sumC0 = 0; for (let k = 0; k < M; k++) sumC0 += C0[k];
+
+  // default probe: a tumour cell partway into the barrier, near the centre
+  let pin = -1, best = Infinity;
+  for (const k of TUM) { if (AN[k] < .3 || AN[k] > .62) continue; const x = k % N - N / 2, y = ((k / N) | 0) - N / 2, d = x * x + y * y; if (d < best) { best = d; pin = k; } }
+  if (pin < 0) pin = (N / 2 | 0) * N + (N / 2 | 0);
+
+  return { seed, D, C0, TY, RB, AN, PH, RO, DIR, INF, KR, FL, TUM: Int32Array.from(TUM), preT, depthA, depthUm, paths, per, off, wob, sumC0, pin, vd: geo.dist };
+}
+
+/* ---------- treatment model ---------- */
+const kill = (k, F) => sm(T.AN[k] + .05, T.AN[k] + .2, F) * T.KR[k];
+const opened = (k, F) => sm(T.AN[k] - .03, T.AN[k] + .08, F);
+function step(s, d, dt) {
+  s.C += (d - s.C) * (1 - Math.exp(-dt / 1.4));
+  const Ft = 1.12 * Math.pow(Math.max(0, s.C), .75);
+  s.F = Math.max(0, s.F + clamp((Ft - s.F) * .6, -.025, .11) * dt);
+}
+let courseCache = null;
+function courseDose() { const d = live.dose; return d >= 1 ? d : 16; }
+function course() {
+  const dose = courseDose(), key = `${T.seed}:${dose}`;
+  if (courseCache && courseCache.key === key) return courseCache;
+  const hz = 240, n = Math.ceil(COURSE * hz) + 2, F = new Float32Array(n), C = new Float32Array(n), s = { F: 0, C: 0 };
+  for (let i = 0; i < n; i++) { F[i] = s.F; C[i] = s.C; step(s, i / hz < 1.5 ? 0 : dose / MAX_DOSE, 1 / hz); }
+  return (courseCache = { key, hz, F, C, dose });
+}
+function courseState(t) { const c = course(); const i = clamp(Math.round(t * c.hz), 0, c.F.length - 1); return { F: c.F[i], C: c.C[i] }; }
+
+/* ---------- rendering ---------- */
+const canvas = $('#map'), ctx = canvas.getContext('2d', { alpha: true });
+const stage = $('#stage');
+let view = { p: 10, ox: 0, oy: 0, W: 1, H: 1, unit: 1 };
+let dpr = 1;
+function computeView(W, H, unit, exportMode) {
+  let p = Math.max(W / N, H / N);
+  if (!exportMode) p = Math.max(p, 11 * unit);
+  return { p, ox: W / 2 - N / 2 * p, oy: H / 2 - N / 2 * p, W, H, unit };
+}
+
+function draw(t, st, { bg = INK, pin = false } = {}) {
+  const { p, ox, oy, W, H, unit } = view;
+  const F = st.F, C = st.C;
+  if (bg) { ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H); }
+  else ctx.clearRect(0, 0, W, H);
+  const ph = TAU * t / LOOP;
+  const m = reduceMotion.matches ? .2 : 1;
+  const inner = Array.from({ length: 6 * 4 }, () => new Path2D());
+  const rings = Array.from({ length: FIB_LV }, () => new Path2D());
+  const front = new Path2D();
+  const i0 = Math.max(0, Math.floor(-ox / p) - 1), i1 = Math.min(N - 1, Math.ceil((W - ox) / p) + 1);
+  const j0 = Math.max(0, Math.floor(-oy / p) - 1), j1 = Math.min(N - 1, Math.ceil((H - oy) / p) + 1);
+  const gap = p * .045, minTh = .4 * unit, frontOn = C > .04;
+  const { TY, RB, C0, AN, PH, RO, DIR, INF, FL } = T;
+
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const k = j * N + i; let ty = TY[k]; if (ty < 0) continue;
+    const phase = PH[k];
+    const x = ox + (i + .5) * p + m * p * .07 * Math.sin(ph + phase);
+    const y = oy + (j + .5) * p + m * p * .07 * Math.cos(ph + phase * 1.7);
+    let r = p * RB[k] * (1 + m * .09 * Math.sin(2 * ph + phase * 2));
+    let a = 1;
+    if (ty === 0) {
+      const kk = kill(k, F);
+      if (kk < .55) { r *= 1 - .45 * kk; a = 1 - .3 * kk; }
+      else if (kk < .85 || !INF[k]) { const q = clamp((kk - .55) / .45, 0, 1); ty = 5; r *= Math.max(.25, .62 - .45 * q); a = .9 - .45 * q; }
+      else { ty = 3; r *= .9 * sm(.85, 1, kk); }
+    }
+    if (r > .25 * unit) {
+      const lv = a > .9 ? 3 : a > .67 ? 2 : a > .42 ? 1 : 0;
+      const path = inner[ty * 4 + lv];
+      path.moveTo(x + r, y); path.arc(x, y, r, 0, TAU);
+    }
+    const c0 = C0[k];
+    if (c0 > .04) {
+      const op = opened(k, F);
+      const th = p * .22 * c0 * (1 - .9 * op) * (1 + m * .06 * Math.sin(ph + phase));
+      if (th > minTh) {
+        const g = frontOn ? Math.exp(-(((F - AN[k]) / .035) ** 2)) * Math.min(1, C * 3) : 0;
+        const path = g > .45 ? front : rings[FL[k]];
+        const ri = Math.max(r, p * .06) + gap, ro = ri + th;
+        if (op < .03) { path.moveTo(x + ro, y); path.arc(x, y, ro, 0, TAU); path.moveTo(x + ri, y); path.arc(x, y, ri, TAU, 0, true); }
+        else {
+          const nseg = 6, span = TAU / nseg * (1 - .78 * op), rot = RO[k] + ph * DIR[k];
+          for (let s = 0; s < nseg; s++) {
+            const a0 = rot + s * TAU / nseg, a1 = a0 + span;
+            path.moveTo(x + ro * Math.cos(a0), y + ro * Math.sin(a0));
+            path.arc(x, y, ro, a0, a1); path.arc(x, y, ri, a1, a0, true); path.closePath();
+          }
+        }
+      }
+    }
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = .96;
+  for (let l = 0; l < FIB_LV; l++) { ctx.fillStyle = FIB[l]; ctx.fill(rings[l]); }
+  ctx.globalAlpha = 1; ctx.fillStyle = FRONT; ctx.fill(front);
+  for (let ty = 0; ty < 6; ty++) for (let lv = 0; lv < 4; lv++) { ctx.globalAlpha = ALPHAS[lv]; ctx.fillStyle = INNER[ty]; ctx.fill(inner[ty * 4 + lv]); }
+
+  // antibody particles
+  if (C > .02) {
+    const { paths, per, off, wob } = T;
+    const count = Math.floor(paths.length * Math.min(1, C * 1.3));
+    const rr = Math.max(.9 * unit, p * .085);
+    const parts = [new Path2D(), new Path2D(), new Path2D()];
+    for (let n = 0; n < count; n++) {
+      const path = paths[n], L = path.length;
+      let lo = 0, hi = L - 1; // last index the front has opened
+      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (AN[path[mid]] <= F + .03) lo = mid; else hi = mid - 1; }
+      const reach = lo;
+      for (let tr = 0; tr < 3; tr++) {
+        let s = (t / per[n] + off[n] - tr * .012) % 1; if (s < 0) s += 1;
+        const pos = s * (L - 1);
+        let alpha = Math.sin(Math.PI * s);
+        let q = pos;
+        if (pos > reach) { alpha *= Math.max(0, 1 - (pos - reach) / 3); q = reach + .25 * Math.sin(ph * 3 + wob[n]); }
+        if (alpha < .08) continue;
+        q = clamp(q, 0, L - 1);
+        const a = Math.floor(q), b = Math.min(L - 1, a + 1), f = q - a;
+        const ka = path[a], kb = path[b];
+        const x = ox + ((ka % N) + .5 + ((kb % N) - (ka % N)) * f) * p + p * .22 * Math.sin(ph * 2 + wob[n] + q);
+        const y = oy + (((ka / N) | 0) + .5 + (((kb / N) | 0) - ((ka / N) | 0)) * f) * p + p * .22 * Math.cos(ph * 2 + wob[n] * 1.3 + q);
+        if (x < -p || y < -p || x > W + p || y > H + p) continue;
+        const rad = rr * (1 - tr * .25);
+        parts[tr].moveTo(x + rad, y); parts[tr].arc(x, y, rad, 0, TAU);
+      }
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = AB;
+    const amp = Math.min(1, C * 2.5);
+    [.95, .45, .2].forEach((al, tr) => { ctx.globalAlpha = al * amp; ctx.fill(parts[tr]); });
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  ctx.globalAlpha = 1;
+
+  if (pin && T.pin >= 0) {
+    const k = T.pin, x = ox + (k % N + .5) * p, y = oy + (((k / N) | 0) + .5) * p;
+    const R = Math.max(7 * unit, p * .55);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.bezierCurveTo(-R * .35, -R * .9, -R, -R * 1.25, -R, -R * 1.95);
+    ctx.arc(0, -R * 1.95, R, Math.PI, 0);
+    ctx.bezierCurveTo(R, -R * 1.25, R * .35, -R * .9, 0, 0);
+    ctx.closePath();
+    ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 8 * unit; ctx.shadowOffsetY = 2 * unit;
+    ctx.fillStyle = '#ffffff'; ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.beginPath(); ctx.arc(0, -R * 1.95, R * .38, 0, TAU); ctx.fillStyle = INK; ctx.fill();
+    ctx.restore();
+  }
+}
+
+/* ---------- app contract for export ---------- */
+let exporting = false, exportBg = INK, holdState = { F: 0, C: 0 };
+const app = {
+  canvas,
+  clip: 'course',
+  get duration() { return this.clip === 'course' ? COURSE : LOOP; },
+  async renderAt(t) { draw(t, this.clip === 'course' ? courseState(t) : holdState, { bg: exportBg, pin: false }); },
+  beginExport({ width, height, transparent, matte }) {
+    exporting = true;
+    stage.classList.add('exporting');
+    stage.classList.toggle('checker', !!transparent);
+    if (this.clip === 'loop') holdState = { F: live.F, C: live.C };
+    else course();
+    canvas.width = width; canvas.height = height;
+    view = computeView(width, height, Math.max(1, Math.min(width, height) / 1080), true);
+    exportBg = transparent ? null : (matte || INK);
+    return () => { exporting = false; stage.classList.remove('exporting', 'checker'); resize(); };
+  },
+};
+
+/* ---------- live loop ---------- */
+const live = { F: 0, C: 0, simT: 0, dose: 0 };
+let animT = 0, paused = false, last = performance.now();
+const hist = []; let histAcc = 0, uiAcc = 1;
+
+function resize() {
+  if (exporting) return;
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  const r = stage.getBoundingClientRect();
+  canvas.width = Math.max(2, Math.round(r.width * dpr)); canvas.height = Math.max(2, Math.round(r.height * dpr));
+  view = computeView(canvas.width, canvas.height, dpr, false);
+  const sc = $('#spark'), sr = sc.getBoundingClientRect();
+  sc.width = Math.max(2, Math.round(sr.width * dpr)); sc.height = Math.max(2, Math.round(sr.height * dpr));
+  const cssP = view.p / dpr, um = cssP * 10 > 150 ? 100 : 200;
+  $('#scalebar').style.width = `${(um / UM) * cssP}px`; $('#scaleLbl').textContent = `${um} µm`;
+  $('#hudField').textContent = `${(canvas.width / view.p * UM / 1000).toFixed(2)} × ${(canvas.height / view.p * UM / 1000).toFixed(2)} mm`;
+  drawSpark(); updateProbe(true);
+}
+new ResizeObserver(resize).observe(stage);
+addEventListener('resize', resize);
+
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  if (!exporting) {
+    if (!paused) {
+      animT = (animT + dt) % (LOOP * 100);
+      step(live, live.dose / MAX_DOSE, dt); live.simT += dt;
+      histAcc += dt; if (histAcc >= .25) { histAcc = 0; hist.push(metrics().burden); if (hist.length > 240) hist.shift(); }
+    }
+    draw(animT, live, { bg: INK, pin: true });
+    uiAcc += dt; if (uiAcc > .1) { uiAcc = 0; updateUI(); }
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ---------- metrics & UI ---------- */
+function metrics(F = live.F) {
+  let burden = 0, inf = 0;
+  for (const k of T.TUM) { const kk = kill(k, F); burden += 1 - kk; if (T.INF[k] && kk > .85) inf++; }
+  let rem = 0; for (let k = 0; k < M; k++) if (T.C0[k] > 0) rem += T.C0[k] * (1 - .9 * opened(k, F));
+  let lo = 0, hi = T.depthA.length - 1, depth = 0;
+  if (hi >= 0 && T.depthA[0] <= F) { while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (T.depthA[mid] <= F) lo = mid; else hi = mid - 1; } depth = T.depthUm[lo]; }
+  const tumN = T.TUM.length || 1;
+  return { burden: 100 * burden / tumN, barrier: 100 * rem / (T.sumC0 || 1), depth, tcell: 100 * (inf + T.preT) / (tumN + T.preT) };
+}
+const fmtDay = s => `Day ${(s * DAYS_PER_S).toFixed(1)}`;
+function updateUI() {
+  const mt = metrics();
+  $('#burdenOut').textContent = mt.burden.toFixed(0);
+  $('#barrierOut').textContent = `${mt.barrier.toFixed(0)}%`; $('#barrierBar').style.width = `${mt.barrier}%`;
+  $('#depthOut').textContent = `${Math.round(mt.depth)} µm`;
+  $('#tcellOut').textContent = `${mt.tcell.toFixed(0)}%`; $('#tcellBar').style.width = `${mt.tcell}%`;
+  $('#cOut').textContent = `${Math.round(live.C * 100)}%`; $('#cFill').style.width = `${live.C * 100}%`;
+  $('#dayOut').textContent = fmtDay(live.simT); $('#hudDay').textContent = fmtDay(live.simT);
+  const tr = $('#trend'), prev = hist.length > 8 ? hist[hist.length - 9] : mt.burden, d = mt.burden - prev;
+  const s = d < -.3 ? 'shrinking' : d > .3 ? 'regrowing' : 'stable';
+  if (tr.dataset.s !== s) { tr.dataset.s = s; tr.textContent = s[0].toUpperCase() + s.slice(1); }
+  drawSpark(); updateProbe();
+}
+function drawSpark() {
+  const c = $('#spark'), g = c.getContext('2d'), W = c.width, H = c.height; if (!T) return;
+  g.clearRect(0, 0, W, H);
+  g.strokeStyle = 'rgba(154,148,182,.18)'; g.lineWidth = 1;
+  for (const v of [0, 50, 100]) { const y = Math.round(4 * dpr + (1 - v / 100) * (H - 8 * dpr)) + .5; g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+  if (hist.length < 2) return;
+  const n = 240, xAt = i => (i + n - hist.length) / (n - 1) * (W - 6 * dpr), yAt = v => 4 * dpr + (1 - v / 100) * (H - 8 * dpr);
+  g.beginPath(); hist.forEach((v, i) => i ? g.lineTo(xAt(i), yAt(v)) : g.moveTo(xAt(i), yAt(v)));
+  const lastX = xAt(hist.length - 1), lastY = yAt(hist[hist.length - 1]);
+  g.lineTo(lastX, H); g.lineTo(xAt(0), H); g.closePath();
+  const grd = g.createLinearGradient(0, 0, 0, H); grd.addColorStop(0, 'rgba(255,47,208,.32)'); grd.addColorStop(1, 'rgba(255,47,208,0)');
+  g.fillStyle = grd; g.fill();
+  g.beginPath(); hist.forEach((v, i) => i ? g.lineTo(xAt(i), yAt(v)) : g.moveTo(xAt(i), yAt(v)));
+  g.strokeStyle = INNER[0]; g.lineWidth = 1.6 * dpr; g.stroke();
+  g.beginPath(); g.arc(lastX, lastY, 3 * dpr, 0, TAU); g.fillStyle = '#fff'; g.fill();
+}
+function updateProbe(force) {
+  const el = $('#probe'), k = T.pin; if (k < 0) { el.hidden = true; return; }
+  const F = live.F, ty0 = T.TY[k];
+  let name = ty0 >= 0 ? TYPE_NAME[ty0] : 'Extracellular space', col = ty0 >= 0 ? INNER[ty0] : 'transparent', extra = '';
+  if (ty0 === 0) {
+    const kk = kill(k, F);
+    if (kk >= .85 && T.INF[k]) { name = 'T cell (moved in)'; col = INNER[3]; }
+    else if (kk >= .55) { name = TYPE_NAME[5]; col = INNER[5]; }
+    extra = `<div><span>Viability</span><span>${Math.round((1 - kk) * 100)}%</span></div>`;
+  }
+  const c0 = T.C0[k], rem = c0 * (1 - .9 * opened(k, F));
+  const arrived = T.AN[k] <= F;
+  el.innerHTML = `<b><i style="background:${col}"></i>${name}</b>`
+    + `<div><span>Collagen ring</span><span>${Math.round(rem * 100)}%${c0 > .02 && rem < c0 - .01 ? ` of ${Math.round(c0 * 100)}` : ''}</span></div>`
+    + `<div><span>Antibody</span><span>${arrived ? 'Arrived' : 'Not yet'}</span></div>`
+    + `<div><span>From vessel</span><span>${Math.round(T.vd[k] * UM)} µm</span></div>` + extra;
+  const { p, ox, oy } = view;
+  const x = (ox + (k % N + .5) * p) / dpr, y = (oy + (((k / N) | 0) + .5) * p) / dpr;
+  const sw = stage.clientWidth, sh = stage.clientHeight, w = el.offsetWidth, h = el.offsetHeight;
+  let lx = x + 18, ly = y - h - 10;
+  if (lx + w > sw - 12) lx = x - w - 18;
+  if (ly < 12) ly = y + 14;
+  el.style.transform = `translate(${clamp(lx, 8, sw - w - 8)}px, ${clamp(ly, 8, sh - h - 8)}px)`;
+  el.hidden = x < 0 || y < 0 || x > sw || y > sh;
+}
+
+/* ---------- controls ---------- */
+const doseEl = $('#dose');
+function setDose(v) {
+  live.dose = clamp(+v, 0, MAX_DOSE); doseEl.value = live.dose;
+  $('#doseOut').firstChild.nodeValue = live.dose.toFixed(1);
+  $('#doseFill').style.width = `${live.dose / MAX_DOSE * 100}%`;
+  document.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', String(+c.dataset.dose === live.dose)));
+  doseEl.setAttribute('aria-valuetext', `${live.dose.toFixed(1)} milligrams per kilogram`);
+}
+doseEl.addEventListener('input', () => setDose(doseEl.value));
+document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => setDose(c.dataset.dose)));
+function setPaused(v) { paused = v; $('#playBtn').firstChild.nodeValue = paused ? 'Play ' : 'Pause '; $('#liveTag').classList.toggle('paused', paused); $('#liveTag').textContent = paused ? 'Paused' : 'Live'; }
+function restart() { live.F = 0; live.C = 0; live.simT = 0; hist.length = 0; updateUI(); }
+function newTissue() { const s = (T.seed % 9973) + 1 + Math.floor(Math.random() * 500); T = generate(s); courseCache = null; store.set('stroma-field.seed', s); restart(); }
+$('#playBtn').addEventListener('click', () => setPaused(!paused));
+$('#restartBtn').addEventListener('click', restart);
+$('#seedBtn').addEventListener('click', newTissue);
+$('#exportBtn').addEventListener('click', openExport);
+function pinFromEvent(e) {
+  const r = canvas.getBoundingClientRect();
+  const x = (e.clientX - r.left) * dpr, y = (e.clientY - r.top) * dpr;
+  const i = Math.floor((x - view.ox) / view.p), j = Math.floor((y - view.oy) / view.p);
+  if (i >= 0 && j >= 0 && i < N && j < N) { T.pin = j * N + i; updateProbe(true); }
+}
+canvas.addEventListener('click', pinFromEvent);
+canvas.addEventListener('keydown', e => {
+  const mv = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+  if (!mv) return; e.preventDefault();
+  const i = clamp(T.pin % N + mv[0], 0, N - 1), j = clamp(((T.pin / N) | 0) + mv[1], 0, N - 1); T.pin = j * N + i; updateProbe(true);
+});
+document.addEventListener('keydown', e => {
+  if ($('#xDlg').open || e.metaKey || e.ctrlKey || e.altKey) return;
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' && e.target.type !== 'range') return;
+  if (e.code === 'Space' && tag !== 'button') { e.preventDefault(); setPaused(!paused); }
+  else if (e.key === 'r' || e.key === 'R') restart();
+  else if (e.key === 'n' || e.key === 'N') newTissue();
+  else if (e.key === 'e' || e.key === 'E') openExport();
+});
+
+/* ============================================================
+   Export (Mediabunny / WebCodecs, fflate for zips)
+   ============================================================ */
+const hasWebCodecs = typeof VideoEncoder !== 'undefined';
+const isChromium = !!(navigator.userAgentData?.brands || []).find(b => /Chromium|Chrome|Edge/.test(b.brand));
+let MB = null, FF = null;
+const loadMB = async () => MB || (MB = await import(MB_URL));
+const loadFF = async () => FF || (FF = await import(FFLATE_URL));
+const downloadsP = window.claude?.use ? window.claude.use('downloads').catch(() => null) : Promise.resolve(null);
+const tick = () => new Promise(r => setTimeout(r));
+const even = n => Math.max(2, Math.round(n / 2) * 2);
+const canvasToPng = c => new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('PNG encode failed')), 'image/png'));
+
+async function exportMedia(app, o, onProgress = () => {}, signal) {
+  const isVideo = o.format === 'mp4' || o.format === 'webm' || o.format === 'realtime';
+  const width = isVideo ? even(o.width) : Math.round(o.width);
+  const height = isVideo ? even(o.height) : Math.round(o.height);
+  const start = o.start, end = o.end;
+  const total = o.format === 'png' ? 1 : Math.max(1, Math.round((end - start) * o.fps));
+  const transparent = o.transparent && o.format !== 'mp4';
+  const t0 = performance.now();
+  const progress = i => onProgress({ frame: i, total, eta: i ? ((performance.now() - t0) / i) * (total - i) / 1000 : null });
+  await document.fonts.ready;
+  const lib = (o.format === 'mp4' || o.format === 'webm') ? await loadMB() : null;
+  const zipLib = o.format === 'png-seq' && !o.dir ? await loadFF() : null;
+  const restore = app.beginExport({ width, height, transparent, matte: o.matte });
+  try {
+    if (o.format === 'png') { await app.renderAt(start); progress(1); return { blob: await canvasToPng(app.canvas), ext: 'png' }; }
+    if (o.format === 'png-seq') return await pngSequence();
+    if (o.format === 'realtime') return await realtime();
+    return await video();
+  } finally { restore(); }
+
+  async function video() {
+    const webm = o.format === 'webm';
+    const output = new lib.Output({ format: webm ? new lib.WebMOutputFormat() : new lib.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new lib.BufferTarget() });
+    const Q = { low: lib.QUALITY_LOW, medium: lib.QUALITY_MEDIUM, high: lib.QUALITY_HIGH, veryHigh: lib.QUALITY_VERY_HIGH };
+    const source = new lib.CanvasSource(app.canvas, { codec: webm ? 'vp9' : 'avc', bitrate: Q[o.quality] ?? lib.QUALITY_HIGH, ...(webm && transparent ? { alpha: 'keep' } : {}) });
+    output.addVideoTrack(source, { frameRate: o.fps });
+    await output.start();
+    for (let i = 0; i < total; i++) {
+      if (signal?.aborted) { await output.cancel(); throw new DOMException('Export cancelled', 'AbortError'); }
+      await app.renderAt(start + i / o.fps);
+      await source.add(i / o.fps, 1 / o.fps);
+      progress(i + 1);
+      if (i % 4 === 0) await tick();
+    }
+    await output.finalize();
+    return { blob: new Blob([output.target.buffer], { type: webm ? 'video/webm' : 'video/mp4' }), ext: webm ? 'webm' : 'mp4' };
+  }
+
+  async function pngSequence() {
+    const pad = n => String(n + 1).padStart(5, '0');
+    if (o.dir) {
+      for (let i = 0; i < total; i++) {
+        if (signal?.aborted) throw new DOMException('Export cancelled', 'AbortError');
+        await app.renderAt(start + i / o.fps);
+        const fh = await o.dir.getFileHandle(`${o.name}_${pad(i)}.png`, { create: true });
+        const w = await fh.createWritable(); await w.write(await canvasToPng(app.canvas)); await w.close();
+        progress(i + 1);
+        if (i % 4 === 0) await tick();
+      }
+      return { folder: true };
+    }
+    const chunks = []; let zipErr = null;
+    const zip = new zipLib.Zip((err, chunk) => { if (err) { zipErr = err; return; } chunks.push(chunk); });
+    for (let i = 0; i < total; i++) {
+      if (signal?.aborted) { zip.terminate(); throw new DOMException('Export cancelled', 'AbortError'); }
+      if (zipErr) throw zipErr;
+      await app.renderAt(start + i / o.fps);
+      const png = new Uint8Array(await (await canvasToPng(app.canvas)).arrayBuffer());
+      const f = new zipLib.ZipPassThrough(`${o.name}_${pad(i)}.png`);
+      zip.add(f); f.push(png, true);
+      progress(i + 1);
+      if (i % 4 === 0) await tick();
+    }
+    zip.end();
+    if (zipErr) throw zipErr;
+    return { blob: new Blob(chunks, { type: 'application/zip' }), ext: 'zip' };
+  }
+
+  async function realtime() {
+    if (typeof MediaRecorder === 'undefined' || !app.canvas.captureStream) throw new Error('This browser has neither WebCodecs nor MediaRecorder, so it cannot record video. Use the PNG sequence.');
+    const stream = app.canvas.captureStream(o.fps);
+    const mime = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(m => MediaRecorder.isTypeSupported(m)) || '';
+    const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 12e6 } : {});
+    const parts = []; rec.ondataavailable = e => e.data.size && parts.push(e.data);
+    const stopped = new Promise(r => { rec.onstop = r; });
+    rec.start();
+    const dur = end - start, began = performance.now();
+    await new Promise((res, rej) => {
+      const go = () => {
+        if (signal?.aborted) { rec.stop(); return rej(new DOMException('Export cancelled', 'AbortError')); }
+        const el = (performance.now() - began) / 1000;
+        app.renderAt(start + Math.min(el, dur));
+        progress(Math.min(total, Math.round(el * o.fps)));
+        if (el >= dur) { rec.stop(); res(); } else requestAnimationFrame(go);
+      };
+      requestAnimationFrame(go);
+    });
+    await stopped; stream.getTracks().forEach(t => t.stop());
+    return { blob: new Blob(parts, { type: 'video/webm' }), ext: 'webm' };
+  }
+}
+
+async function deliver(blob, filename) {
+  const dl = await downloadsP;
+  if (dl) {
+    try { await dl.save({ filename, data: blob }); return 'saved'; }
+    catch (e) {
+      if (e?.code === 'declined') return 'declined';
+      if (e?.code === 'rate_limited') throw new Error('Another save prompt is already open. Close it, then export again.');
+      if (e?.code === 'too_large') throw new Error('This file is too large to save here. Try a shorter range or a smaller size.');
+      if (e?.code === 'host_unavailable') throw new Error('This app cannot save files. Open the page in a browser on a computer to export.');
+      throw new Error(`Saving was refused (${e?.code || 'unknown'}). ${e?.message || ''}`);
+    }
+  }
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: filename });
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  return 'saved';
+}
+
+/* ---------- export panel ---------- */
+const dlg = $('#xDlg'), X = id => $('#' + id);
+const EXT = { mp4: 'mp4', webm: 'webm', 'png-seq': 'zip', png: 'png', realtime: 'webm' };
+const FPS_EXACT = { '23.976': 24000 / 1001, '29.97': 30000 / 1001 };
+const FPS_FFMPEG = { '23.976': '24000/1001', '29.97': '30000/1001' };
+let nameTouched = false, abortCtl = null, busy = false, supportToken = 0;
+const KEY = 'stroma-field.export';
+
+function readForm() {
+  const format = X('xFormat').value;
+  const sizeV = X('xSize').value;
+  let [width, height] = sizeV === 'custom' ? [+X('xW').value || 1920, +X('xH').value || 1080] : sizeV.split('x').map(Number);
+  width = clamp(Math.round(width), 16, 7680); height = clamp(Math.round(height), 16, 7680);
+  const fpsV = X('xFps').value;
+  const fps = fpsV === 'custom' ? clamp(+X('xFpsCustom').value || 30, 1, 120) : (FPS_EXACT[fpsV] ?? +fpsV);
+  const fpsLabel = fpsV === 'custom' ? String(+fps.toFixed(3)) : fpsV;
+  const clip = dlg.querySelector('input[name=clip]:checked').value;
+  const loops = clamp(Math.round(+X('xLoops').value || 1), 1, 20);
+  const span = clip === 'course' ? COURSE : LOOP * loops;
+  let start = clamp(+X('xStart').value || 0, 0, span), end = clamp(+X('xEnd').value || span, 0, span);
+  if (end <= start) end = Math.min(span, start + 1 / fps);
+  const isVideo = format === 'mp4' || format === 'webm' || format === 'realtime';
+  const w = isVideo ? even(width) : width, h = isVideo ? even(height) : height;
+  return { format, sizeV, width, height, w, h, fpsV, fps, fpsLabel, clip, loops, span, start, end,
+    transparent: X('xAlpha').checked && format !== 'mp4', matte: X('xMatte').value, quality: X('xQuality').value,
+    name: (X('xName').value.trim() || defaultName(w, h, fpsLabel)).replace(/[\\/:*?"<>|]+/g, '-') };
+}
+const defaultName = (w, h, f) => `stroma-field_${w}x${h}_${f}fps`;
+
+function syncForm() {
+  const o = readForm();
+  X('customWrap').hidden = o.sizeV !== 'custom';
+  X('fpsCustomWrap').hidden = o.fpsV !== 'custom';
+  X('loopsWrap').hidden = o.clip !== 'loop';
+  X('qualityWrap').hidden = !(o.format === 'mp4' || o.format === 'webm');
+  const alphaOk = o.format !== 'mp4';
+  X('xAlpha').disabled = !alphaOk;
+  if (!alphaOk) X('xAlpha').checked = false;
+  X('matteWrap').hidden = X('xAlpha').checked && alphaOk;
+  X('xStart').max = X('xEnd').max = o.span;
+  if (!nameTouched) X('xName').value = defaultName(o.w, o.h, o.fpsLabel);
+  const frames = o.format === 'png' ? 1 : Math.max(1, Math.round((o.end - o.start) * o.fps));
+  X('xSummary').textContent = o.format === 'png'
+    ? `${o.w} × ${o.h} px · 1 frame at ${o.start.toFixed(2)} s · ${o.name}.png`
+    : `${o.w} × ${o.h} px · ${o.fpsLabel} fps · ${frames} frames · ${(o.end - o.start).toFixed(2)} s · ${o.name}.${EXT[o.format]}`;
+  X('courseDesc').textContent = `15 s, day 0 to 30, dose steps up to ${courseDose()} mg/kg`;
+
+  const notes = [];
+  if (!hasWebCodecs) notes.push(['warn', 'Video export needs a recent Chrome, Edge or Safari. PNG sequence still works.']);
+  if (o.format === 'mp4') notes.push(['', 'MP4 cannot carry transparency. Use WebM for web pages, or the PNG sequence for editing software.']);
+  if (o.format === 'webm' && o.transparent) notes.push([isChromium ? '' : 'warn', 'Transparent WebM is encoded by Chrome and Edge. It does not open in QuickTime, Safari or most editors; for After Effects, Premiere, DaVinci or Final Cut use the PNG sequence.']);
+  if (o.format === 'png-seq') {
+    notes.push(['', `Frames are named ${o.name}_00001.png onwards. To make a ProRes 4444 .mov with alpha:`]);
+    if (frames > 1500 || Math.max(o.w, o.h) >= 3840) notes.push(['warn', `${frames} frames at this size use a lot of memory. ${'showDirectoryPicker' in window ? 'You will be asked for a folder to write frames into directly.' : 'Consider a shorter range or smaller size.'}`]);
+  }
+  if (o.format === 'realtime') notes.push(['warn', 'Realtime recording plays the clip live while recording. It can drop frames and may lose transparency.']);
+  if (o.format !== 'png') notes.push(['', 'Frame rate is constant. Each frame is rendered exactly at frame ÷ fps, never screen-recorded.']);
+  X('cmdWrap').hidden = o.format !== 'png-seq';
+  X('cmdText').textContent = `ffmpeg -framerate ${FPS_FFMPEG[o.fpsV] || +o.fps.toFixed(3)} -i ${o.name}_%05d.png -c:v prores_ks -profile:v 4444 -pix_fmt yuva444p10le ${o.name}.mov`;
+  renderNotes(notes);
+  checkSupport(o, notes);
+}
+function renderNotes(notes) {
+  const ul = X('xNotes'); ul.replaceChildren(...notes.map(([cls, text]) => { const li = document.createElement('li'); if (cls) li.className = cls; li.textContent = text; return li; }));
+}
+async function checkSupport(o, notes) {
+  const my = ++supportToken;
+  X('xGo').disabled = busy;
+  if (!(o.format === 'mp4' || o.format === 'webm') || !hasWebCodecs) return;
+  try {
+    const lib = await loadMB();
+    const Q = { low: lib.QUALITY_LOW, medium: lib.QUALITY_MEDIUM, high: lib.QUALITY_HIGH, veryHigh: lib.QUALITY_VERY_HIGH };
+    const ok = await lib.canEncodeVideo(o.format === 'mp4' ? 'avc' : 'vp9', { width: o.w, height: o.h, quality: Q[o.quality], frameRate: o.fps, ...(o.transparent ? { alpha: 'keep' } : {}) });
+    if (my !== supportToken) return;
+    if (!ok) {
+      const big = o.w * o.h > 1920 * 1080;
+      renderNotes([['warn', `This browser cannot encode ${o.format === 'mp4' ? 'H.264' : 'VP9'} at ${o.w} × ${o.h}.${big ? ' Try 1080p.' : ' Try the other video format or a PNG sequence.'}`], ...notes]);
+      X('xGo').disabled = true;
+    }
+  } catch (e) {
+    if (my !== supportToken) return;
+    renderNotes([['warn', 'The video encoder library could not load from cdn.jsdelivr.net. Check the connection; a single PNG frame still works offline.'], ...notes]);
+  }
+}
+
+function openExport() {
+  if (dlg.open) return;
+  if (!hasWebCodecs) {
+    for (const v of ['mp4', 'webm']) X('xFormat').querySelector(`option[value="${v}"]`).disabled = true;
+    X('xFormat').querySelector('option[value="realtime"]').hidden = false;
+  }
+  const s = store.get(KEY);
+  if (s) {
+    for (const [id, k] of [['xFormat', 'format'], ['xQuality', 'quality'], ['xSize', 'sizeV'], ['xFps', 'fpsV'], ['xMatte', 'matte']]) if (s[k] != null) X(id).value = s[k];
+    if (s.width) X('xW').value = s.width; if (s.height) X('xH').value = s.height;
+    if (s.fpsCustom) X('xFpsCustom').value = s.fpsCustom;
+    if (s.loops) X('xLoops').value = s.loops;
+    X('xAlpha').checked = !!s.transparent;
+    const r = dlg.querySelector(`input[name=clip][value="${s.clip}"]`); if (r) r.checked = true;
+  }
+  if (X('xFormat').selectedOptions[0]?.disabled) X('xFormat').value = 'png-seq';
+  nameTouched = false; resetRange();
+  X('xErr').hidden = true; X('xOk').hidden = true; X('progWrap').hidden = true;
+  syncForm();
+  dlg.showModal();
+}
+function resetRange() { const o = readForm(); X('xStart').value = 0; X('xEnd').value = o.clip === 'course' ? COURSE : LOOP * o.loops; }
+X('xForm').addEventListener('input', e => {
+  if (e.target.id === 'xName') nameTouched = true;
+  if (e.target.name === 'clip' || e.target.id === 'xLoops') resetRange();
+  syncForm();
+});
+X('xForm').addEventListener('change', syncForm);
+X('xClose').addEventListener('click', () => { if (busy) abortCtl?.abort(); else dlg.close(); });
+X('xCancel').addEventListener('click', () => { if (busy) abortCtl?.abort(); else dlg.close(); });
+dlg.addEventListener('cancel', e => { if (busy) { e.preventDefault(); abortCtl?.abort(); } });
+X('cmdCopy').addEventListener('click', () => {
+  const txt = X('cmdText').textContent;
+  navigator.clipboard?.writeText(txt).then(() => { X('cmdCopy').textContent = 'Copied'; setTimeout(() => X('cmdCopy').textContent = 'Copy', 1500); })
+    .catch(() => { const r = document.createRange(); r.selectNodeContents(X('cmdText')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); });
+});
+
+X('xForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (busy) return;
+  const o = readForm();
+  const frames = o.format === 'png' ? 1 : Math.max(1, Math.round((o.end - o.start) * o.fps));
+  let dir = null;
+  if (o.format === 'png-seq' && (frames > 1500 || Math.max(o.w, o.h) >= 3840) && 'showDirectoryPicker' in window) {
+    try { dir = await window.showDirectoryPicker({ mode: 'readwrite' }); } catch (err) { if (err?.name === 'AbortError') return; dir = null; }
+  }
+  store.set(KEY, { format: o.format, quality: o.quality, sizeV: o.sizeV, width: o.width, height: o.height, fpsV: o.fpsV, fpsCustom: X('xFpsCustom').value, transparent: X('xAlpha').checked, matte: o.matte, clip: o.clip, loops: o.loops });
+  busy = true; abortCtl = new AbortController();
+  X('xGo').disabled = true; X('xCancel').textContent = 'Cancel export';
+  X('xErr').hidden = true; X('xOk').hidden = true; X('progWrap').hidden = false;
+  X('progBar').style.width = '0%'; X('progText').textContent = 'Preparing…';
+  dlg.querySelectorAll('.xgrid input, .xgrid select, .clips input').forEach(el => el.disabled = true);
+  app.clip = o.clip;
+  try {
+    const res = await exportMedia(app, { ...o, width: o.w, height: o.h, dir }, ({ frame, total, eta }) => {
+      X('progBar').style.width = `${frame / total * 100}%`;
+      X('progText').textContent = `${frame} / ${total}${eta != null && frame < total ? ` · ${eta < 60 ? Math.ceil(eta) + ' s' : Math.ceil(eta / 60) + ' min'} left` : ''}`;
+    }, abortCtl.signal);
+    if (res.folder) { X('xOk').textContent = `Wrote ${frames} frames to the folder you chose.`; X('xOk').hidden = false; }
+    else {
+      const file = `${o.name}.${res.ext}`;
+      X('progText').textContent = 'Saving…';
+      const r = await deliver(res.blob, file);
+      X('xOk').textContent = r === 'declined' ? 'Export finished, but the save was declined.' : `Saved ${file} (${(res.blob.size / 1048576).toFixed(1)} MB).`;
+      X('xOk').hidden = false;
+    }
+    X('progText').textContent = 'Done';
+  } catch (err) {
+    if (err?.name === 'AbortError') { X('progText').textContent = 'Cancelled'; X('xOk').textContent = 'Export cancelled. Nothing was saved.'; X('xOk').hidden = false; }
+    else { X('xErr').textContent = explain(err, o); X('xErr').hidden = false; X('progWrap').hidden = true; console.error(err); }
+  } finally {
+    busy = false; abortCtl = null;
+    X('xCancel').textContent = 'Close';
+    dlg.querySelectorAll('.xgrid input, .xgrid select, .clips input').forEach(el => el.disabled = false);
+    syncForm();
+  }
+});
+function explain(err, o) {
+  const msg = String(err?.message || err);
+  if (/Failed to fetch dynamically imported module|import/i.test(msg)) return 'The export library could not be downloaded from cdn.jsdelivr.net. Check your connection and try again; a single PNG frame works offline.';
+  if (/memory|allocation|Array buffer/i.test(msg)) return `Ran out of memory while exporting. Try a shorter range, a smaller size or ${o.format === 'png-seq' ? 'a video format' : 'a lower quality'}. (${msg})`;
+  if (/not supported|unsupported|codec/i.test(msg)) return `The browser refused this codec or size. Try 1080p, or switch between MP4 and WebM. (${msg})`;
+  return `Export failed: ${msg}. Try a smaller size or another format.`;
+}
+
+/* ---------- boot ---------- */
+const savedSeed = store.get('stroma-field.seed');
+T = generate(Number.isFinite(savedSeed) ? savedSeed : 7);
+setDose(0);
+resize();
+updateUI();
+requestAnimationFrame(frame);
+window.__stroma = { app, live, setDose, metrics, get T() { return T; } };
+</script>
+</body>
+</html>
