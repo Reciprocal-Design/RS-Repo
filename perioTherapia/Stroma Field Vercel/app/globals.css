@@ -184,3 +184,25 @@ dialog::backdrop{background:rgba(3,2,8,.7)}
 .bg-pick .num{font-size:12px;color:var(--mute);min-width:62px}
 .bg-pick .chip{flex:none;padding:7px 12px}
 .chip:disabled{opacity:.4;cursor:default}
+.dots-row{display:flex;align-items:center;gap:10px;min-width:0}
+.dots-row input[type=range]{flex:1;min-width:0;accent-color:var(--ab-soft)}
+.dots-row .num{font-size:12px;color:var(--mute);white-space:nowrap;min-width:72px}
+.shape-state{min-width:96px !important}
+.switch-row{grid-template-columns:64px minmax(0,1fr)}
+
+dialog.pad-dlg{width:min(900px,calc(100vw - 24px))}
+.pad-help{margin:0;color:var(--mute);font-size:13px;max-width:72ch}
+.pad-help b{font-weight:600}
+.sw-tissue{color:#8270e2}
+.sw-tumour{color:#dd5fa6}
+.pad-body{display:grid;grid-template-columns:minmax(0,480px) minmax(0,1fr);gap:18px;align-items:start}
+.pad-canvas{width:100%;aspect-ratio:1;max-width:100%;border-radius:8px;border:1px solid var(--line);cursor:crosshair;touch-action:none;display:block;background:#ececf0}
+.pad-tools{display:flex;flex-direction:column;gap:14px;min-width:0}
+.pad-group{display:flex;flex-direction:column;gap:7px}
+.pad-group input[type=range]{accent-color:var(--ab-soft)}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg .chip{flex:none;padding:7px 11px;display:inline-flex;align-items:center;gap:6px}
+.sw{width:10px;height:10px;border-radius:50%;display:inline-block}
+i.sw-tissue{background:#8270e2}
+i.sw-tumour{background:#dd5fa6}
+@media (max-width:720px){.pad-body{grid-template-columns:1fr}}
