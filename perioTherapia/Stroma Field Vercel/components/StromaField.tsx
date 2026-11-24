@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ExportPanel, { type Clip } from "./ExportPanel";
+import LayoutPad, { loadStoredLayout } from "./LayoutPad";
 import {
-  DAYS_PER_S, LOOP, MAX_DOSE, N, THEMES, UM, clamp, cloneSim, computeView, createSim, draw, generate, metrics, stepSim, sweepPointer,
-  type Sim, type StyleName, type Tissue, type View,
+  DAYS_PER_S, DEFAULT_N, LOOP, MAX_DOSE, MAX_N, MIN_N, THEMES, clamp, cloneSim, computeView, createSim, draw, generate, metrics, stepSim, sweepPointer,
+  type Layout, type Sim, type StyleName, type Tissue, type View,
 } from "@/lib/engine";
 import type { ExportApp } from "@/lib/exportMedia";
 
@@ -13,6 +14,8 @@ const STYLE_KEY = "stroma-field-vercel.style";
 const EDGE_KEY = "stroma-field-vercel.edge";
 const BG_KEY = (st: StyleName) => `stroma-field-vercel.bg.${st}`;
 const HEX = /^#?[0-9a-f]{6}$/i;
+const DOTS_KEY = "stroma-field-vercel.dots";
+const LAYOUT_ON_KEY = "stroma-field-vercel.layoutOn";
 const SWEEP_DT = 1 / 120;
 
 type Engine = {
@@ -31,6 +34,9 @@ type Engine = {
   style: StyleName;
   bleed: boolean;
   bg: string;
+  dots: number;
+  layout: Layout | null;
+  resize: () => void;
 };
 
 export default function StromaField() {
@@ -46,6 +52,10 @@ export default function StromaField() {
   const [hud, setHud] = useState({ field: "", scaleUm: 200, scalePx: 60 });
   const [touched, setTouched] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [padOpen, setPadOpen] = useState(false);
+  const [layoutOn, setLayoutOn] = useState(false);
+  const [dots, setDots] = useState(DEFAULT_N);
+  const [frame, setFrame] = useState({ w: 1, h: 1 });
   const [style, setStyleState] = useState<StyleName>("neon");
   const setStyle = useCallback((st: StyleName) => {
     setStyleState(st);
@@ -104,16 +114,49 @@ export default function StromaField() {
     e.S = createSim(e.T);
     e.hist.length = 0;
   }, []);
+  /** Rebuild the tissue with the current seed, dot count and layout. */
+  const regenerate = useCallback((seed?: number) => {
+    const e = eng.current;
+    if (!e) return;
+    e.T = generate(seed ?? e.T.seed, e.dots, e.layout);
+    e.sweep = null;
+    restart();
+    e.resize();
+  }, [restart]);
   const newTissue = useCallback(() => {
     const e = eng.current;
     if (!e) return;
     const seed = (e.T.seed % 9973) + 1 + Math.floor(Math.random() * 500);
-    e.T = generate(seed);
     try {
       localStorage.setItem(SEED_KEY, String(seed));
     } catch {}
-    restart();
-  }, [restart]);
+    regenerate(seed);
+  }, [regenerate]);
+  // dot count: update the label at once, rebuild shortly after the slider settles
+  const dotsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const changeDots = useCallback((n: number) => {
+    setDots(n);
+    if (dotsTimer.current) clearTimeout(dotsTimer.current);
+    dotsTimer.current = setTimeout(() => {
+      const e = eng.current;
+      if (!e || e.dots === n) return;
+      e.dots = n;
+      try {
+        localStorage.setItem(DOTS_KEY, String(n));
+      } catch {}
+      regenerate();
+    }, 140);
+  }, [regenerate]);
+  const applyLayout = useCallback((layout: Layout | null) => {
+    const e = eng.current;
+    if (!e) return;
+    e.layout = layout;
+    setLayoutOn(!!layout);
+    try {
+      localStorage.setItem(LAYOUT_ON_KEY, layout ? "1" : "0");
+    } catch {}
+    regenerate();
+  }, [regenerate]);
 
   /* ---------- engine boot, resize and the frame loop ---------- */
   useEffect(() => {
@@ -148,8 +191,18 @@ export default function StromaField() {
       } catch {}
       setBgColorState(qb.startsWith("#") ? qb : "#" + qb);
     }
-    const T = generate(seed);
-    const e: Engine = { T, S: createSim(T), view: computeView(2, 2, 1, false), dpr: 1, animT: 0, pointer: null, hist: [], exporting: false, exportBg: THEMES[st].bg, clip: "sweep", hold: null, sweep: null, style: st, bleed: bl, bg: THEMES[st].bg };
+    let n = DEFAULT_N;
+    const qd = Number(new URLSearchParams(location.search).get("dots"));
+    if (qd) n = qd;
+    else
+      try {
+        const sd = Number(localStorage.getItem(DOTS_KEY));
+        if (sd) n = sd;
+      } catch {}
+    n = Math.round(clamp(n, MIN_N, MAX_N));
+    setDots(n);
+    const T = generate(seed, n);
+    const e: Engine = { T, dots: n, layout: null, resize: () => {}, S: createSim(T), view: computeView(2, 2, 1, false, T.N), dpr: 1, animT: 0, pointer: null, hist: [], exporting: false, exportBg: THEMES[st].bg, clip: "sweep", hold: null, sweep: null, style: st, bleed: bl, bg: THEMES[st].bg };
     eng.current = e;
     const reduce = matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -159,20 +212,37 @@ export default function StromaField() {
       const r = stage.getBoundingClientRect();
       canvas.width = Math.max(2, Math.round(r.width * e.dpr));
       canvas.height = Math.max(2, Math.round(r.height * e.dpr));
-      e.view = computeView(canvas.width, canvas.height, e.dpr, false);
+      e.view = computeView(canvas.width, canvas.height, e.dpr, false, e.T.N);
       const sr = spark.getBoundingClientRect();
       spark.width = Math.max(2, Math.round(sr.width * e.dpr));
       spark.height = Math.max(2, Math.round(sr.height * e.dpr));
-      const cssP = e.view.p / e.dpr, um = cssP * 10 > 150 ? 100 : 200;
+      const cssP = e.view.p / e.dpr, UM = e.T.um, um = (100 / UM) * cssP > 150 ? 100 : 200;
       setHud({
         field: `${((canvas.width / e.view.p) * UM / 1000).toFixed(2)} × ${((canvas.height / e.view.p) * UM / 1000).toFixed(2)} mm`,
         scaleUm: um,
         scalePx: (um / UM) * cssP,
       });
+      setFrame({ w: canvas.width / e.view.p / e.T.N, h: canvas.height / e.view.p / e.T.N });
     };
+    e.resize = resize;
     const ro = new ResizeObserver(resize);
     ro.observe(stage);
     resize();
+    // bring back a drawn layout from last time
+    let layoutWanted = false;
+    try {
+      layoutWanted = localStorage.getItem(LAYOUT_ON_KEY) === "1";
+    } catch {}
+    if (layoutWanted)
+      void loadStoredLayout().then((L) => {
+        if (!L || eng.current !== e) return;
+        e.layout = L;
+        e.T = generate(e.T.seed, e.dots, L);
+        e.S = createSim(e.T);
+        e.hist.length = 0;
+        setLayoutOn(true);
+        resize();
+      });
 
     let raf = 0, last = performance.now(), histAcc = 0, uiAcc = 1, visible = true;
     const io = new IntersectionObserver(([en]) => (visible = en.isIntersecting));
@@ -237,16 +307,17 @@ export default function StromaField() {
     const e = eng.current;
     if (!mv || !e) return;
     ev.preventDefault();
+    const N = e.T.N, st = 1.5 * e.T.s;
     const cur = e.pointer ?? { x: N / 2, y: N / 2 };
     if (!e.pointer) (e.S.lx = cur.x), (e.S.ly = cur.y);
-    e.pointer = { x: clamp(cur.x + mv[0] * 1.5, 0, N), y: clamp(cur.y + mv[1] * 1.5, 0, N) };
+    e.pointer = { x: clamp(cur.x + mv[0] * st, 0, N), y: clamp(cur.y + mv[1] * st, 0, N) };
     setTouched(true);
   };
 
   /* ---------- keyboard shortcuts ---------- */
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
-      if (exportOpen || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      if (exportOpen || padOpen || ev.metaKey || ev.ctrlKey || ev.altKey) return;
       const t = ev.target as HTMLElement;
       const tag = (t.tagName || "").toLowerCase();
       if ((tag === "input" && (t as HTMLInputElement).type !== "range") || tag === "select") return;
@@ -257,7 +328,7 @@ export default function StromaField() {
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [exportOpen, togglePause, restart, newTissue]);
+  }, [exportOpen, padOpen, togglePause, restart, newTissue]);
 
   /* ---------- export contract ---------- */
   const app = useMemo<ExportApp & { setClip: (c: Clip) => void }>(() => ({
@@ -277,13 +348,13 @@ export default function StromaField() {
       if (!e.sweep || t < e.sweep.simT - 1e-6) e.sweep = createSim(e.T);
       const S = e.sweep, dose = doseRef.current || 12;
       if (!Number.isFinite(S.lx)) {
-        const p0 = sweepPointer(0, e.view);
+        const p0 = sweepPointer(0, e.view, e.T.N);
         S.lx = p0.x;
         S.ly = p0.y;
       }
       while (S.simT < t - 1e-9) {
         const dt = Math.min(SWEEP_DT, t - S.simT);
-        stepSim(e.T, S, dt, sweepPointer(S.simT + dt, e.view), dose);
+        stepSim(e.T, S, dt, sweepPointer(S.simT + dt, e.view, e.T.N), dose);
       }
       draw(ctx, e.T, S, e.view, t, { bg: e.exportBg, style: e.style, bleed: e.bleed });
     },
@@ -296,7 +367,7 @@ export default function StromaField() {
       e.sweep = null;
       canvas.width = width;
       canvas.height = height;
-      e.view = computeView(width, height, Math.max(1, Math.min(width, height) / 1080), true);
+      e.view = computeView(width, height, Math.max(1, Math.min(width, height) / 1080), true, e.T.N);
       e.exportBg = transparent ? null : matte || e.bg;
       return () => {
         e.exporting = false;
@@ -305,7 +376,7 @@ export default function StromaField() {
         const r = stage.getBoundingClientRect();
         canvas.width = Math.max(2, Math.round(r.width * e.dpr));
         canvas.height = Math.max(2, Math.round(r.height * e.dpr));
-        e.view = computeView(canvas.width, canvas.height, e.dpr, false);
+        e.view = computeView(canvas.width, canvas.height, e.dpr, false, e.T.N);
       };
     },
   }), []);
@@ -375,6 +446,20 @@ export default function StromaField() {
               <button type="button" className="chip" disabled={!bgColor} onClick={() => setBgColor(null)}>Reset</button>
             </div>
           </div>
+          <div className="switch-row">
+            <span className="label" id="shapeLabel">Shape</span>
+            <div className="bg-pick">
+              <span className="num shape-state">{layoutOn ? "Drawn layout" : "Random"}</span>
+              <button type="button" className="chip" onClick={() => setPadOpen(true)}>Draw layout…</button>
+            </div>
+          </div>
+          <label className="switch-row">
+            <span className="label">Dots</span>
+            <span className="dots-row">
+              <input type="range" min={MIN_N} max={MAX_N} step={4} value={dots} aria-valuetext={`${dots} dots across`} onChange={(ev) => changeDots(+ev.target.value)} />
+              <span className="num">{dots} across</span>
+            </span>
+          </label>
         </div>
 
         <section className="dose" aria-labelledby="doseLabel">
@@ -447,6 +532,7 @@ export default function StromaField() {
         <p className="fine">An abstract illustration of stromal barriers, not a pharmacological model. One simulated day passes every half second.</p>
       </aside>
 
+      <LayoutPad open={padOpen} onClose={() => setPadOpen(false)} onApply={applyLayout} frame={frame} active={layoutOn} />
       <ExportPanel open={exportOpen} onClose={() => setExportOpen(false)} app={app} setClip={app.setClip} doseLabel={doseLabel} matte={bg} />
     </div>
   );

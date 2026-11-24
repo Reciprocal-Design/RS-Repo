@@ -1,8 +1,9 @@
 /* Stroma Field engine: tissue generation, the cursor-driven treatment model and the
    canvas renderer. Framework-free so the live page and the exporter share it.
 
-   - Tissue: a seeded 84 × 84 grid. Each cell has a type (core colour), a density
-     (dot size) and a collagen level (ring thickness and colour).
+   - Tissue: a seeded N × N grid (N adjustable, 48–200). Each cell has a type (core
+     colour), a density (dot size) and a collagen level (ring thickness and colour).
+     The overall shape comes from noise, or from a layout drawn on the pad.
    - Treatment: moving the cursor delivers antibody. Exposure builds up under the
      cursor's path, dense collagen needs more passes, and the ring breaks apart as it
      opens. Tumour cells whose ring is open die back over the next few seconds, and
@@ -12,9 +13,11 @@
      exactly. */
 
 export const TAU = Math.PI * 2;
-export const N = 84;
-export const M = N * N;
-export const UM = 20; // µm per grid step
+export const DEFAULT_N = 120;
+export const MIN_N = 48;
+export const MAX_N = 200;
+const REF_N = 84; // the grid the tissue scale was designed at
+const REF_UM = 20; // µm per grid step at REF_N
 export const LOOP = 6; // ambient motion period (s)
 export const MAX_DOSE = 20; // mg/kg
 export const DAYS_PER_S = 2;
@@ -117,9 +120,24 @@ function rankNorm(a: Float32Array) {
   return out;
 }
 
+/* ---------- drawn layouts ---------- */
+/** Masks drawn on the layout pad, size × size, values 0..1, already softened. */
+export type Layout = { size: number; tissue: Float32Array; tumour: Float32Array; hasTumour: boolean };
+function sampleMask(L: Layout, m: Float32Array, u: number, v: number) {
+  const n = L.size, x = clamp(u * n - 0.5, 0, n - 1), y = clamp(v * n - 0.5, 0, n - 1);
+  const x0 = Math.floor(x), y0 = Math.floor(y), x1 = Math.min(n - 1, x0 + 1), y1 = Math.min(n - 1, y0 + 1);
+  const fx = x - x0, fy = y - y0;
+  const a = m[y0 * n + x0], b = m[y0 * n + x1], c = m[y1 * n + x0], d = m[y1 * n + x1];
+  return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
+}
+
 /* ---------- tissue ---------- */
 export type Tissue = {
   seed: number;
+  N: number;
+  M: number;
+  um: number; // µm per grid step
+  s: number; // grid scale relative to the 84-cell design grid
   TY: Int8Array; // -1 empty, 0 tumour, 1 CAF, 2 macrophage, 3 T cell, 4 vessel
   RB: Float32Array; // base radius (fraction of grid pitch)
   FR: Float32Array; // radius of the background dot an empty cell gets in bleed mode
@@ -138,7 +156,9 @@ export type Tissue = {
   sumC0: number;
 };
 
-export function generate(seed: number): Tissue {
+export function generate(seed: number, N = DEFAULT_N, layout: Layout | null = null): Tissue {
+  N = Math.round(clamp(N, MIN_N, MAX_N));
+  const M = N * N, sc = N / REF_N;
   const rand = mulberry32(seed * 7919 + 13);
   const fbm = makeNoise(rand);
   const o = Array.from({ length: 18 }, () => rand() * 200);
@@ -147,7 +167,7 @@ export function generate(seed: number): Tissue {
   for (let j = 0; j < N; j++)
     for (let i = 0; i < N; i++) {
       const k = j * N + i, u = (i + 0.5) / N, v = (j + 0.5) / N, r = Math.hypot(u - 0.5, v - 0.5) * 2;
-      env[k] = fbm(u * 1.7 + o[0], v * 1.7 + o[1], 4) - 0.32 * Math.max(0, r - 0.5);
+      env[k] = fbm(u * 1.7 + o[0], v * 1.7 + o[1], 4) - (layout ? 0 : 0.32 * Math.max(0, r - 0.5));
       tn[k] = fbm(u * 2.5 + o[2], v * 2.5 + o[3], 4) + 0.18 * fbm(u * 7 + o[4], v * 7 + o[5], 2);
       fr[k] = 1 - Math.abs(2 * fbm(u * 3.1 + o[6], v * 3.1 + o[7], 4) - 1);
       vr[k] = 1 - Math.abs(2 * fbm(u * 2.2 + o[8], v * 2.2 + o[9], 3) - 1);
@@ -162,8 +182,24 @@ export function generate(seed: number): Tissue {
   const D = f(), C0 = f(), RIM = f();
   const TY = new Int8Array(M).fill(-1), RB = f();
   const isT = new Uint8Array(M), vessel = new Uint8Array(M), tissue = new Uint8Array(M);
+  // a drawn layout replaces the noise envelope (tissue) and the nest field (tumour); noise
+  // still roughens the edges and textures the inside so it never looks stamped out
+  if (layout) {
+    for (let j = 0; j < N; j++)
+      for (let i = 0; i < N; i++) {
+        const k = j * N + i, u = (i + 0.5) / N, v = (j + 0.5) / N;
+        const tu = sampleMask(layout, layout.tumour, u, v);
+        const ti = Math.max(sampleMask(layout, layout.tissue, u, v), sm(0.05, 0.4, tu));
+        const edge = 4 * ti * (1 - ti);
+        D[k] = clamp(ti * (0.72 + 0.56 * TX[k]) + 0.45 * (E[k] - 0.5) * edge, 0, 1);
+        if (layout.hasTumour) {
+          const eT = 4 * tu * (1 - tu); // strongest along the drawn tumour border
+          TN[k] = clamp(0.38 + 0.5 * tu + 0.34 * (TN[k] - 0.5) * (0.25 + 1.1 * eT), 0, 1);
+        }
+      }
+  }
   for (let k = 0; k < M; k++) {
-    D[k] = clamp(clamp((E[k] - 0.17) / 0.5, 0, 1) * (0.7 + 0.6 * TX[k]), 0, 1);
+    if (!layout) D[k] = clamp(clamp((E[k] - 0.17) / 0.5, 0, 1) * (0.7 + 0.6 * TX[k]), 0, 1);
     tissue[k] = D[k] > 0.08 ? 1 : 0;
     isT[k] = tissue[k] && TN[k] > 0.66 && D[k] > 0.2 ? 1 : 0;
     const rim = isT[k] ? 0 : sm(0.48, 0.66, TN[k]);
@@ -218,10 +254,10 @@ export function generate(seed: number): Tissue {
       }
       const sCaf = 0.3 + 0.75 * C0[k] + 0.35 * R1[k] + 0.25 * rand();
       const sMy = 0.12 + 0.85 * RIM[k] + 0.45 * R2[k] + 0.25 * rand();
-      const sT = 0.95 * Math.exp(-vd[k] / 4.5) + 0.45 * R3[k] - 0.12 + 0.25 * rand();
+      const sT = 0.95 * Math.exp(-vd[k] / (4.5 * sc)) + 0.45 * R3[k] - 0.12 + 0.25 * rand();
       TY[k] = sCaf >= sMy && sCaf >= sT ? 1 : sMy >= sT ? 2 : 3;
       RB[k] = 0.1 + 0.25 * D[k];
-    } else if (r < 0.2 * sm(-0.3, 0.08, D[k] - 0.1 + E[k] * 0.5)) {
+    } else if (r < 0.2 * sm(-0.3, 0.08, D[k] - 0.1 + E[k] * 0.5) * (layout ? 0.5 : 1)) {
       const q = rand();
       TY[k] = q < 0.4 ? 1 : q < 0.7 ? 2 : 3;
       RB[k] = 0.05 + 0.07 * rand();
@@ -229,13 +265,18 @@ export function generate(seed: number): Tissue {
   }
   const FRB = new Float32Array(M);
   for (let k = 0; k < M; k++) FRB[k] = TY[k] < 0 ? 0.07 + 0.07 * TX[k] + 0.04 * clamp(D[k] / 0.08, 0, 1) : 0;
-  return { seed, TY, RB, FR: FRB, C0, RES, PH, RO, DIR, INF, KR, FL, TUM: Int32Array.from(TUM), RINGED: Int32Array.from(RINGED), preT, sumC0, OUTLINE: tumourOutline(isT) };
+  return {
+    seed, N, M, um: (REF_UM * REF_N) / N, s: sc,
+    TY, RB, FR: FRB, C0, RES, PH, RO, DIR, INF, KR, FL, TUM: Int32Array.from(TUM), RINGED: Int32Array.from(RINGED), preT, sumC0,
+    OUTLINE: tumourOutline(isT, N, Math.max(1, Math.round(2 * sc))),
+  };
 }
 
 /** Smooth contour around the tumour nests: marching squares over a blurred tumour mask. */
-function tumourOutline(isT: Uint8Array) {
+function tumourOutline(isT: Uint8Array, N: number, passes: number) {
+  const M = N * N;
   let a = Float32Array.from(isT);
-  for (let pass = 0; pass < 2; pass++) {
+  for (let pass = 0; pass < passes; pass++) {
     const b = new Float32Array(M);
     for (let j = 0; j < N; j++)
       for (let i = 0; i < N; i++) {
@@ -282,8 +323,8 @@ function tumourOutline(isT: Uint8Array) {
 }
 
 /* ---------- treatment state ---------- */
-const PULSES = 128;
-const WAVE_SPEED = 9; // cells per second
+const PULSES = 192;
+const WAVE_SPEED = 9; // cells per second at the design grid
 export type Sim = {
   E: Float32Array; // antibody exposure
   BF: Float32Array; // ring remaining, 0.1..1
@@ -301,7 +342,7 @@ export type Sim = {
 export function createSim(T: Tissue): Sim {
   const f = () => new Float32Array(PULSES);
   return {
-    E: new Float32Array(M), BF: new Float32Array(M).fill(1), K: new Float32Array(M),
+    E: new Float32Array(T.M), BF: new Float32Array(T.M).fill(1), K: new Float32Array(T.M),
     simT: 0, lx: NaN, ly: NaN,
     px: f(), py: f(), pt: f(), pa: f(), pr: f(), prMax: f(), prot: f(),
     pNext: 0, travel: 0, rand: mulberry32(T.seed * 31 + 5), delivered: 0,
@@ -313,15 +354,16 @@ export function cloneSim(S: Sim): Sim {
 /** Advance the treatment by dt seconds. pointer is in grid units, or null when the cursor is away. */
 export function stepSim(T: Tissue, S: Sim, dt: number, pointer: { x: number; y: number } | null, dose: number) {
   const d01 = clamp(dose / MAX_DOSE, 0, 1);
+  const N = T.N, sc = T.s;
   S.simT += dt;
   if (pointer && Number.isFinite(S.lx)) {
     const dx = pointer.x - S.lx, dy = pointer.y - S.ly;
-    const travel = Math.min(4, Math.hypot(dx, dy));
+    const travel = Math.min(4 * sc, Math.hypot(dx, dy));
     if (d01 > 0 && travel > 0.002) {
       S.travel += travel;
       S.delivered += travel * d01;
       // drop a ripple every 1.3 cells of movement
-      const gapCells = 1.3;
+      const gapCells = 1.3 * sc;
       while (S.travel >= gapCells) {
         S.travel -= gapCells;
         const t = 1 - S.travel / Math.max(travel, 1e-6);
@@ -331,7 +373,7 @@ export function stepSim(T: Tissue, S: Sim, dt: number, pointer: { x: number; y: 
         S.pt[id] = S.simT;
         S.pa[id] = 0.22 + 0.5 * d01;
         S.pr[id] = 0;
-        S.prMax[id] = 2.5 + 6 * d01;
+        S.prMax[id] = (2.5 + 6 * d01) * sc;
         S.prot[id] = S.rand() * TAU;
       }
     }
@@ -339,7 +381,7 @@ export function stepSim(T: Tissue, S: Sim, dt: number, pointer: { x: number; y: 
   // expand the ripples; each cell is dosed once as a front crosses it, with a six-petal pattern
   for (let q = 0; q < PULSES; q++) {
     if (S.pa[q] <= 0) continue;
-    const r0 = S.pr[q], r1 = Math.min(S.prMax[q], r0 + WAVE_SPEED * dt);
+    const r0 = S.pr[q], r1 = Math.min(S.prMax[q], r0 + WAVE_SPEED * sc * dt);
     const cx = S.px[q], cy = S.py[q], amp = S.pa[q], rMax = S.prMax[q], rot = S.prot[q];
     const i0 = Math.max(0, Math.floor(cx - r1)), i1 = Math.min(N - 1, Math.ceil(cx + r1));
     const j0 = Math.max(0, Math.floor(cy - r1)), j1 = Math.min(N - 1, Math.ceil(cy + r1));
@@ -347,7 +389,7 @@ export function stepSim(T: Tissue, S: Sim, dt: number, pointer: { x: number; y: 
       for (let i = i0; i <= i1; i++) {
         const ddx = i + 0.5 - cx, ddy = j + 0.5 - cy, d = Math.hypot(ddx, ddy);
         if (d < r0 || d >= r1) continue;
-        const petal = 0.55 + 0.45 * Math.cos(6 * Math.atan2(ddy, ddx) + rot + d * 0.35);
+        const petal = 0.55 + 0.45 * Math.cos(6 * Math.atan2(ddy, ddx) + rot + (d / sc) * 0.35);
         const k = j * N + i;
         S.E[k] = Math.min(T.RES[k] * 1.6, S.E[k] + amp * petal * (1 - 0.55 * (d / rMax)));
       }
@@ -393,14 +435,14 @@ export function metrics(T: Tissue, S: Sim) {
 
 /* ---------- view ---------- */
 export type View = { p: number; ox: number; oy: number; W: number; H: number; unit: number };
-export function computeView(W: number, H: number, unit: number, exportMode: boolean): View {
+export function computeView(W: number, H: number, unit: number, exportMode: boolean, N: number): View {
   let p = Math.max(W / N, H / N);
-  if (!exportMode) p = Math.max(p, 11 * unit);
+  if (!exportMode) p = Math.max(p, 5 * unit);
   return { p, ox: W / 2 - (N / 2) * p, oy: H / 2 - (N / 2) * p, W, H, unit };
 }
 
 /** Scripted cursor sweep used by the treatment export: a slow figure that covers the visible field. */
-export function sweepPointer(t: number, view: View) {
+export function sweepPointer(t: number, view: View, N: number) {
   const cols = view.W / view.p, rows = view.H / view.p;
   return {
     x: N / 2 + cols * 0.36 * Math.sin((TAU * t) / 7.5) + cols * 0.06 * Math.sin((TAU * t) / 1.9),
@@ -418,6 +460,7 @@ export function draw(
   { bg = THEMES.neon.bg as string | null, reduceMotion = false, style = "neon" as StyleName, bleed = false } = {},
 ) {
   const theme = THEMES[style], fibCols = FIB[style];
+  const N = T.N;
   const { p, ox, oy, W, H, unit } = view;
   ctx.globalCompositeOperation = "source-over";
   ctx.globalAlpha = 1;
