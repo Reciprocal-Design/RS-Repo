@@ -435,6 +435,10 @@ export function draw(
   const { TY, RB, C0, PH, RO, DIR, INF, FL } = T;
   const { BF, K } = S;
   const field = new Path2D();
+  // bleed: every dot shrinks smoothly toward the canvas edges, so the matrix never ends abruptly
+  const margin = 0.17 * Math.min(W, H);
+  const taper = (x: number, y: number) =>
+    bleed ? 0.04 + 0.96 * sm(0, margin, x) * sm(0, margin, W - x) * sm(0, margin, y) * sm(0, margin, H - y) : 1;
 
   for (let j = j0; j <= j1; j++)
     for (let i = i0; i <= i1; i++) {
@@ -445,7 +449,8 @@ export function draw(
         const ph0 = PH[k];
         const fx = ox + (i + 0.5) * p + m * p * 0.05 * Math.sin(ph + ph0);
         const fy = oy + (j + 0.5) * p + m * p * 0.05 * Math.cos(ph + ph0 * 1.7);
-        const fr = p * T.FR[k] * (1 + m * 0.12 * Math.sin(2 * ph + ph0 * 2));
+        const fr = p * T.FR[k] * (1 + m * 0.12 * Math.sin(2 * ph + ph0 * 2)) * taper(fx, fy);
+        if (fr < 0.25 * unit) continue;
         field.moveTo(fx + fr, fy);
         field.arc(fx, fy, fr, 0, TAU);
         continue;
@@ -453,7 +458,8 @@ export function draw(
       const phase = PH[k];
       const x = ox + (i + 0.5) * p + m * p * 0.07 * Math.sin(ph + phase);
       const y = oy + (j + 0.5) * p + m * p * 0.07 * Math.cos(ph + phase * 1.7);
-      let r = p * RB[k] * (1 + m * 0.09 * Math.sin(2 * ph + phase * 2));
+      const tf = taper(x, y);
+      let r = p * RB[k] * (1 + m * 0.09 * Math.sin(2 * ph + phase * 2)) * tf;
       let a = 1;
       if (ty === 0) {
         const kk = K[k];
@@ -474,10 +480,10 @@ export function draw(
       const c0 = C0[k];
       if (c0 > 0.04) {
         const bf = BF[k], op = (1 - bf) / 0.9;
-        const th = p * 0.22 * c0 * bf * (1 + m * 0.06 * Math.sin(ph + phase));
+        const th = p * 0.22 * c0 * bf * (1 + m * 0.06 * Math.sin(ph + phase)) * tf;
         if (th > minTh) {
           const path = rings[FL[k]];
-          const ri = Math.max(r, p * 0.06) + gap, ro = ri + th;
+          const ri = Math.max(r, p * 0.06 * tf) + gap * tf, ro = ri + th;
           if (op < 0.03) {
             path.moveTo(x + ro, y);
             path.arc(x, y, ro, 0, TAU);
@@ -523,12 +529,17 @@ export function draw(
     ctx.strokeStyle = theme.outline;
     ctx.lineWidth = Math.max(1, 1.4 * unit);
     ctx.lineCap = "round";
-    ctx.beginPath();
+    const bands = bleed ? [new Path2D(), new Path2D(), new Path2D(), new Path2D()] : [new Path2D()];
     for (let s = 0; s < O.length; s += 4) {
-      ctx.moveTo(ox + O[s] * p, oy + O[s + 1] * p);
-      ctx.lineTo(ox + O[s + 2] * p, oy + O[s + 3] * p);
+      const x1 = ox + O[s] * p, y1 = oy + O[s + 1] * p, x2 = ox + O[s + 2] * p, y2 = oy + O[s + 3] * p;
+      const b = bleed ? Math.min(3, Math.floor(taper((x1 + x2) / 2, (y1 + y2) / 2) * 4)) : 0;
+      bands[b].moveTo(x1, y1);
+      bands[b].lineTo(x2, y2);
     }
-    ctx.stroke();
+    bands.forEach((path, b) => {
+      ctx.globalAlpha = bleed ? (b + 0.5) / 4 : 1;
+      ctx.stroke(path);
+    });
   }
   ctx.globalAlpha = 1;
 }
