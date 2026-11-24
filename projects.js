@@ -16,6 +16,6 @@ window.RS_META = {
   "perioTherapia/Barrier Field": { description: "Soft, abstract tumour mass under near-invisible layers of glass that refract when a pulse presses on them", status: "wip" },
   "perioTherapia/Clear Path": { description: "Radial burst of bars whose layers thin out and fill back in, opening a path to the centre", status: "wip" },
   "perioTherapia/Stroma Field": { description: "Neon density map of cell types in collagen rings; an antibody dose bar breaks the barrier and shrinks the tumour", status: "wip" },
-  "perioTherapia/Stroma Field Vercel": { description: "Next.js version of Stroma Field: the cursor carries the antibody, breaking down the collagen rings it passes", status: "wip" },
+  "perioTherapia/Stroma Field Vercel": { description: "Next.js version of Stroma Field: the cursor sends ripples of antibody that bring the collagen rings down in a pattern; neon and clinical styles", status: "wip" },
   "Tuari/Shape Mosaic": { description: "Rebuild an image from one SVG shape at different sizes, with subtle looping motion", status: "wip" },
 };

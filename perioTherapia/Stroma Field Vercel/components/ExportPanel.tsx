@@ -28,12 +28,13 @@ const isChromium = () => {
   return brands.some((b) => /Chromium|Chrome|Edge/.test(b.brand));
 };
 
-export default function ExportPanel({ open, onClose, app, setClip, doseLabel }: {
+export default function ExportPanel({ open, onClose, app, setClip, doseLabel, matte }: {
   open: boolean;
   onClose: () => void;
   app: ExportApp;
   setClip: (c: Clip) => void;
   doseLabel: string;
+  matte: string;
 }) {
   const dlg = useRef<HTMLDialogElement>(null);
   const [s, setS] = useState<Saved>(DEFAULTS);
@@ -64,7 +65,7 @@ export default function ExportPanel({ open, onClose, app, setClip, doseLabel }: 
       try {
         saved = JSON.parse(localStorage.getItem(KEY) || "{}") || {};
       } catch {}
-      const next = { ...DEFAULTS, ...saved };
+      const next = { ...DEFAULTS, ...saved, matte };
       if (!webcodecs && (next.format === "mp4" || next.format === "webm")) next.format = "png-seq";
       setS(next);
       setRange({ start: 0, end: next.clip === "sweep" ? CLIP_SECONDS.sweep : CLIP_SECONDS.loop * next.loops });
@@ -74,7 +75,7 @@ export default function ExportPanel({ open, onClose, app, setClip, doseLabel }: 
       setProgress(null);
       d.showModal();
     } else if (!open && d.open) d.close();
-  }, [open, webcodecs]);
+  }, [open, webcodecs, matte]);
 
   const o = useMemo(() => {
     const [w0, h0] = s.sizeV === "custom" ? [s.w, s.h] : s.sizeV.split("x").map(Number);
