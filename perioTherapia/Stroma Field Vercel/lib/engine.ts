@@ -25,15 +25,32 @@ export const sm = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
-/* ---------- palette ---------- */
-export const PALETTE = {
-  ink: "#06050c",
-  inner: ["#ff2fd0", "#9b5cff", "#4f86ff", "#28efe0", "#e9fff7", "#6c4b78"], // tumour, CAF, macrophage, T cell, vessel, dying
-  fibLo: "#b6ff3b",
-  fibMid: "#ffd60a",
-  fibHi: "#ff6f1a",
-  speck: "#c9c2ff",
+/* ---------- styles ---------- */
+export type StyleName = "neon" | "clinical";
+export type Theme = {
+  bg: string;
+  inner: string[]; // tumour, CAF, macrophage, T cell, vessel, dying
+  fib: [string, string, string]; // loose → dense collagen
+  outline: string; // tumour boundary
+  ringAlpha: number;
 };
+export const THEMES: Record<StyleName, Theme> = {
+  neon: {
+    bg: "#06050c",
+    inner: ["#ff2fd0", "#9b5cff", "#4f86ff", "#28efe0", "#7d8bff", "#6c4b78"],
+    fib: ["#b6ff3b", "#ffd60a", "#ff6f1a"],
+    outline: "rgba(236,226,255,.8)",
+    ringAlpha: 0.96,
+  },
+  clinical: {
+    bg: "#cdcdd1",
+    inner: ["#dd5fa6", "#977fe3", "#5c78e2", "#6aa6c9", "#a9b6ec", "#b3a5c4"],
+    fib: ["#b0b1c1", "#7f8199", "#4d4f66"],
+    outline: "rgba(196,64,140,.8)",
+    ringAlpha: 0.85,
+  },
+};
+export const PALETTE = { ink: THEMES.neon.bg, inner: THEMES.neon.inner };
 const hex = (h: string) => {
   const n = parseInt(h.replace("#", ""), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
@@ -43,10 +60,12 @@ const mixHex = (a: string, b: string, t: number) => {
   return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(",")})`;
 };
 const FIB_LV = 6;
-const FIB = Array.from({ length: FIB_LV }, (_, i) => {
-  const t = i / (FIB_LV - 1);
-  return t < 0.5 ? mixHex(PALETTE.fibLo, PALETTE.fibMid, t * 2) : mixHex(PALETTE.fibMid, PALETTE.fibHi, (t - 0.5) * 2);
-});
+const fibScale = (th: Theme) =>
+  Array.from({ length: FIB_LV }, (_, i) => {
+    const t = i / (FIB_LV - 1);
+    return t < 0.5 ? mixHex(th.fib[0], th.fib[1], t * 2) : mixHex(th.fib[1], th.fib[2], (t - 0.5) * 2);
+  });
+const FIB: Record<StyleName, string[]> = { neon: fibScale(THEMES.neon), clinical: fibScale(THEMES.clinical) };
 const ALPHAS = [0.3, 0.55, 0.8, 1];
 
 /* ---------- seeded noise ---------- */
@@ -110,6 +129,7 @@ export type Tissue = {
   FL: Uint8Array; // ring colour level
   TUM: Int32Array;
   RINGED: Int32Array;
+  OUTLINE: Float32Array; // tumour boundary segments [x1, y1, x2, y2, ...] in grid units
   preT: number;
   sumC0: number;
 };
@@ -203,11 +223,61 @@ export function generate(seed: number): Tissue {
       RB[k] = 0.05 + 0.07 * rand();
     }
   }
-  return { seed, TY, RB, C0, RES, PH, RO, DIR, INF, KR, FL, TUM: Int32Array.from(TUM), RINGED: Int32Array.from(RINGED), preT, sumC0 };
+  return { seed, TY, RB, C0, RES, PH, RO, DIR, INF, KR, FL, TUM: Int32Array.from(TUM), RINGED: Int32Array.from(RINGED), preT, sumC0, OUTLINE: tumourOutline(isT) };
+}
+
+/** Smooth contour around the tumour nests: marching squares over a blurred tumour mask. */
+function tumourOutline(isT: Uint8Array) {
+  let a = Float32Array.from(isT);
+  for (let pass = 0; pass < 2; pass++) {
+    const b = new Float32Array(M);
+    for (let j = 0; j < N; j++)
+      for (let i = 0; i < N; i++) {
+        let sum = 0, n = 0;
+        for (let dj = -1; dj <= 1; dj++)
+          for (let di = -1; di <= 1; di++) {
+            const x = i + di, y = j + dj;
+            if (x < 0 || y < 0 || x >= N || y >= N) continue;
+            sum += a[y * N + x];
+            n++;
+          }
+        b[j * N + i] = sum / n;
+      }
+    a = b;
+  }
+  const v = (i: number, j: number) => a[j * N + i];
+  const seg: number[] = [];
+  const iso = 0.5;
+  const lerp = (x0: number, y0: number, v0: number, x1: number, y1: number, v1: number) => {
+    const t = (iso - v0) / (v1 - v0 || 1e-6);
+    return [x0 + (x1 - x0) * t, y0 + (y1 - y0) * t];
+  };
+  for (let j = 0; j < N - 1; j++)
+    for (let i = 0; i < N - 1; i++) {
+      const tl = v(i, j), tr = v(i + 1, j), br = v(i + 1, j + 1), bl = v(i, j + 1);
+      const c = (tl > iso ? 8 : 0) | (tr > iso ? 4 : 0) | (br > iso ? 2 : 0) | (bl > iso ? 1 : 0);
+      if (c === 0 || c === 15) continue;
+      const x = i + 0.5, y = j + 0.5;
+      const top = lerp(x, y, tl, x + 1, y, tr), right = lerp(x + 1, y, tr, x + 1, y + 1, br);
+      const bottom = lerp(x, y + 1, bl, x + 1, y + 1, br), left = lerp(x, y, tl, x, y + 1, bl);
+      const add = (p: number[], q: number[]) => seg.push(p[0], p[1], q[0], q[1]);
+      switch (c) {
+        case 1: case 14: add(left, bottom); break;
+        case 2: case 13: add(bottom, right); break;
+        case 3: case 12: add(left, right); break;
+        case 4: case 11: add(top, right); break;
+        case 6: case 9: add(top, bottom); break;
+        case 7: case 8: add(left, top); break;
+        case 5: add(left, top); add(bottom, right); break;
+        case 10: add(top, right); add(left, bottom); break;
+      }
+    }
+  return Float32Array.from(seg);
 }
 
 /* ---------- treatment state ---------- */
-const SPECKS = 480;
+const PULSES = 128;
+const WAVE_SPEED = 9; // cells per second
 export type Sim = {
   E: Float32Array; // antibody exposure
   BF: Float32Array; // ring remaining, 0.1..1
@@ -215,23 +285,25 @@ export type Sim = {
   simT: number;
   lx: number; // last pointer position (grid units), NaN when absent
   ly: number;
-  sx: Float32Array; sy: Float32Array; svx: Float32Array; svy: Float32Array; sl: Float32Array; // antibody specks
-  sNext: number;
+  // ripples sent out from the cursor path; each opens the barrier as its front passes
+  px: Float32Array; py: Float32Array; pt: Float32Array; pa: Float32Array; pr: Float32Array; prMax: Float32Array; prot: Float32Array;
+  pNext: number;
+  travel: number;
   rand: () => number;
   delivered: number;
 };
 export function createSim(T: Tissue): Sim {
+  const f = () => new Float32Array(PULSES);
   return {
     E: new Float32Array(M), BF: new Float32Array(M).fill(1), K: new Float32Array(M),
     simT: 0, lx: NaN, ly: NaN,
-    sx: new Float32Array(SPECKS), sy: new Float32Array(SPECKS), svx: new Float32Array(SPECKS), svy: new Float32Array(SPECKS), sl: new Float32Array(SPECKS),
-    sNext: 0, rand: mulberry32(T.seed * 31 + 5), delivered: 0,
+    px: f(), py: f(), pt: f(), pa: f(), pr: f(), prMax: f(), prot: f(),
+    pNext: 0, travel: 0, rand: mulberry32(T.seed * 31 + 5), delivered: 0,
   };
 }
 export function cloneSim(S: Sim): Sim {
-  return { ...S, E: S.E.slice(), BF: S.BF.slice(), K: S.K.slice(), sx: S.sx.slice(), sy: S.sy.slice(), svx: S.svx.slice(), svy: S.svy.slice(), sl: new Float32Array(SPECKS), rand: mulberry32(1) };
+  return { ...S, E: S.E.slice(), BF: S.BF.slice(), K: S.K.slice(), pa: new Float32Array(PULSES), rand: mulberry32(1) };
 }
-
 /** Advance the treatment by dt seconds. pointer is in grid units, or null when the cursor is away. */
 export function stepSim(T: Tissue, S: Sim, dt: number, pointer: { x: number; y: number } | null, dose: number) {
   const d01 = clamp(dose / MAX_DOSE, 0, 1);
@@ -240,34 +312,41 @@ export function stepSim(T: Tissue, S: Sim, dt: number, pointer: { x: number; y: 
     const dx = pointer.x - S.lx, dy = pointer.y - S.ly;
     const travel = Math.min(4, Math.hypot(dx, dy));
     if (d01 > 0 && travel > 0.002) {
-      const R = 2 + 3.6 * d01; // brush radius in cells
-      const amount = travel * (0.16 + 0.62 * d01);
-      S.delivered += amount;
-      const steps = Math.max(1, Math.ceil(travel / 0.5));
-      const reach = Math.ceil(R * 2);
-      for (let s = 1; s <= steps; s++) {
-        const px = S.lx + (dx * s) / steps, py = S.ly + (dy * s) / steps;
-        const i0 = Math.max(0, Math.floor(px - reach)), i1 = Math.min(N - 1, Math.ceil(px + reach));
-        const j0 = Math.max(0, Math.floor(py - reach)), j1 = Math.min(N - 1, Math.ceil(py + reach));
-        for (let j = j0; j <= j1; j++)
-          for (let i = i0; i <= i1; i++) {
-            const k = j * N + i;
-            const ddx = i + 0.5 - px, ddy = j + 0.5 - py;
-            const w = Math.exp(-(ddx * ddx + ddy * ddy) / (R * R));
-            if (w < 0.01) continue;
-            S.E[k] = Math.min(T.RES[k] * 1.6, S.E[k] + (amount / steps) * w);
-          }
-      }
-      // shed a few antibody specks along the stroke
-      const n = Math.min(10, Math.round(travel * 4 * (0.3 + d01)));
-      for (let q = 0; q < n; q++) {
-        const id = S.sNext++ % SPECKS, a = S.rand() * TAU, sp = (0.6 + S.rand() * 2.4) * (0.6 + d01);
-        const t = S.rand();
-        S.sx[id] = S.lx + dx * t; S.sy[id] = S.ly + dy * t;
-        S.svx[id] = Math.cos(a) * sp + dx * 2; S.svy[id] = Math.sin(a) * sp + dy * 2;
-        S.sl[id] = 0.6 + 0.6 * S.rand();
+      S.travel += travel;
+      S.delivered += travel * d01;
+      // drop a ripple every 1.3 cells of movement
+      const gapCells = 1.3;
+      while (S.travel >= gapCells) {
+        S.travel -= gapCells;
+        const t = 1 - S.travel / Math.max(travel, 1e-6);
+        const id = S.pNext++ % PULSES;
+        S.px[id] = S.lx + dx * clamp(t, 0, 1);
+        S.py[id] = S.ly + dy * clamp(t, 0, 1);
+        S.pt[id] = S.simT;
+        S.pa[id] = 0.22 + 0.5 * d01;
+        S.pr[id] = 0;
+        S.prMax[id] = 2.5 + 6 * d01;
+        S.prot[id] = S.rand() * TAU;
       }
     }
+  }
+  // expand the ripples; each cell is dosed once as a front crosses it, with a six-petal pattern
+  for (let q = 0; q < PULSES; q++) {
+    if (S.pa[q] <= 0) continue;
+    const r0 = S.pr[q], r1 = Math.min(S.prMax[q], r0 + WAVE_SPEED * dt);
+    const cx = S.px[q], cy = S.py[q], amp = S.pa[q], rMax = S.prMax[q], rot = S.prot[q];
+    const i0 = Math.max(0, Math.floor(cx - r1)), i1 = Math.min(N - 1, Math.ceil(cx + r1));
+    const j0 = Math.max(0, Math.floor(cy - r1)), j1 = Math.min(N - 1, Math.ceil(cy + r1));
+    for (let j = j0; j <= j1; j++)
+      for (let i = i0; i <= i1; i++) {
+        const ddx = i + 0.5 - cx, ddy = j + 0.5 - cy, d = Math.hypot(ddx, ddy);
+        if (d < r0 || d >= r1) continue;
+        const petal = 0.55 + 0.45 * Math.cos(6 * Math.atan2(ddy, ddx) + rot + d * 0.35);
+        const k = j * N + i;
+        S.E[k] = Math.min(T.RES[k] * 1.6, S.E[k] + amp * petal * (1 - 0.55 * (d / rMax)));
+      }
+    S.pr[q] = r1;
+    if (r1 >= rMax) S.pa[q] = 0;
   }
   S.lx = pointer ? pointer.x : NaN;
   S.ly = pointer ? pointer.y : NaN;
@@ -287,14 +366,6 @@ export function stepSim(T: Tissue, S: Sim, dt: number, pointer: { x: number; y: 
     const k = TUM[n];
     const open = (1 - S.BF[k]) / 0.9;
     if (open > 0.3 && S.K[k] < KR[k]) S.K[k] = Math.min(KR[k], S.K[k] + dt * 0.26 * sm(0.3, 0.85, open));
-  }
-  // specks drift and fade
-  const damp = Math.pow(0.05, dt);
-  for (let i = 0; i < SPECKS; i++) {
-    if (S.sl[i] <= 0) continue;
-    S.sx[i] += S.svx[i] * dt; S.sy[i] += S.svy[i] * dt;
-    S.svx[i] *= damp; S.svy[i] *= damp;
-    S.sl[i] -= dt * 0.9;
   }
 }
 
@@ -338,8 +409,9 @@ export function draw(
   S: Sim,
   view: View,
   t: number,
-  { bg = PALETTE.ink as string | null, reduceMotion = false } = {},
+  { bg = THEMES.neon.bg as string | null, reduceMotion = false, style = "neon" as StyleName } = {},
 ) {
+  const theme = THEMES[style], fibCols = FIB[style];
   const { p, ox, oy, W, H, unit } = view;
   ctx.globalCompositeOperation = "source-over";
   ctx.globalAlpha = 1;
@@ -411,36 +483,31 @@ export function draw(
         }
       }
     }
-  ctx.globalAlpha = 0.96;
+  ctx.globalAlpha = theme.ringAlpha;
   for (let l = 0; l < FIB_LV; l++) {
-    ctx.fillStyle = FIB[l];
+    ctx.fillStyle = fibCols[l];
     ctx.fill(rings[l]);
   }
   for (let ty = 0; ty < 6; ty++)
     for (let lv = 0; lv < 4; lv++) {
       ctx.globalAlpha = ALPHAS[lv];
-      ctx.fillStyle = PALETTE.inner[ty];
+      ctx.fillStyle = theme.inner[ty];
       ctx.fill(inner[ty * 4 + lv]);
     }
 
-  // antibody specks shed by the cursor
-  const specks = [new Path2D(), new Path2D(), new Path2D()];
-  const sr = Math.max(0.8 * unit, p * 0.07);
-  for (let s = 0; s < S.sl.length; s++) {
-    const l = S.sl[s];
-    if (l <= 0) continue;
-    const x = ox + S.sx[s] * p, y = oy + S.sy[s] * p;
-    if (x < -p || y < -p || x > W + p || y > H + p) continue;
-    const b = l > 0.66 ? 0 : l > 0.33 ? 1 : 2;
-    specks[b].moveTo(x + sr, y);
-    specks[b].arc(x, y, sr, 0, TAU);
+  // tumour boundary, always visible
+  const O = T.OUTLINE;
+  if (O.length) {
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = theme.outline;
+    ctx.lineWidth = Math.max(1, 1.4 * unit);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    for (let s = 0; s < O.length; s += 4) {
+      ctx.moveTo(ox + O[s] * p, oy + O[s + 1] * p);
+      ctx.lineTo(ox + O[s + 2] * p, oy + O[s + 3] * p);
+    }
+    ctx.stroke();
   }
-  ctx.globalCompositeOperation = "lighter";
-  ctx.fillStyle = PALETTE.speck;
-  [0.85, 0.5, 0.22].forEach((al, b) => {
-    ctx.globalAlpha = al;
-    ctx.fill(specks[b]);
-  });
-  ctx.globalCompositeOperation = "source-over";
   ctx.globalAlpha = 1;
 }

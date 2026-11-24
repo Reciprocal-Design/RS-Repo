@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ExportPanel, { type Clip } from "./ExportPanel";
 import {
-  DAYS_PER_S, LOOP, MAX_DOSE, N, PALETTE, UM, clamp, cloneSim, computeView, createSim, draw, generate, metrics, stepSim, sweepPointer,
-  type Sim, type Tissue, type View,
+  DAYS_PER_S, LOOP, MAX_DOSE, N, THEMES, UM, clamp, cloneSim, computeView, createSim, draw, generate, metrics, stepSim, sweepPointer,
+  type Sim, type StyleName, type Tissue, type View,
 } from "@/lib/engine";
 import type { ExportApp } from "@/lib/exportMedia";
 
 const SEED_KEY = "stroma-field-vercel.seed";
+const STYLE_KEY = "stroma-field-vercel.style";
 const SWEEP_DT = 1 / 120;
 
 type Engine = {
@@ -24,6 +25,7 @@ type Engine = {
   clip: Clip;
   hold: Sim | null;
   sweep: Sim | null;
+  style: StyleName;
 };
 
 export default function StromaField() {
@@ -39,6 +41,18 @@ export default function StromaField() {
   const [hud, setHud] = useState({ field: "", scaleUm: 200, scalePx: 60 });
   const [touched, setTouched] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [style, setStyleState] = useState<StyleName>("neon");
+  const setStyle = useCallback((st: StyleName) => {
+    setStyleState(st);
+    if (eng.current) eng.current.style = st;
+    try {
+      localStorage.setItem(STYLE_KEY, st);
+    } catch {}
+  }, []);
+  const theme = THEMES[style];
+  useEffect(() => {
+    document.documentElement.dataset.style = style;
+  }, [style]);
 
   const setDose = useCallback((v: number) => {
     const d = clamp(v, 0, MAX_DOSE);
@@ -75,8 +89,17 @@ export default function StromaField() {
       const s = Number(localStorage.getItem(SEED_KEY));
       if (Number.isFinite(s) && s > 0) seed = s;
     } catch {}
+    let st: StyleName = "neon";
+    const qs = new URLSearchParams(location.search).get("style");
+    if (qs === "neon" || qs === "clinical") st = qs;
+    else
+      try {
+        const saved = localStorage.getItem(STYLE_KEY);
+        if (saved === "neon" || saved === "clinical") st = saved;
+      } catch {}
+    setStyleState(st);
     const T = generate(seed);
-    const e: Engine = { T, S: createSim(T), view: computeView(2, 2, 1, false), dpr: 1, animT: 0, pointer: null, hist: [], exporting: false, exportBg: PALETTE.ink, clip: "sweep", hold: null, sweep: null };
+    const e: Engine = { T, S: createSim(T), view: computeView(2, 2, 1, false), dpr: 1, animT: 0, pointer: null, hist: [], exporting: false, exportBg: THEMES[st].bg, clip: "sweep", hold: null, sweep: null, style: st };
     eng.current = e;
     const reduce = matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -119,14 +142,14 @@ export default function StromaField() {
           if (e.hist.length > 240) e.hist.shift();
         }
       }
-      draw(ctx, e.T, e.S, e.view, e.animT, { bg: PALETTE.ink, reduceMotion: reduce.matches });
+      draw(ctx, e.T, e.S, e.view, e.animT, { bg: THEMES[e.style].bg, reduceMotion: reduce.matches, style: e.style });
       uiAcc += dt;
       if (uiAcc > 0.1) {
         uiAcc = 0;
         const mt = metrics(e.T, e.S);
         const prev = e.hist.length > 8 ? e.hist[e.hist.length - 9] : mt.burden, d = mt.burden - prev;
         setReadout({ ...mt, day: e.S.simT * DAYS_PER_S, trend: d < -0.3 ? "shrinking" : d > 0.3 ? "regrowing" : "stable" });
-        drawSpark(spark, e.hist, e.dpr);
+        drawSpark(spark, e.hist, e.dpr, THEMES[e.style].inner[0], e.style === "clinical" ? "rgba(60,60,80,.16)" : "rgba(154,148,182,.18)");
       }
     };
     raf = requestAnimationFrame(frame);
@@ -197,7 +220,7 @@ export default function StromaField() {
     async renderAt(t: number) {
       const e = eng.current!, ctx = canvasRef.current!.getContext("2d")!;
       if (e.clip === "loop") {
-        draw(ctx, e.T, e.hold!, e.view, t, { bg: e.exportBg });
+        draw(ctx, e.T, e.hold!, e.view, t, { bg: e.exportBg, style: e.style });
         return;
       }
       // scripted sweep: replay the treatment deterministically from untouched tissue up to t
@@ -212,7 +235,7 @@ export default function StromaField() {
         const dt = Math.min(SWEEP_DT, t - S.simT);
         stepSim(e.T, S, dt, sweepPointer(S.simT + dt, e.view), dose);
       }
-      draw(ctx, e.T, S, e.view, t, { bg: e.exportBg });
+      draw(ctx, e.T, S, e.view, t, { bg: e.exportBg, style: e.style });
     },
     beginExport({ width, height, transparent, matte }) {
       const e = eng.current!, canvas = canvasRef.current!, stage = stageRef.current!;
@@ -224,7 +247,7 @@ export default function StromaField() {
       canvas.width = width;
       canvas.height = height;
       e.view = computeView(width, height, Math.max(1, Math.min(width, height) / 1080), true);
-      e.exportBg = transparent ? null : matte || PALETTE.ink;
+      e.exportBg = transparent ? null : matte || THEMES[e.style].bg;
       return () => {
         e.exporting = false;
         e.hold = e.sweep = null;
@@ -240,7 +263,7 @@ export default function StromaField() {
   const doseLabel = `${(dose || 12).toFixed(1)} mg/kg`;
 
   return (
-    <div className="app">
+    <div className="app" data-style={style}>
       <main className="stage" ref={stageRef}>
         <canvas
           id="map"
@@ -276,6 +299,14 @@ export default function StromaField() {
           <p>A simulated tumour section. Each dot is a 20 µm patch of tissue: the core shows its main cell type, the ring shows the collagen wrapped around it. Your cursor carries the antibody.</p>
         </header>
 
+        <div className="style-switch" role="group" aria-label="Colour style">
+          {(["neon", "clinical"] as const).map((st) => (
+            <button key={st} type="button" className="chip" aria-pressed={style === st} onClick={() => setStyle(st)}>
+              {st === "neon" ? "Neon" : "Clinical"}
+            </button>
+          ))}
+        </div>
+
         <section className="dose" aria-labelledby="doseLabel">
           <div className="head">
             <h2 className="label" id="doseLabel">Antibody dose</h2>
@@ -297,7 +328,7 @@ export default function StromaField() {
             ))}
           </div>
           <p className="help" id="doseHelp">
-            Move across the tissue to break down the collagen rings in your path. A higher dose clears a wider path and needs fewer passes; dense orange rings take longer. Where a ring opens, the drug reaches the tumour cell inside, it dies back and T cells move in. Leave an area alone and its barrier slowly grows back.
+            Move across the tissue to send out ripples of antibody. The collagen rings come down in a petal pattern as each ripple spreads; a higher dose sends wider, stronger ripples, and dense rings take more passes. Where a ring opens, the drug reaches the tumour cell inside, it dies back and T cells move in. Leave an area alone and its barrier slowly grows back.
           </p>
         </section>
 
@@ -325,7 +356,7 @@ export default function StromaField() {
           <h2 className="label" id="keyLabel">Core: cell type</h2>
           <ul>
             {["Tumour cell", "Fibroblast (CAF)", "Macrophage", "Cytotoxic T cell", "Blood vessel", "Dying cell"].map((n, i) => (
-              <li key={n}><span className="dot" style={{ background: PALETTE.inner[i] }} />{n}</li>
+              <li key={n}><span className="dot" style={{ background: theme.inner[i] }} />{n}</li>
             ))}
           </ul>
           <div className="ringkey">
@@ -333,7 +364,7 @@ export default function StromaField() {
             <h2 className="label">Ring: collagen barrier</h2>
             <div><div className="ramp" /><div className="ramp-labels"><span>Loose fibres</span><span>Dense, cross-linked</span></div></div>
             <div className="frontkey"><i className="frag" /><span><em>Broken ring</em>: barrier being digested</span></div>
-            <div className="frontkey abkey"><i /><span><em>Lilac specks</em>: antibody shed by the cursor</span></div>
+            <div className="frontkey"><i className="edge" /><span><em>Outline</em>: where the tumour started</span></div>
           </div>
         </section>
 
@@ -346,15 +377,15 @@ export default function StromaField() {
         <p className="fine">An abstract illustration of stromal barriers, not a pharmacological model. One simulated day passes every half second.</p>
       </aside>
 
-      <ExportPanel open={exportOpen} onClose={() => setExportOpen(false)} app={app} setClip={app.setClip} doseLabel={doseLabel} />
+      <ExportPanel open={exportOpen} onClose={() => setExportOpen(false)} app={app} setClip={app.setClip} doseLabel={doseLabel} matte={theme.bg} />
     </div>
   );
 }
 
-function drawSpark(c: HTMLCanvasElement, hist: number[], dpr: number) {
+function drawSpark(c: HTMLCanvasElement, hist: number[], dpr: number, color: string, grid: string) {
   const g = c.getContext("2d")!, W = c.width, H = c.height;
   g.clearRect(0, 0, W, H);
-  g.strokeStyle = "rgba(154,148,182,.18)";
+  g.strokeStyle = grid;
   g.lineWidth = 1;
   for (const v of [0, 50, 100]) {
     const y = Math.round(4 * dpr + (1 - v / 100) * (H - 8 * dpr)) + 0.5;
@@ -374,16 +405,18 @@ function drawSpark(c: HTMLCanvasElement, hist: number[], dpr: number) {
   g.lineTo(xAt(0), H);
   g.closePath();
   const grd = g.createLinearGradient(0, 0, 0, H);
-  grd.addColorStop(0, "rgba(255,47,208,.32)");
-  grd.addColorStop(1, "rgba(255,47,208,0)");
+  grd.addColorStop(0, color);
+  grd.addColorStop(1, "transparent");
+  g.globalAlpha = 0.3;
   g.fillStyle = grd;
   g.fill();
+  g.globalAlpha = 1;
   line();
-  g.strokeStyle = PALETTE.inner[0];
+  g.strokeStyle = color;
   g.lineWidth = 1.6 * dpr;
   g.stroke();
   g.beginPath();
   g.arc(xAt(hist.length - 1), yAt(hist[hist.length - 1]), 3 * dpr, 0, Math.PI * 2);
-  g.fillStyle = "#fff";
+  g.fillStyle = color;
   g.fill();
 }

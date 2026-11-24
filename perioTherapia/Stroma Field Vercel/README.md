@@ -6,12 +6,13 @@ A neon density map of a tumour section. Each dot is a 20 µm patch of tissue: th
 
 ## How it behaves
 
-- **The cursor carries the antibody.** Moving across the tissue builds up exposure along your path. Rings in the path break into fibre fragments that drift apart and thin out. Dense collagen needs more passes than loose fibres.
+- **Two styles.** Neon (black ground, saturated colours) and Clinical (light grey ground, muted pinks, periwinkles and graphite fibres). Switch in the panel, or open the page with `?style=clinical` or `?style=neon`. The last choice is remembered.
+- **The cursor carries the antibody.** Moving across the tissue sends out ripples from your path. As each ripple spreads, the collagen rings it crosses come down in a six-petal pattern, breaking into fibre fragments that drift apart and thin out. Dense collagen needs more passes than loose fibres.
+- **Tumour boundary.** A thin outline traces where the tumour started, so its bounds stay visible as it clears.
 - **Movement, not hovering.** Holding the cursor still delivers nothing; the amount scales with how far you move. On touch screens, drag.
-- **Antibody dose bar** (0–20 mg/kg) sets the brush: a higher dose clears a wider path and needs fewer passes. At 0 the cursor does nothing.
+- **Antibody dose bar** (0–20 mg/kg) sets the ripples: a higher dose sends wider, stronger ripples. At 0 the cursor does nothing.
 - **Tumour response.** Once a tumour cell's ring is open, the drug reaches it: it dies back over a few seconds, and about half are replaced by T cells (cyan).
 - **Regrowth.** Exposure fades slowly, so a barrier you leave alone grows back. Tumour cells that already died stay cleared until you press Restart.
-- Lilac specks are antibody shed from the cursor as it moves.
 - Keyboard: focus the map and use the arrow keys to move a virtual cursor. Space pauses, R restarts, N makes new tissue, E opens Export.
 
 ## Export
