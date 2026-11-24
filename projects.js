@@ -14,5 +14,6 @@ window.RS_META = {
   "Toregem/Progress Bar": { description: "Animated tooth growth stages, a circle denting the line as it travels", status: "wip" },
   "perioTherapia": { description: "Tumour microenvironment visuals" },
   "perioTherapia/Barrier Field": { description: "Soft, abstract tumour mass under near-invisible layers of glass that refract when a pulse presses on them", status: "wip" },
+  "perioTherapia/Clear Path": { description: "Radial burst of bars whose layers thin out and fill back in, opening a path to the centre", status: "wip" },
   "Tuari/Shape Mosaic": { description: "Rebuild an image from one SVG shape at different sizes, with subtle looping motion", status: "wip" },
 };

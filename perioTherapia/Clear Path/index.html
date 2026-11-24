@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clear Path — perioTherapia</title>
+<style>
+  :root{
+    --bg: #f3f2f0;
+    --panel: #ffffff;
+    --line: #e6e3df;
+    --text: #1d1c1b;
+    --muted: #8a8580;
+    --accent: #e8604a;
+    --accent-soft: #fdeeea;
+    --warn: #a8661a;
+    --error: #c2321f;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", Consolas, monospace;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:13px/1.5 var(--sans); display:flex; min-height:100vh;
+  }
+  #stage{
+    flex:1; min-width:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:28px; gap:14px; position:relative;
+  }
+  #canvasWrap{ position:relative; max-width:100%; }
+  canvas#c{
+    display:block; max-width:calc(100vw - 400px); max-height:calc(100vh - 140px);
+    width:auto; height:auto; border-radius:4px;
+    box-shadow:0 1px 2px rgba(0,0,0,.04), 0 12px 40px rgba(60,40,30,.08);
+  }
+  canvas#c.checker{
+    background-color:#fafafa;
+    background-image:
+      linear-gradient(45deg, #e9e9e9 25%, transparent 25%),
+      linear-gradient(-45deg, #e9e9e9 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #e9e9e9 75%),
+      linear-gradient(-45deg, transparent 75%, #e9e9e9 75%);
+    background-size:20px 20px;
+    background-position:0 0, 0 10px, 10px -10px, -10px 0;
+  }
+  #hint{
+    position:absolute; left:10px; bottom:10px; font-size:11px; color:var(--muted);
+    background:rgba(255,255,255,.75); padding:3px 8px; border-radius:20px; pointer-events:none;
+  }
+  #transport{ display:flex; gap:10px; align-items:center; width:min(720px, 100%); }
+  #transport input[type=range]{ flex:1; }
+  #timeLbl, #densLbl{ font:11px var(--mono); color:var(--muted); min-width:92px; text-align:right; }
+
+  #panel{
+    width:340px; flex:none; background:var(--panel); border-left:1px solid var(--line);
+    padding:22px 20px 40px; overflow-y:auto; max-height:100vh;
+  }
+  .brand{ font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); margin:0; }
+  h1{ font-size:20px; font-weight:600; letter-spacing:-.01em; margin:2px 0 4px; }
+  .sub{ color:var(--muted); font-size:12px; margin:0 0 6px; }
+  .group{ border-top:1px solid var(--line); padding:14px 0 16px; }
+  .group h2{ font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; margin:0 0 10px; }
+  .ctl{ margin-top:10px; }
+  .ctl:first-of-type{ margin-top:0; }
+  label{ display:flex; justify-content:space-between; gap:8px; font-size:12px; color:var(--muted); margin-bottom:4px; }
+  label .val{ color:var(--text); font-family:var(--mono); font-size:11px; }
+  input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:18px; background:transparent; margin:0; cursor:pointer; }
+  input[type=range]::-webkit-slider-runnable-track{ height:3px; background:#e9e5e1; border-radius:3px; }
+  input[type=range]::-moz-range-track{ height:3px; background:#e9e5e1; border-radius:3px; }
+  input[type=range]::-moz-range-progress{ height:3px; background:var(--accent); border-radius:3px; }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:14px; height:14px; margin-top:-5.5px; border-radius:50%; background:#fff; border:2px solid var(--accent); }
+  input[type=range]::-moz-range-thumb{ width:10px; height:10px; border-radius:50%; background:#fff; border:2px solid var(--accent); }
+  select, input[type=number], input[type=text]{
+    width:100%; background:#fff; border:1px solid var(--line); color:var(--text);
+    font:12px var(--sans); padding:7px 8px; border-radius:6px;
+  }
+  input[type=color]{ width:100%; height:32px; border:1px solid var(--line); border-radius:6px; background:#fff; padding:2px; }
+  .row{ display:flex; gap:8px; }
+  .row > *{ flex:1; min-width:0; }
+  button{
+    font:600 12px var(--sans); padding:9px 12px; border-radius:6px; cursor:pointer;
+    border:1px solid var(--accent); background:var(--accent); color:#fff; width:100%; transition:.15s;
+  }
+  button:hover{ filter:brightness(1.05); }
+  button.ghost{ background:#fff; color:var(--text); border-color:var(--line); }
+  button.ghost:hover{ background:var(--accent-soft); border-color:#f3c9bf; filter:none; }
+  button:disabled{ opacity:.45; cursor:default; }
+  #transport button{ width:auto; min-width:84px; }
+  :focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .toggle{ display:flex; align-items:center; justify-content:space-between; cursor:pointer; margin-top:10px; }
+  .toggle input{ accent-color:var(--accent); width:16px; height:16px; }
+  .toggle.disabled{ opacity:.45; }
+  .note{ font-size:11px; color:var(--muted); line-height:1.55; margin:6px 0 0; }
+  .note.warn{ color:var(--warn); }
+  .note b{ color:var(--text); font-weight:600; }
+  .outSize{ font-size:12px; margin-top:10px; }
+  .cmdRow{ display:flex; gap:6px; margin-top:6px; }
+  .cmdRow code{
+    flex:1; display:block; background:#f7f6f4; border:1px solid var(--line); padding:8px; border-radius:6px;
+    font:10px/1.5 var(--mono); white-space:pre-wrap; word-break:break-all;
+  }
+  .cmdRow button{ width:auto; }
+  #exProgressWrap{ margin-top:10px; }
+  progress{ width:100%; height:8px; accent-color:var(--accent); }
+  #exStatus{ font-size:11px; color:var(--muted); margin-top:4px; }
+  #exError{ color:var(--error); font-size:12px; margin-top:8px; white-space:pre-wrap; }
+  #exResult a{ display:block; color:var(--accent); margin-top:8px; }
+  #exResult video, #exResult img{ width:100%; margin-top:8px; border:1px solid var(--line); border-radius:6px; }
+  .hidden{ display:none !important; }
+
+  @media (max-width: 860px){
+    body{ flex-direction:column; }
+    #stage{ padding:16px; }
+    canvas#c{ max-width:100%; max-height:70vh; }
+    #panel{ width:auto; max-height:none; border-left:0; border-top:1px solid var(--line); padding:20px 16px 40px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="canvasWrap">
+    <canvas id="c" width="1080" height="1080"></canvas>
+    <div id="hint">Space to play or pause</div>
+  </div>
+  <div id="transport">
+    <button id="playBtn" class="ghost" type="button">Pause</button>
+    <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Timeline">
+    <span id="densLbl" title="How many of the bars are showing right now">100% dense</span>
+    <span id="timeLbl">0.00 / 10.00s</span>
+  </div>
+</div>
+
+<div id="panel">
+  <p class="brand">perioTherapia</p>
+  <h1>Clear Path</h1>
+  <p class="sub">A burst of bars around a bright core. The layers thin out and fill back in over time, opening a clearer route to the centre.</p>
+
+  <div class="group">
+    <h2>Composition</h2>
+    <select id="resolutionPreset" aria-label="Composition size">
+      <option value="1080x1080">1080 × 1080 (square)</option>
+      <option value="1920x1080">1920 × 1080 (16:9)</option>
+      <option value="1440x840">1440 × 840 (web hero)</option>
+      <option value="1080x1920">1080 × 1920 (vertical)</option>
+      <option value="custom">Custom…</option>
+    </select>
+    <div id="customResWrap" class="row hidden" style="margin-top:8px">
+      <div><label for="customWidth">Width</label><input type="number" id="customWidth" value="1080" min="200" max="3840"></div>
+      <div><label for="customHeight">Height</label><input type="number" id="customHeight" value="1080" min="200" max="3840"></div>
+    </div>
+    <div id="g-comp"></div>
+    <div class="row ctl">
+      <div><label for="bgColor">Background</label><input type="color" id="bgColor" value="#000000"></div>
+      <div><label for="fgColor">Bars</label><input type="color" id="fgColor" value="#a3e635"></div>
+    </div>
+  </div>
+
+  <div class="group">
+    <h2>Structure</h2>
+    <div id="g-struct"></div>
+    <label class="toggle" for="solidInner"><span>Solid inner ring</span><input type="checkbox" id="solidInner"></label>
+  </div>
+
+  <div class="group">
+    <h2>Density over time</h2>
+    <div id="g-dens"></div>
+    <div class="ctl">
+      <label for="style">Bars leave by</label>
+      <select id="style">
+        <option value="shrink">Shrinking</option>
+        <option value="fade">Fading</option>
+        <option value="shrinkfade">Shrinking and fading</option>
+        <option value="out">Sliding outwards</option>
+        <option value="aside">Sliding aside</option>
+      </select>
+    </div>
+    <div class="row ctl">
+      <div><label for="seed">Seed</label><input type="number" id="seed" value="11" min="1" max="99999"></div>
+      <div style="display:flex;align-items:flex-end"><button id="newPattern" class="ghost" type="button">New pattern</button></div>
+    </div>
+  </div>
+
+  <div class="group">
+    <h2>Movement</h2>
+    <div id="g-move"></div>
+  </div>
+
+  <div class="group">
+    <button id="resetBtn" class="ghost" type="button">Reset all settings</button>
+  </div>
+
+  <div class="group" id="exportPanel">
+    <h2>Export</h2>
+
+    <label for="exFormat">Format</label>
+    <select id="exFormat">
+      <option value="mp4">MP4 (H.264)</option>
+      <option value="webm">WebM (VP9)</option>
+      <option value="png-seq">PNG sequence (.zip)</option>
+      <option value="png">Single frame PNG</option>
+    </select>
+    <p id="exSupport" class="note warn hidden" role="status"></p>
+
+    <label class="toggle" for="exTransparent" id="exTransparentRow">
+      <span>Transparent background</span>
+      <input type="checkbox" id="exTransparent">
+    </label>
+    <p id="exAlphaNote" class="note"></p>
+    <div id="exMatteWrap" class="ctl">
+      <label for="exMatte">Background colour (matte)</label>
+      <input type="color" id="exMatte" value="#000000">
+    </div>
+
+    <div class="ctl">
+      <label for="exSize">Size</label>
+      <select id="exSize">
+        <option value="canvas">Same as composition</option>
+        <option value="1920x1080">1080p · 1920 × 1080</option>
+        <option value="2560x1440">1440p · 2560 × 1440</option>
+        <option value="3840x2160">4K · 3840 × 2160</option>
+        <option value="1080x1080">Square · 1080 × 1080</option>
+        <option value="1080x1920">Vertical · 1080 × 1920</option>
+        <option value="custom">Custom W × H…</option>
+      </select>
+      <div id="exCustomSizeWrap" class="row hidden" style="margin-top:8px">
+        <div><label for="exW">W</label><input type="number" id="exW" value="1920" min="16" max="7680"></div>
+        <div><label for="exH">H</label><input type="number" id="exH" value="1080" min="16" max="7680"></div>
+      </div>
+      <p class="note" id="exScaleNote"></p>
+    </div>
+
+    <div class="ctl">
+      <label for="exFps">Frame rate</label>
+      <select id="exFps">
+        <option value="24">24</option>
+        <option value="25">25</option>
+        <option value="30" selected>30</option>
+        <option value="50">50</option>
+        <option value="60">60</option>
+        <option value="23.976">23.976 (24000/1001)</option>
+        <option value="29.97">29.97 (30000/1001)</option>
+        <option value="custom">Custom…</option>
+      </select>
+      <div id="exFpsCustomWrap" class="hidden" style="margin-top:8px">
+        <label for="exFpsCustom">Custom fps</label>
+        <input type="number" id="exFpsCustom" value="30" min="1" max="120" step="any">
+      </div>
+    </div>
+
+    <div id="exRangeWrap" class="ctl">
+      <div class="row">
+        <div><label for="exStart">Start (s)</label><input type="number" id="exStart" value="0" min="0" step="0.1"></div>
+        <div><label for="exEnd">End (s)</label><input type="number" id="exEnd" value="12" min="0.1" step="0.1"></div>
+        <div><label for="exLoops">Loops</label><input type="number" id="exLoops" value="1" min="1" max="20" step="1"></div>
+      </div>
+      <p class="note" id="exLoopNote"></p>
+    </div>
+    <p id="exStillNote" class="note hidden">Captures the frame shown in the preview. Pause or scrub to pick a moment.</p>
+
+    <div id="exQualityWrap" class="ctl">
+      <label for="exQuality">Quality</label>
+      <select id="exQuality">
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high" selected>High</option>
+        <option value="veryHigh">Very high</option>
+      </select>
+    </div>
+
+    <div class="ctl">
+      <label for="exName">Filename</label>
+      <input type="text" id="exName" spellcheck="false" autocomplete="off">
+      <p class="note">Saves as <span id="exFileOut" style="color:var(--text)"></span></p>
+    </div>
+
+    <div id="exFfmpegWrap" class="ctl hidden">
+      <label>ProRes 4444 with alpha (After Effects, Premiere, FCP)</label>
+      <div class="cmdRow">
+        <code id="exFfmpeg"></code>
+        <button id="exCopyFfmpeg" class="ghost" type="button" aria-label="Copy ffmpeg command">Copy</button>
+      </div>
+    </div>
+
+    <p class="outSize" id="exOutSize"></p>
+
+    <div class="row" style="margin-top:10px">
+      <div><button id="exportBtn" type="button">Export</button></div>
+      <div id="exCancelWrap" class="hidden"><button id="exCancelBtn" class="ghost" type="button">Cancel</button></div>
+    </div>
+    <button id="exRealtimeBtn" class="ghost hidden" type="button" style="margin-top:8px">Record WebM in real time (fallback)</button>
+
+    <div id="exProgressWrap" class="hidden">
+      <progress id="exProgress" value="0" max="1"></progress>
+      <div id="exStatus" aria-live="polite"></div>
+    </div>
+    <div id="exError" role="alert"></div>
+    <div id="exResult"></div>
+  </div>
+
+  <div class="group">
+    <h2>Good to know</h2>
+    <p class="note"><b>MP4 has no transparency.</b> It's flattened onto the background colour. For alpha on the web (Framer, WordPress) use WebM; for editors use the PNG sequence.</p>
+    <p class="note"><b>Transparent WebM</b> needs Chrome or Edge to make, and won't open in QuickTime, Safari or most editors. For After Effects, Premiere, DaVinci or Final Cut, export the <b>PNG sequence</b> and convert it with the ffmpeg command shown there.</p>
+    <p class="note">The animation loops seamlessly, so exporting whole loops gives a clip you can repeat. Video export uses WebCodecs: host this page over HTTPS (or localhost) rather than double-clicking the file.</p>
+  </div>
+</div>
+
+<script>
+// =====================================================================
+// Clear Path — a radial burst of bars whose layers thin out and fill in.
+// Everything on screen is a pure function of (time, settings, seed), so the
+// live preview and the exporter draw identical frames.
+// =====================================================================
+const TAU = Math.PI * 2;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: true });
+
+// ---------- settings ----------
+const DEFAULTS = {
+  loop: 10, fill: 0.94, bg: '#000000', fg: '#a3e635',
+  spokes: 48, layers: 8, core: 0.16, barW: 0.034, duty: 0.5, gap: 0, solidInner: true,
+  cycles: 1, dMin: 0.2, dMax: 1, hold: 0.4, wave: 0.5, corridors: 0.35, soft: 0.3, style: 'shrink', seed: 11,
+  pathMove: 0, sway: 0, glow: 0.4,
+  res: '1080x1080', customW: 1080, customH: 1080,
+};
+const P = { ...DEFAULTS };
+const SETTINGS_KEY = 'periotherapia.clearpath.settings';
+const STYLES = ['shrink', 'fade', 'shrinkfade', 'out', 'aside'];
+
+// slider definitions: [key, label, min, max, step, format, container]
+const pct = v => `${Math.round(v*100)}%`;
+const SLIDERS = [
+  ['loop', 'Loop length', 4, 30, 1, v => `${v}s`, 'g-comp'],
+  ['fill', 'Size in frame', 0.4, 1.3, 0.01, pct, 'g-comp'],
+  ['spokes', 'Spokes', 16, 96, 4, v => v, 'g-struct'],
+  ['layers', 'Layers', 3, 12, 1, v => v, 'g-struct'],
+  ['core', 'Centre size', 0.05, 0.4, 0.005, pct, 'g-struct'],
+  ['barW', 'Bar width', 0.01, 0.07, 0.001, v => v.toFixed(3), 'g-struct'],
+  ['duty', 'Wedge width near centre', 0.25, 0.9, 0.01, pct, 'g-struct'],
+  ['gap', 'Gap between layers', 0, 0.6, 0.01, pct, 'g-struct'],
+  ['cycles', 'Breaths per loop', 1, 4, 1, v => v, 'g-dens'],
+  ['dMax', 'Most dense', 0.2, 1, 0.01, pct, 'g-dens'],
+  ['dMin', 'Least dense', 0, 1, 0.01, pct, 'g-dens'],
+  ['hold', 'Hold at each end', 0, 1, 0.01, pct, 'g-dens'],
+  ['wave', 'Clears from the outside in', 0, 1, 0.01, pct, 'g-dens'],
+  ['corridors', 'Clears in paths to the centre', 0, 1, 0.01, pct, 'g-dens'],
+  ['soft', 'Transition softness', 0.05, 1, 0.01, pct, 'g-dens'],
+  ['pathMove', 'Paths travel round', -3, 3, 1, v => v === 0 ? 'still' : `${v > 0 ? '+' : ''}${v} per loop`, 'g-move'],
+  ['sway', 'Layer sway', 0, 8, 0.1, v => `±${v.toFixed(1)}°`, 'g-move'],
+  ['glow', 'Centre glow when open', 0, 1, 0.01, pct, 'g-move'],
+];
+for(const [key, label, min, max, step, , box] of SLIDERS){
+  const wrap = document.createElement('div');
+  wrap.className = 'ctl';
+  wrap.innerHTML = `<label for="s_${key}">${label} <span class="val" id="v_${key}"></span></label>
+    <input type="range" id="s_${key}" min="${min}" max="${max}" step="${step}">`;
+  document.getElementById(box).appendChild(wrap);
+}
+
+const ui = {};
+document.querySelectorAll('[id]').forEach(el => { ui[el.id] = el; });
+
+// Settings persist across refreshes, merged onto the defaults and clamped to the slider ranges.
+function loadSettings(){
+  try{
+    const d = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null');
+    if(!d) return;
+    const ranges = Object.fromEntries(SLIDERS.map(([k, , min, max]) => [k, [min, max]]));
+    for(const k of Object.keys(DEFAULTS)){
+      if(typeof d[k] !== typeof DEFAULTS[k]) continue;
+      let v = d[k];
+      if(typeof v === 'number'){
+        if(!isFinite(v)) continue;
+        if(ranges[k]) v = Math.min(ranges[k][1], Math.max(ranges[k][0], v));
+      }
+      P[k] = v;
+    }
+    if(!STYLES.includes(P.style)) P.style = DEFAULTS.style;
+    if(![...ui.resolutionPreset.options].some(o => o.value === P.res)) P.res = DEFAULTS.res;
+  } catch(e){ /* storage unavailable: defaults */ }
+}
+function saveSettings(){
+  try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(P)); } catch(e){ /* ignore */ }
+}
+function syncUI(){
+  for(const [key, , , , , fmt] of SLIDERS){
+    ui['s_' + key].value = P[key];
+    ui['v_' + key].textContent = fmt(+P[key]);
+  }
+  ui.resolutionPreset.value = P.res; ui.customWidth.value = P.customW; ui.customHeight.value = P.customH;
+  ui.customResWrap.classList.toggle('hidden', P.res !== 'custom');
+  ui.seed.value = P.seed; ui.bgColor.value = P.bg; ui.exMatte.value = P.bg; ui.fgColor.value = P.fg;
+  ui.style.value = P.style; ui.solidInner.checked = P.solidInner;
+}
+
+// ---------- utilities ----------
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function hash2(ix, iy, s){
+  let h = Math.imul(ix, 374761393) + Math.imul(iy, 668265263) + Math.imul(s, 1442695041);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+const clamp01 = x => x < 0 ? 0 : x > 1 ? 1 : x;
+const smooth = x => { x = clamp01(x); return x*x*(3 - 2*x); };
+
+// ---------- render state ----------
+let exporting = false;
+let renderTransparent = false;  // true while exporting with alpha, or previewing it
+let exportMatte = null;         // matte colour while exporting
+let previewT = 0;
+let compW = 1080, compH = 1080;
+let exportUIReady = false;
+let lastDensity = 1;
+
+function geom(){
+  const W = canvas.width, H = canvas.height, u = Math.min(W, H);
+  return { W, H, u, cx: W/2, cy: H/2 };
+}
+
+// ---------- density ----------
+// Each layer breathes between "most" and "least dense". With "clears from the
+// outside in", inner layers lag behind outer ones, so the thinning travels toward
+// the centre. A whole number of breaths per loop keeps it seamless.
+function densityAt(t, L){
+  const fromOuter = P.layers > 1 ? (P.layers - 1 - L)/(P.layers - 1) : 0;
+  const lag = P.wave*0.45*(1 - fromOuter);
+  const ph = t*P.cycles/P.loop - lag;
+  let s = 0.5 + 0.5*Math.cos(TAU*ph);            // 1 = dense, 0 = open
+  // "hold" flattens the curve at both ends so it rests dense and rests open
+  const k = 1 + P.hold*6;
+  s = s < 0.5 ? 0.5*Math.pow(2*s, k) : 1 - 0.5*Math.pow(2*(1 - s), k);
+  const lo = Math.min(P.dMin, P.dMax), hi = Math.max(P.dMin, P.dMax);
+  return lo + (hi - lo)*s;
+}
+
+// Low-frequency angular field: bars at similar angles clear together, opening paths.
+let corrHarm = null, corrSeed = -1;
+function corridorField(a, t){
+  if(corrSeed !== P.seed){
+    const r = mulberry32(P.seed*7919 + 3);
+    corrHarm = [];
+    for(let h = 2; h <= 6; h++) corrHarm.push([h, (0.5 + r())/h, r()*TAU]);
+    corrSeed = P.seed;
+  }
+  const mv = TAU*P.pathMove*t/P.loop;              // whole turns per loop: seamless
+  let v = 0;
+  for(const [h, amp, ph] of corrHarm) v += amp*Math.cos(h*(a - mv/h*1) + ph);
+  return v;
+}
+
+// Thresholds per layer: a blend of per-bar noise and the corridor field, then
+// ranked so exactly a "density" share of each layer's bars is showing.
+function layerThresholds(L, idx, t){
+  const n = P.spokes;
+  const raw = idx.map(i => {
+    const noise = hash2(i, L + 1, P.seed);
+    const corr = corridorField(i/n*TAU, t);
+    return { i, v: (1 - P.corridors)*(noise - 0.5)*2.2 + P.corridors*corr*1.4 };
+  });
+  raw.sort((a, b) => a.v - b.v);
+  const thr = new Map();
+  raw.forEach((r, k) => thr.set(r.i, (k + 0.5)/raw.length));
+  return thr;
+}
+
+function clearFrame(){
+  const { W, H } = geom();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.shadowBlur = 0;
+  ctx.clearRect(0, 0, W, H);
+  if(!renderTransparent){ ctx.fillStyle = exportMatte || P.bg; ctx.fillRect(0, 0, W, H); }
+}
+
+// one bar: a quad from radius r0 to r1 along angle a, width w0 at r0 and w1 at r1
+function bar(a, r0, r1, w0, w1, cx, cy){
+  const c = Math.cos(a), s = Math.sin(a), nx = -s, ny = c;
+  ctx.moveTo(cx + c*r0 + nx*w0/2, cy + s*r0 + ny*w0/2);
+  ctx.lineTo(cx + c*r1 + nx*w1/2, cy + s*r1 + ny*w1/2);
+  ctx.lineTo(cx + c*r1 - nx*w1/2, cy + s*r1 - ny*w1/2);
+  ctx.lineTo(cx + c*r0 - nx*w0/2, cy + s*r0 - ny*w0/2);
+  ctx.closePath();
+}
+
+// ---------- frame ----------
+function draw(t){
+  const { u, cx, cy } = geom();
+  clearFrame();
+
+  const R = u*0.5*P.fill, rc = R*P.core;
+  const ringW = (R - rc)/P.layers, gapPx = ringW*P.gap;
+  const n = P.spokes, dA = TAU/n, bw = R*P.barW;
+  const width = r => Math.min(bw, Math.max(0, r)*dA*P.duty);
+  const soft = Math.max(0.01, P.soft);
+  const st = P.style;
+  const fades = st === 'fade' || st === 'shrinkfade' || st === 'out' || st === 'aside';
+  const shrinks = st === 'shrink' || st === 'shrinkfade';
+
+  ctx.fillStyle = P.fg;
+  let shown = 0, total = 0, densSum = 0;
+  for(let L = 0; L < P.layers; L++){
+    const all = L === 0 && P.solidInner;
+    const idx = [];
+    for(let i = 0; i < n; i++) if(all || (i + L) % 2 === 0) idx.push(i);
+    const d = densityAt(t, L);
+    densSum += d;
+    const thr = layerThresholds(L, idx, t);
+    const sway = (P.sway*Math.PI/180)*Math.sin(TAU*t/P.loop + L*0.7)*(L % 2 ? 1 : -1);
+    const r0 = rc + L*ringW + (L ? gapPx/2 : -Math.max(1, rc*0.05));
+    const r1 = rc + (L + 1)*ringW - gapPx/2;
+    if(r1 <= r0) continue;
+
+    // group bars by alpha so solid bars go in one path
+    ctx.beginPath();
+    let solidCount = 0;
+    const faint = [];
+    for(const i of idx){
+      const p = smooth((d*(1 + soft) - thr.get(i))/soft);   // 1 = present, 0 = gone
+      total++; shown += p;
+      if(p <= 0.002) continue;
+      let a = i*dA + sway, a0 = r0, a1 = r1, alpha = 1;
+      if(shrinks){ const m = (r0 + r1)/2, h = (r1 - r0)/2*p; a0 = m - h; a1 = m + h; }
+      if(fades) alpha = st === 'shrinkfade' ? Math.sqrt(p) : p;
+      if(st === 'out'){ const o = (1 - p)*ringW*0.9; a0 += o; a1 += o; }
+      if(st === 'aside') a += (1 - p)*dA*0.9*((hash2(i, L, P.seed + 7) < 0.5) ? -1 : 1);
+      if(alpha >= 0.999){ bar(a, a0, a1, width(a0), width(a1), cx, cy); solidCount++; }
+      else faint.push([a, a0, a1, alpha]);
+    }
+    if(solidCount) ctx.fill();
+    for(const [a, a0, a1, alpha] of faint){
+      ctx.globalAlpha = alpha;
+      ctx.beginPath(); bar(a, a0, a1, width(a0), width(a1), cx, cy); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // the centre brightens and swells slightly as the path to it opens up
+  const lo = Math.min(P.dMin, P.dMax), hi = Math.max(P.dMin, P.dMax);
+  const avg = densSum/P.layers;
+  const open = hi > lo ? clamp01((hi - avg)/(hi - lo)) : 0;
+  const rr = rc*(1 + 0.08*P.glow*open);
+  ctx.save();
+  if(P.glow > 0 && open > 0){ ctx.shadowColor = P.fg; ctx.shadowBlur = u*0.08*P.glow*open; }
+  ctx.beginPath(); ctx.arc(cx, cy, rr, 0, TAU); ctx.fill();
+  ctx.restore();
+
+  lastDensity = total ? shown/total : 1;
+}
+
+// ---------- preview loop ----------
+let playing = true, lastNow = null;
+function frame(now){
+  if(!exporting){
+    if(playing && lastNow != null) previewT = (previewT + Math.min(0.1, (now - lastNow)/1000)) % P.loop;
+    lastNow = now;
+    draw(previewT);
+    ui.scrub.value = Math.round(previewT/P.loop*1000);
+    ui.timeLbl.textContent = `${previewT.toFixed(2)} / ${P.loop.toFixed(2)}s`;
+    ui.densLbl.textContent = `${Math.round(lastDensity*100)}% dense`;
+  } else lastNow = null;
+  requestAnimationFrame(frame);
+}
+
+function setPlaying(p){ playing = p; ui.playBtn.textContent = p ? 'Pause' : 'Play'; }
+ui.playBtn.addEventListener('click', () => setPlaying(!playing));
+ui.scrub.addEventListener('input', () => { previewT = ui.scrub.value/1000*P.loop; setPlaying(false); });
+document.addEventListener('keydown', ev => {
+  if(ev.target.matches('input, select, textarea, button')) return;
+  if(ev.code === 'Space'){ ev.preventDefault(); setPlaying(!playing); }
+});
+
+// ---------- settings wiring ----------
+for(const [key, , , , , fmt] of SLIDERS){
+  ui['s_' + key].addEventListener('input', () => {
+    P[key] = +ui['s_' + key].value;
+    ui['v_' + key].textContent = fmt(P[key]);
+    if(key === 'loop'){ previewT %= P.loop; if(exportUIReady) syncLoopRange(); }
+    saveSettings();
+    if(exportUIReady) updateExportUI();
+  });
+}
+ui.seed.addEventListener('change', () => { P.seed = Math.max(1, Math.round(+ui.seed.value) || 1); ui.seed.value = P.seed; saveSettings(); });
+ui.newPattern.addEventListener('click', () => { P.seed = 1 + Math.floor(Math.random()*99998); ui.seed.value = P.seed; saveSettings(); });
+ui.style.addEventListener('change', () => { P.style = ui.style.value; saveSettings(); });
+ui.solidInner.addEventListener('change', () => { P.solidInner = ui.solidInner.checked; saveSettings(); });
+ui.fgColor.addEventListener('input', () => { P.fg = ui.fgColor.value; saveSettings(); });
+ui.bgColor.addEventListener('input', () => { P.bg = ui.bgColor.value; ui.exMatte.value = P.bg; saveSettings(); });
+ui.exMatte.addEventListener('input', () => { P.bg = ui.exMatte.value; ui.bgColor.value = P.bg; saveSettings(); });
+ui.resetBtn.addEventListener('click', () => {
+  Object.assign(P, DEFAULTS);
+  syncUI(); applyResolution(); saveSettings(); if(exportUIReady){ syncLoopRange(); updateExportUI(); }
+});
+
+function applyResolution(){
+  const preset = ui.resolutionPreset.value;
+  let w, h;
+  if(preset === 'custom'){ w = Math.round(+ui.customWidth.value) || 1080; h = Math.round(+ui.customHeight.value) || 1080; }
+  else [w, h] = preset.split('x').map(Number);
+  w = Math.min(3840, Math.max(200, w)); h = Math.min(3840, Math.max(200, h));
+  compW = w; compH = h;
+  P.res = preset; P.customW = Math.round(+ui.customWidth.value) || 1080; P.customH = Math.round(+ui.customHeight.value) || 1080;
+  saveSettings();
+  if(!exporting){ canvas.width = w; canvas.height = h; }
+  if(exportUIReady) updateExportUI();
+}
+ui.resolutionPreset.addEventListener('change', () => {
+  ui.customResWrap.classList.toggle('hidden', ui.resolutionPreset.value !== 'custom');
+  applyResolution();
+});
+ui.customWidth.addEventListener('change', applyResolution);
+ui.customHeight.addEventListener('change', applyResolution);
+
+loadSettings();
+syncUI();
+applyResolution();
+requestAnimationFrame(frame);
+
+// =====================================================================
+// Export
+// Deterministic: every frame is draw(start + i/fps), never a screen recording.
+// Video uses WebCodecs via Mediabunny; PNG zips use fflate. Loaded on demand.
+// =====================================================================
+const MEDIABUNNY_URL = 'https://cdn.jsdelivr.net/npm/mediabunny@1.61.0/+esm';
+const FFLATE_URL = 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/+esm';
+const APP_NAME = 'periotherapia-clear-path';
+const EXPORT_KEY = 'periotherapia.clearpath.export.v1';
+const hasWebCodecs = typeof VideoEncoder !== 'undefined';
+const isChromium = !!(navigator.userAgentData && navigator.userAgentData.brands &&
+  navigator.userAgentData.brands.some(b => /Chromium/.test(b.brand)));
+
+let libsPromise = null;
+function loadLibs(){
+  if(!libsPromise){
+    libsPromise = Promise.all([import(MEDIABUNNY_URL), import(FFLATE_URL)])
+      .then(([mb, ff]) => ({ mb, ff }))
+      .catch(err => {
+        libsPromise = null;
+        throw new Error(`Couldn't load the export library from cdn.jsdelivr.net (${err.message}). Check your connection and try again.`);
+      });
+  }
+  return libsPromise;
+}
+
+const app = {
+  canvas,
+  get duration(){ return P.loop; },
+  async renderAt(t){ draw(t); },
+  beginExport({ width, height, transparent, matte }){
+    exporting = true;
+    const prevTransparent = renderTransparent;
+    renderTransparent = transparent;
+    exportMatte = transparent ? null : matte;
+    canvas.width = width; canvas.height = height;
+    return () => {
+      canvas.width = compW; canvas.height = compH;
+      renderTransparent = prevTransparent;
+      exportMatte = null;
+      exporting = false;
+      draw(previewT);
+    };
+  },
+};
+
+const FPS_PRESETS = { '24':[24,1], '25':[25,1], '30':[30,1], '50':[50,1], '60':[60,1], '23.976':[24000,1001], '29.97':[30000,1001] };
+const even = n => Math.max(2, Math.round(n/2)*2);
+const tick = () => new Promise(r => setTimeout(r));
+const EXT = { mp4:'mp4', webm:'webm', 'png-seq':'zip', png:'png' };
+
+function syncLoopRange(){
+  const n = Math.max(1, Math.round(+ui.exLoops.value) || 1);
+  ui.exEnd.value = +((+ui.exStart.value || 0) + n*P.loop).toFixed(3);
+}
+
+function readExportSettings(){
+  const format = ui.exFormat.value;
+  const isVideo = format === 'mp4' || format === 'webm';
+  let w, h;
+  const size = ui.exSize.value;
+  if(size === 'canvas'){ w = compW; h = compH; }
+  else if(size === 'custom'){ w = Math.round(+ui.exW.value); h = Math.round(+ui.exH.value); }
+  else [w, h] = size.split('x').map(Number);
+  const reqW = w, reqH = h;
+  if(isVideo){ w = even(w); h = even(h); }
+
+  let num, den;
+  if(ui.exFps.value === 'custom'){ num = +ui.exFpsCustom.value; den = 1; }
+  else [num, den] = FPS_PRESETS[ui.exFps.value];
+  const fps = num/den;
+  const fpsLabel = den === 1 ? String(num) : String(+(num/den).toFixed(3));
+  const fpsFfmpeg = den === 1 ? String(num) : `${num}/${den}`;
+
+  const start = Math.max(0, +ui.exStart.value || 0);
+  const end = +ui.exEnd.value || 0;
+  const total = format === 'png' ? 1 : Math.max(1, Math.round((end - start)*fps));
+  const autoName = `${APP_NAME}_${w}x${h}_${fpsLabel}fps`;
+  const name = (ui.exName.value.trim() || autoName).replace(/[^\w.\-]+/g, '_');
+
+  let error = null;
+  if(!(w >= 16 && h >= 16) || w > 7680 || h > 7680) error = 'Size must be between 16 and 7680 px on each side.';
+  else if(!(fps > 0 && fps <= 240)) error = 'Frame rate must be between 1 and 240.';
+  else if(format !== 'png' && !(end > start)) error = 'End time must be after the start time.';
+
+  return {
+    format, isVideo, width:w, height:h, resized: w !== reqW || h !== reqH,
+    fps, fpsLabel, fpsFfmpeg, start, end, total,
+    transparent: ui.exTransparent.checked && format !== 'mp4',
+    matte: ui.exMatte.value, quality: ui.exQuality.value, name, autoName, error,
+  };
+}
+
+const EXPORT_IDS = ['exFormat','exTransparent','exSize','exW','exH','exFps','exFpsCustom','exLoops','exQuality'];
+function saveExportSettings(){
+  try{
+    const d = {};
+    EXPORT_IDS.forEach(id => { d[id] = ui[id].type === 'checkbox' ? ui[id].checked : ui[id].value; });
+    localStorage.setItem(EXPORT_KEY, JSON.stringify(d));
+  } catch(e){ /* settings just won't be remembered */ }
+}
+function loadExportSettings(){
+  try{
+    const d = JSON.parse(localStorage.getItem(EXPORT_KEY) || 'null');
+    if(!d) return;
+    Object.entries(d).forEach(([id, v]) => {
+      const el = ui[id]; if(!el) return;
+      if(el.type === 'checkbox') el.checked = !!v;
+      else if(el.tagName === 'SELECT'){ if([...el.options].some(o => o.value === v)) el.value = v; }
+      else el.value = v;
+    });
+  } catch(e){ /* ignore */ }
+}
+
+let supportToken = 0;
+function updateExportUI(){
+  if(!hasWebCodecs){
+    [...ui.exFormat.options].forEach(o => { if(o.value === 'mp4' || o.value === 'webm') o.disabled = true; });
+    if(ui.exFormat.value === 'mp4' || ui.exFormat.value === 'webm') ui.exFormat.value = 'png-seq';
+  }
+  const s = readExportSettings();
+  const isMp4 = s.format === 'mp4';
+
+  ui.exTransparent.disabled = isMp4;
+  ui.exTransparentRow.classList.toggle('disabled', isMp4);
+  ui.exMatteWrap.classList.toggle('hidden', s.transparent);
+  ui.exAlphaNote.textContent =
+    isMp4 ? "MP4 can't carry transparency, so frames are flattened onto the background colour below."
+    : (s.format === 'webm' && s.transparent) ? "Transparent WebM plays in Chrome/Firefox and on the web, but not in QuickTime, Safari or most editors. Use the PNG sequence for editing."
+    : '';
+  ui.exAlphaNote.classList.toggle('hidden', !ui.exAlphaNote.textContent);
+
+  // preview shows the checkerboard whenever the export will be transparent
+  renderTransparent = s.transparent;
+  canvas.classList.toggle('checker', s.transparent);
+
+  ui.exCustomSizeWrap.classList.toggle('hidden', ui.exSize.value !== 'custom');
+  ui.exFpsCustomWrap.classList.toggle('hidden', ui.exFps.value !== 'custom');
+  ui.exRangeWrap.classList.toggle('hidden', s.format === 'png');
+  ui.exStillNote.classList.toggle('hidden', s.format !== 'png');
+  ui.exQualityWrap.classList.toggle('hidden', !s.isVideo);
+  ui.exScaleNote.textContent = ui.exSize.value === 'canvas' ? '' :
+    `Composition is ${compW} × ${compH}. Everything scales with the shorter side, so the framing stays the same.`;
+  const loops = (s.end - s.start)/P.loop;
+  ui.exLoopNote.textContent = Math.abs(loops - Math.round(loops)) < 1e-6
+    ? `One loop is ${P.loop}s. Whole loops repeat seamlessly.`
+    : `One loop is ${P.loop}s. This range isn't a whole number of loops, so it won't repeat seamlessly.`;
+
+  const ext = EXT[s.format];
+  ui.exName.placeholder = s.autoName;
+  ui.exFileOut.textContent = s.format === 'png-seq' ? `${s.name}.zip (${s.name}_00001.png …)` : `${s.name}.${ext}`;
+  ui.exFfmpegWrap.classList.toggle('hidden', s.format !== 'png-seq');
+  ui.exFfmpeg.textContent = `ffmpeg -framerate ${s.fpsFfmpeg} -i ${s.name}_%05d.png -c:v prores_ks -profile:v 4444 -pix_fmt yuva444p10le ${s.name}.mov`;
+
+  if(s.error){ ui.exOutSize.textContent = s.error; ui.exOutSize.style.color = 'var(--error)'; }
+  else {
+    ui.exOutSize.style.color = '';
+    const dur = s.format === 'png' ? '' : ` · ${s.total} frames · ${(s.total/s.fps).toFixed(2)}s`;
+    ui.exOutSize.textContent = `Output: ${s.width} × ${s.height} px${s.resized ? ' (rounded to even for video)' : ''}${dur}`;
+  }
+  ui.exportBtn.textContent = { mp4:'Export MP4', webm:'Export WebM', 'png-seq':'Export PNG sequence', png:'Export PNG' }[s.format];
+  ui.exportBtn.disabled = exporting || !!s.error;
+  ui.exRealtimeBtn.classList.toggle('hidden', hasWebCodecs);
+  checkSupport(s);
+  saveExportSettings();
+}
+
+async function checkSupport(s){
+  const token = ++supportToken;
+  const msgs = [];
+  if(!hasWebCodecs){
+    msgs.push('Video export needs a recent Chrome, Edge or Safari served over HTTPS. PNG sequence still works.');
+  } else if(s.isVideo && !s.error){
+    if(s.format === 'webm' && s.transparent && !isChromium) msgs.push('Transparent WebM is a Chrome/Edge feature. Use Chrome for this export.');
+    try{
+      const { mb } = await loadLibs();
+      const ok = await mb.canEncodeVideo(s.format === 'webm' ? 'vp9' : 'avc', {
+        width: s.width, height: s.height, frameRate: s.fps, quality: qualityFor(mb, s.quality),
+        ...(s.format === 'webm' && s.transparent ? { alpha: 'keep' } : {}),
+      });
+      if(!ok) msgs.push(encodeHelp(s.format === 'webm', s.width, s.height));
+    } catch(err){ msgs.push(err.message); }
+  }
+  if(token !== supportToken) return;
+  ui.exSupport.textContent = msgs.join(' ');
+  ui.exSupport.classList.toggle('hidden', msgs.length === 0);
+}
+function qualityFor(mb, q){
+  return { low: mb.QUALITY_LOW, medium: mb.QUALITY_MEDIUM, high: mb.QUALITY_HIGH, veryHigh: mb.QUALITY_VERY_HIGH }[q] || mb.QUALITY_HIGH;
+}
+function encodeHelp(webm, w, h){
+  const smaller = w*h > 1920*1080 ? 'Try 1080p' : 'Try a different size';
+  return `This browser can't encode ${webm ? 'VP9' : 'H.264'} at ${w} × ${h}. ${smaller}${webm ? '' : ' or WebM'}, or use Chrome.`;
+}
+
+const canvasToPng = c => new Promise((res, rej) =>
+  c.toBlob(b => b ? res(b) : rej(new Error('PNG encode failed — the canvas may be too large for this browser.')), 'image/png'));
+
+async function exportMedia(o, onProgress, signal, dir){
+  const t0 = performance.now();
+  const progress = i => onProgress({ frame: i, total: o.total, eta: i ? ((performance.now()-t0)/i)*(o.total-i)/1000 : null });
+  const aborted = () => new DOMException('Export cancelled', 'AbortError');
+  const libs = o.format === 'png' ? null : await loadLibs();
+  await document.fonts.ready;
+  const restore = app.beginExport({ width:o.width, height:o.height, transparent:o.transparent, matte:o.matte });
+  try{
+    if(o.format === 'png'){
+      await app.renderAt(previewT);
+      progress(1);
+      return { blob: await canvasToPng(app.canvas), ext:'png' };
+    }
+    if(o.format === 'png-seq') return dir ? await pngToFolder() : await pngZip();
+    return await video();
+  } finally { restore(); }
+
+  async function video(){
+    const { mb } = libs;
+    const webm = o.format === 'webm';
+    const codec = webm ? 'vp9' : 'avc';
+    const alpha = webm && o.transparent ? { alpha:'keep' } : {};
+    const quality = qualityFor(mb, o.quality);
+    if(!(await mb.canEncodeVideo(codec, { width:o.width, height:o.height, frameRate:o.fps, quality, ...alpha }))){
+      throw new Error(encodeHelp(webm, o.width, o.height));
+    }
+    const output = new mb.Output({
+      format: webm ? new mb.WebMOutputFormat() : new mb.Mp4OutputFormat({ fastStart:'in-memory' }),
+      target: new mb.BufferTarget(),
+    });
+    const source = new mb.CanvasSource(app.canvas, { codec, quality, ...alpha });
+    output.addVideoTrack(source, { frameRate: o.fps });
+    await output.start();
+    for(let i = 0; i < o.total; i++){
+      if(signal.aborted){ await output.cancel(); throw aborted(); }
+      await app.renderAt(o.start + i/o.fps);
+      await source.add(i/o.fps, 1/o.fps);
+      progress(i+1);
+      if(i % 4 === 0) await tick();
+    }
+    await output.finalize();
+    return { blob: new Blob([output.target.buffer], { type: webm ? 'video/webm' : 'video/mp4' }), ext: webm ? 'webm' : 'mp4' };
+  }
+
+  async function pngZip(){
+    const { Zip, ZipPassThrough } = libs.ff;
+    const chunks = [];
+    let zipErr = null;
+    const zip = new Zip((err, chunk) => { if(err){ zipErr = err; return; } chunks.push(chunk); });
+    for(let i = 0; i < o.total; i++){
+      if(signal.aborted){ zip.terminate(); throw aborted(); }
+      if(zipErr) throw zipErr;
+      await app.renderAt(o.start + i/o.fps);
+      const png = new Uint8Array(await (await canvasToPng(app.canvas)).arrayBuffer());
+      const f = new ZipPassThrough(frameName(i));
+      zip.add(f); f.push(png, true);
+      progress(i+1);
+      if(i % 4 === 0) await tick();
+    }
+    zip.end();
+    if(zipErr) throw zipErr;
+    return { blob: new Blob(chunks, { type:'application/zip' }), ext:'zip' };
+  }
+
+  async function pngToFolder(){
+    for(let i = 0; i < o.total; i++){
+      if(signal.aborted) throw aborted();
+      await app.renderAt(o.start + i/o.fps);
+      const blob = await canvasToPng(app.canvas);
+      const fh = await dir.getFileHandle(frameName(i), { create:true });
+      const w = await fh.createWritable();
+      await w.write(blob); await w.close();
+      progress(i+1);
+      if(i % 4 === 0) await tick();
+    }
+    return { blob:null, folder: dir.name };
+  }
+
+  function frameName(i){ return `${o.name}_${String(i+1).padStart(5, '0')}.png`; }
+}
+
+// Fallback only when WebCodecs is missing: records in real time, may drop frames, alpha not guaranteed.
+async function recordRealtime(o, onProgress, signal){
+  if(!canvas.captureStream || !window.MediaRecorder) throw new Error("This browser can't record video at all. Use the PNG sequence instead.");
+  const mimeType = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(m => MediaRecorder.isTypeSupported(m));
+  if(!mimeType) throw new Error("This browser can't record WebM. Use the PNG sequence instead.");
+  const duration = o.end - o.start;
+  const restore = app.beginExport({ width:o.width, height:o.height, transparent:o.transparent, matte:o.matte });
+  try{
+    const stream = canvas.captureStream(o.fps);
+    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: { low:4e6, medium:8e6, high:16e6, veryHigh:32e6 }[o.quality] });
+    const chunks = [];
+    recorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
+    const stopped = new Promise(r => recorder.onstop = r);
+    recorder.start();
+    const wasCancelled = await new Promise(resolve => {
+      const t0 = performance.now();
+      function step(now){
+        if(signal.aborted) return resolve(true);
+        const t = Math.min((now - t0)/1000, duration);
+        draw(o.start + t);
+        onProgress({ frame: Math.round(t*o.fps), total: o.total, eta: duration - t });
+        if(t < duration) requestAnimationFrame(step); else resolve(false);
+      }
+      requestAnimationFrame(step);
+    });
+    recorder.stop();
+    await stopped;
+    if(wasCancelled) throw new DOMException('Export cancelled', 'AbortError');
+    return { blob: new Blob(chunks, { type:'video/webm' }), ext:'webm' };
+  } finally { restore(); }
+}
+
+let lastUrl = null;
+function offerDownload(blob, filename, isVideo){
+  if(lastUrl) URL.revokeObjectURL(lastUrl);
+  const url = lastUrl = URL.createObjectURL(blob);
+  try{
+    const a = Object.assign(document.createElement('a'), { href:url, download:filename });
+    document.body.appendChild(a); a.click(); a.remove();
+  } catch(e){ /* visible link below still works */ }
+  const link = Object.assign(document.createElement('a'), { href:url, download:filename, textContent:`Save ${filename} (${(blob.size/1048576).toFixed(1)} MB)` });
+  ui.exResult.appendChild(link);
+  if(isVideo) ui.exResult.appendChild(Object.assign(document.createElement('video'), { src:url, controls:true, loop:true, muted:true, playsInline:true }));
+  else if(filename.endsWith('.png')) ui.exResult.appendChild(Object.assign(document.createElement('img'), { src:url, alt:'Exported frame' }));
+}
+
+function explainError(err, s){
+  const msg = err && err.message ? err.message : String(err);
+  if(/can't encode|Couldn't load|PNG encode/.test(msg)) return msg;
+  if(err && (err.name === 'NotSupportedError' || /not supported|unsupported/i.test(msg)))
+    return `Export failed: ${msg}\nThis browser doesn't support that codec at ${s.width} × ${s.height}. Try a smaller size, a different format, or Chrome.`;
+  if(/memory|allocation|Array buffer/i.test(msg))
+    return `Export failed: ${msg}\nRan out of memory. Try a shorter range, a smaller size, or (in Chrome) the PNG sequence written to a folder.`;
+  return `Export failed: ${msg}\nTry a smaller size or shorter range, or another format. Chrome has the most complete support.`;
+}
+
+let abortCtl = null;
+function setBusy(busy){
+  ui.exportBtn.disabled = busy;
+  ui.exRealtimeBtn.disabled = busy;
+  ui.exCancelWrap.classList.toggle('hidden', !busy);
+  ui.panel.querySelectorAll('input, select, button').forEach(el => {
+    if(el !== ui.exCancelBtn) el.disabled = busy;
+  });
+  if(!busy) updateExportUI();
+}
+function onProgress({ frame, total, eta }){
+  ui.exProgress.max = total; ui.exProgress.value = frame;
+  ui.exStatus.textContent = `Frame ${frame} / ${total}` + (eta != null && frame < total ? ` · ~${Math.ceil(eta)}s left` : '');
+}
+
+async function runExport(realtime){
+  const s = readExportSettings();
+  if(s.error){ ui.exError.textContent = s.error; return; }
+  let dir = null;
+  if(!realtime && s.format === 'png-seq' && (s.total > 1500 || s.width*s.height >= 3840*2160) && window.showDirectoryPicker){
+    try{ dir = await window.showDirectoryPicker({ mode:'readwrite' }); }
+    catch(err){ if(err.name === 'AbortError') return; dir = null; }
+  }
+  ui.exError.textContent = '';
+  ui.exResult.innerHTML = '';
+  ui.exProgressWrap.classList.remove('hidden');
+  onProgress({ frame:0, total:s.total, eta:null });
+  setBusy(true);
+  abortCtl = new AbortController();
+  try{
+    const res = realtime ? await recordRealtime(s, onProgress, abortCtl.signal)
+                         : await exportMedia(s, onProgress, abortCtl.signal, dir);
+    if(res.folder) ui.exStatus.textContent = `Done — wrote ${s.total} frames to “${res.folder}”.`;
+    else {
+      ui.exStatus.textContent = `Done — ${s.total} frame${s.total === 1 ? '' : 's'}.` + (realtime ? ' Recorded in real time; frames may have been dropped.' : '');
+      offerDownload(res.blob, `${s.name}.${res.ext}`, res.ext === 'mp4' || res.ext === 'webm');
+    }
+  } catch(err){
+    if(err && err.name === 'AbortError') ui.exStatus.textContent = 'Export cancelled.';
+    else { console.error(err); ui.exError.textContent = explainError(err, s); ui.exStatus.textContent = ''; }
+  } finally {
+    abortCtl = null;
+    exporting = false;
+    setBusy(false);
+  }
+}
+
+ui.exportBtn.addEventListener('click', () => runExport(false));
+ui.exRealtimeBtn.addEventListener('click', () => runExport(true));
+ui.exCancelBtn.addEventListener('click', () => { if(abortCtl) abortCtl.abort(); });
+ui.exCopyFfmpeg.addEventListener('click', async () => {
+  try{ await navigator.clipboard.writeText(ui.exFfmpeg.textContent); }
+  catch(e){
+    const r = document.createRange(); r.selectNodeContents(ui.exFfmpeg);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    document.execCommand && document.execCommand('copy');
+  }
+  ui.exCopyFfmpeg.textContent = 'Copied';
+  setTimeout(() => { ui.exCopyFfmpeg.textContent = 'Copy'; }, 1500);
+});
+ui.exLoops.addEventListener('input', syncLoopRange);
+ui.exStart.addEventListener('input', syncLoopRange);
+['exFormat','exTransparent','exMatte','exSize','exW','exH','exFps','exFpsCustom','exStart','exEnd','exLoops','exQuality','exName']
+  .forEach(id => { ui[id].addEventListener('input', updateExportUI); ui[id].addEventListener('change', updateExportUI); });
+
+loadExportSettings();
+syncLoopRange();
+exportUIReady = true;
+updateExportUI();
+</script>
+</body>
+</html>
