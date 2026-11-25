@@ -54,6 +54,9 @@ export function defaultModule(kind: ModuleKind = 'custom'): ModuleSettings {
     videoY: 0,
     videoBrightness: 0.8,
     newNodes: 1,
+    seqTabs: ['moa', 'combination', 'toxicity', 'tissue', 'crossTissue', 'body'],
+    seqLoops: 1,
+    seqTransition: 1,
   };
 }
 

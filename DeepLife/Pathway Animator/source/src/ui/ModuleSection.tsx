@@ -12,6 +12,7 @@ import { realVideoInfo } from '../core/realVideo';
 import { loadRealVideo } from './realVideoLoader';
 import { ColorField, Section, Select, Slider, Toggle } from './controls';
 import { loadBodyImage, readImageFile } from './bodyImageLoader';
+import { SequenceSettings } from './SequenceSection';
 import { useApp } from './store';
 
 /** The module tabs, above the preview. */
@@ -280,6 +281,8 @@ export function ModuleSection() {
         </>
       )}
 
+      {m.kind === 'sequence' && <SequenceSettings />}
+
       {m.kind === 'journey' && (
         <>
           <div className="field">
@@ -340,7 +343,7 @@ export function ModuleSection() {
         </>
       )}
 
-      <button
+      {m.kind !== 'sequence' && <button
         className="btn wide"
         title="Seed, pathway, cell, style and animation go to every tab; each keeps its own module settings, pathway count and cell map"
         onClick={() => {
@@ -350,7 +353,7 @@ export function ModuleSection() {
         }}
       >
         {shared ? 'Copied to all tabs' : 'Use this look and pathway in all tabs'}
-      </button>
+      </button>}
     </Section>
   );
 }

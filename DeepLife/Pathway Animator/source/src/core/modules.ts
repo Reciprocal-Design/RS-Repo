@@ -63,6 +63,11 @@ export const MODULES: ModuleInfo[] = [
     label: 'Virtual → real cell',
     blurb: 'The virtual cell, then a real cell video under its network, where new edges and nodes are found, then back to the virtual cell with them. Five sections of equal length; export it as a video or PNG sequence.',
   },
+  {
+    kind: 'sequence',
+    label: 'Tabs in sequence',
+    blurb: 'The tabs you pick, played one after another as they are set up in their own tabs, each crossfading into the next: export it as one PNG sequence (or video) for smooth transitions between them.',
+  },
 ];
 
 export const moduleInfo = (kind: ModuleKind): ModuleInfo =>

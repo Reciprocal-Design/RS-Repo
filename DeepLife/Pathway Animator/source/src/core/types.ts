@@ -110,6 +110,8 @@ export interface Scene {
 export type ModuleKind =
   | 'moa' | 'combination' | 'toxicity' | 'tissue' | 'crossTissue' | 'custom' | 'body' | 'journey'
   | 'realCell'
+  /** The chosen tabs played one after another, crossfading from each into the next (render/sequence.ts). */
+  | 'sequence'
   /** Internal: the network of the real-cell view, with the nodes it discovers (render/realCell.ts). */
   | 'realCellNet';
 
@@ -173,6 +175,12 @@ export interface ModuleSettings {
   videoBrightness: number;
   /** How many inactive nodes per layer the real cell reveals as new (discovered) nodes. */
   newNodes: number;
+  /** Sequence: the tabs it plays, in order (by their module). */
+  seqTabs: ModuleKind[];
+  /** Sequence: loops of each looping tab (the journey and real-cell views run once). */
+  seqLoops: number;
+  /** Sequence: seconds each tab crossfades into the next. */
+  seqTransition: number;
 }
 
 /** One cell of an imported map. Coordinates are flat x,y pairs in the map's own units. */

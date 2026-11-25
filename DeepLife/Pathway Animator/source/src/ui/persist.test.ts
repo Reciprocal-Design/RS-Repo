@@ -41,11 +41,16 @@ describe('saved settings', () => {
     expect(saved?.active).toBe(2);
     expect(saved?.tabs).toHaveLength(MODULES.length);
     expect(saved?.tabs[2]).toMatchObject({ seed: 99, canvas: { background: '#123456' } });
-    expect(saved?.tabs.map((s) => s.module.kind)).toEqual(MODULES.map((m) => m.kind));
+    expect(saved?.tabs.map((s) => s?.module.kind)).toEqual(MODULES.map((m) => m.kind));
   });
 
-  it('ignores saved settings that no longer fit the tabs, and forgets them on reset', () => {
-    mem.set('pathway-animator:settings:v1', JSON.stringify({ tabs: [moduleScene('moa', 1)], active: 0 }));
+  it('matches saved tabs by module (a tab added since starts fresh), and forgets them on reset', () => {
+    mem.set('pathway-animator:settings:v1', JSON.stringify({ tabs: [moduleScene('moa', 5), moduleScene('body', 6)], active: 0 }));
+    const saved = loadSaved();
+    expect(saved?.tabs[MODULES.findIndex((m) => m.kind === 'moa')]?.seed).toBe(5);
+    expect(saved?.tabs[MODULES.findIndex((m) => m.kind === 'body')]?.seed).toBe(6);
+    expect(saved?.tabs.filter(Boolean)).toHaveLength(2);
+    mem.set('pathway-animator:settings:v1', JSON.stringify({ tabs: [], active: 0 }));
     expect(loadSaved()).toBeNull();
     mem.set('pathway-animator:settings:v1', 'not json');
     expect(loadSaved()).toBeNull();

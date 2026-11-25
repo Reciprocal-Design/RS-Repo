@@ -8,16 +8,26 @@ import type { Scene } from '../core/types';
 const KEY = 'pathway-animator:settings:v1';
 let stopped = false;
 
-/** The saved tabs, when there are any and they still match the app's tabs. */
-export function loadSaved(): { tabs: Scene[]; active: number } | null {
+/**
+ * The saved tabs, matched to the app's tabs by module: a tab added since they
+ * were saved has none (null), and starts from its defaults.
+ */
+export function loadSaved(): { tabs: (Scene | null)[]; active: number } | null {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const data = JSON.parse(raw) as { tabs?: unknown[]; active?: unknown };
-    if (!Array.isArray(data.tabs) || data.tabs.length !== MODULES.length) return null;
-    const tabs = data.tabs.map((t) => normalizeScene(t));
-    // A tab keeps its module, whatever the saved scene says.
-    if (tabs.some((s, i) => s.module.kind !== MODULES[i].kind)) return null;
+    if (!Array.isArray(data.tabs)) return null;
+    const saved: Scene[] = [];
+    for (const t of data.tabs) {
+      try {
+        saved.push(normalizeScene(t));
+      } catch {
+        /* skip a tab that no longer reads */
+      }
+    }
+    const tabs = MODULES.map((m) => saved.find((s) => s.module.kind === m.kind) ?? null);
+    if (!tabs.some(Boolean)) return null;
     const active = typeof data.active === 'number' && data.active >= 0 && data.active < tabs.length ? Math.floor(data.active) : 0;
     return { tabs, active };
   } catch {

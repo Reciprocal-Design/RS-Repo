@@ -32,7 +32,8 @@ function openingTabs(): Scene[] {
 
 /** One scene per module tab, all from the same seed so they show the same pathway; or the last settings, as saved. */
 const SAVED = typeof localStorage === 'undefined' ? null : loadSaved();
-const TABS = SAVED?.tabs ?? openingTabs();
+const OPENING = openingTabs();
+const TABS = SAVED ? SAVED.tabs.map((s, i) => s ?? OPENING[i]) : OPENING;
 const ACTIVE = SAVED?.active ?? 0;
 
 interface AppState {
@@ -99,7 +100,8 @@ export const useApp = create<AppState>((set) => ({
   scene: TABS[ACTIVE],
   setTab: (index) => set((st) => (index === st.active ? {} : { active: index, scene: st.tabs[index] })),
   shareToAllTabs: () =>
-    set((st) => ({ tabs: st.tabs.map((s, i) => (i === st.active ? s : shareScene(st.scene, s))) })),
+    // The sequence tab only plays the others: it keeps its own canvas and settings.
+    set((st) => ({ tabs: st.tabs.map((s, i) => (i === st.active || s.module.kind === 'sequence' ? s : shareScene(st.scene, s))) })),
   loadScene: (loaded) =>
     set((st) => {
       // A file saved before modules existed takes the tab's module settings;

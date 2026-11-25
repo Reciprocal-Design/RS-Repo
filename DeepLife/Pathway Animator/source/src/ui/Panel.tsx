@@ -20,6 +20,8 @@ export function Panel() {
   const warnings = buildGeometry(scene).warnings;
   const onMap = mapActive(scene);
   const solo = soloActive(scene);
+  // The sequence tab plays the other tabs: their own settings are made in their tabs.
+  const sequence = scene.module.kind === 'sequence';
 
   const patch = <K extends 'canvas' | 'cell' | 'nucleus' | 'style'>(key: K) =>
     (v: Partial<Scene[K]>) => setScene((s) => ({ ...s, [key]: { ...s[key], ...v } }));
@@ -110,6 +112,7 @@ export function Panel() {
         </button>
       </Section>
 
+      {!sequence && <>
       <TissueMapSection />
       {/* A solo view is one cell of the shared map: the map's own settings belong to the tissue views. */}
       {!solo && <CellMapSection />}
@@ -224,6 +227,7 @@ export function Panel() {
       </Section>
 
       <AnimationSection />
+      </>}
       <ExportSection />
     </aside>
   );

@@ -1,4 +1,5 @@
 import { exportFileName } from '../core/sceneIO';
+import { RUNS_ONCE } from '../core/sequence';
 import type { Scene } from '../core/types';
 import { planVideo, videoSize, videoSizeError } from '../core/video';
 import { prepareFrame, render } from '../render/render';
@@ -118,7 +119,7 @@ export async function encodeVideo(
 }
 
 /** Does a scene's video run once (the journey, the real-cell view) rather than for whole loops? */
-export const runsOnce = (scene: Scene) => scene.module.kind === 'journey' || scene.module.kind === 'realCell';
+export const runsOnce = (scene: Scene) => RUNS_ONCE.includes(scene.module.kind);
 
 /**
  * Several tabs' videos in one go, one after another, with the same settings

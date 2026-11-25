@@ -1,3 +1,4 @@
+import { sequencePlan } from './sequence';
 import { reverseEdge } from './connect';
 import { buildGeometry } from './geometry';
 import type { EdgeGeom, Scene } from './types';
@@ -59,6 +60,11 @@ const cache = new WeakMap<Scene, Schedule>();
  * always come to an end.
  */
 export function buildSchedule(scene: Scene): Schedule {
+  if (scene.module.kind === 'sequence') {
+    // The sequence plays other tabs (core/sequence.ts); its length follows theirs, so it is never cached here.
+    const total = sequencePlan(scene).total;
+    return { fire: new Map(), arrivals: new Map(), runs: new Map(), pulses: new Map(), edges: [], signalEnd: total, total, litHold: 0, period: 0 };
+  }
   const hit = cache.get(scene);
   if (hit) return hit;
   if (scene.module.kind === 'journey' || scene.module.kind === 'realCell') {

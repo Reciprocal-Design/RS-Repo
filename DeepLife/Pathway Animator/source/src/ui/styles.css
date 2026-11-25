@@ -200,3 +200,10 @@ input[type=text] {
 .progress { height: 6px; border-radius: 3px; background: var(--line, rgba(255,255,255,0.12)); overflow: hidden; align-self: center; }
 .progress i { display: block; height: 100%; background: var(--accent); transition: width 0.15s linear; }
 .row .hint { margin: 0; align-self: center; font-variant-numeric: tabular-nums; }
+
+/* Sequence tab: the tabs it plays */
+.seq-list { display: grid; gap: 2px; }
+.seq-item { display: flex; align-items: center; gap: 4px; }
+.seq-item .toggle { margin-top: 4px; }
+.seq-item .toggle em { font: 600 10.5px ui-monospace, monospace; font-style: normal; color: var(--accent); margin-right: 4px; }
+.seq-item.on .toggle { color: var(--text, inherit); }

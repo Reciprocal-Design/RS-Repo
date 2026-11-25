@@ -101,10 +101,13 @@ function normalizeCellMap(raw: unknown): CellMap {
   };
 }
 
-const MODULE_KINDS: ModuleKind[] = ['moa', 'combination', 'toxicity', 'tissue', 'crossTissue', 'custom', 'body', 'journey', 'realCell'];
+const MODULE_KINDS: ModuleKind[] = ['moa', 'combination', 'toxicity', 'tissue', 'crossTissue', 'custom', 'body', 'journey', 'realCell', 'sequence'];
 const ORGAN_IDS: OrganId[] = ['brain', 'lungs', 'heart', 'liver', 'stomach', 'kidneys', 'intestines', 'bladder'];
 
 /** Scenes saved before modules existed show their pathway unchanged ('custom'). */
+/** The tabs a sequence can play: every tab but the sequence itself. */
+const SEQUENCE_KINDS: ModuleKind[] = MODULE_KINDS.filter((k) => k !== 'custom' && k !== 'sequence');
+
 function normalizeModule(raw: unknown): ModuleSettings {
   const kind = isObj(raw) && MODULE_KINDS.includes(raw.kind as ModuleKind) ? (raw.kind as ModuleKind) : 'custom';
   const base = defaultModule(kind);
@@ -135,6 +138,11 @@ function normalizeModule(raw: unknown): ModuleSettings {
     videoY: num(m.videoY, 0, -1, 1),
     videoBrightness: num(m.videoBrightness, base.videoBrightness, 0, 1),
     newNodes: Math.round(num(m.newNodes, base.newNodes, 0, 5)),
+    seqTabs: Array.isArray(m.seqTabs)
+      ? [...new Set(m.seqTabs.filter((k): k is ModuleKind => SEQUENCE_KINDS.includes(k as ModuleKind)))]
+      : base.seqTabs,
+    seqLoops: Math.round(num(m.seqLoops, base.seqLoops, 1, 10)),
+    seqTransition: num(m.seqTransition, base.seqTransition, 0, 5),
   };
 }
 

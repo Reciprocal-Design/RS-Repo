@@ -8,6 +8,7 @@ import { exportVideo, exportVideoBatch, videoSupported, type VideoFormat, type V
 import { canPickFolder, exportPngSequence, frameName, pickFolder, type DirHandle } from './sequenceExport';
 import { moduleInfo } from '../core/modules';
 import { JOURNEY_SECTIONS } from '../render/journey';
+import { RUNS_ONCE, sequencePlan } from '../core/sequence';
 
 type Msg = { text: string; error?: boolean } | null;
 
@@ -29,7 +30,7 @@ function VideoExport({ busy, setBusy, setMessage }: { busy: boolean; setBusy: (b
   const tabs = useApp((s) => s.tabs);
 
   // The journey runs once, start to end.
-  const looping = loops(scene) && scene.module.kind !== 'journey' && scene.module.kind !== 'realCell';
+  const looping = loops(scene) && !RUNS_ONCE.includes(scene.module.kind);
   const { width, height } = videoSize(scene, scale);
   const sizeError = videoSizeError(width, height);
   const plan = planVideo(scene, fps, looping ? loopCount : 1);
@@ -211,9 +212,10 @@ function PngSequence({ busy, setBusy, setMessage }: { busy: boolean; setBusy: (b
   const [progress, setProgress] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  // The journey and the real-cell view run once, start to end, in five equal sections.
+  // The journey and the real-cell view run once, start to end, in five equal sections; the sequence runs once too.
   const journey = scene.module.kind === 'journey' || scene.module.kind === 'realCell';
-  const looping = loops(scene) && !journey;
+  const looping = loops(scene) && !RUNS_ONCE.includes(scene.module.kind);
+  const seq = scene.module.kind === 'sequence' ? sequencePlan(scene) : null;
   const loopsUsed = looping ? loopCount : 1;
   const plan = planVideo(scene, fps, loopsUsed);
   const { width, height } = pngSize(scene, { scale });
@@ -268,6 +270,10 @@ function PngSequence({ busy, setBusy, setMessage }: { busy: boolean; setBusy: (b
           `${plan.frames} frames, ${width} × ${height} px, ${frameName(scene, 0)} onward.` +
             (journey
               ? ` ${Number.isInteger(perSection) ? perSection : perSection.toFixed(1)} frames per section${Number.isInteger(perSection) ? '' : ': pick a section length that is a whole number of frames'}.`
+              : '') +
+            (seq
+              ? ' ' + seq.segments.map((g) => `${g.label}: from frame ${Math.round(g.start * fps) + 1}`).join('; ') +
+                (seq.fade > 0 ? ` (${Math.round(seq.fade * fps)}-frame crossfades).` : '.')
               : '') +
             (canPickFolder() ? ' You pick a folder to save them in.' : ' Saved together in one ZIP.')}
       </p>
@@ -368,9 +374,11 @@ export function ExportSection() {
       </button>
 
       <div className="subhead">SVG (vector, for Illustrator)</div>
-      {scene.module.kind === 'journey' || scene.module.kind === 'realCell' ? (
+      {scene.module.kind === 'journey' || scene.module.kind === 'realCell' || scene.module.kind === 'sequence' ? (
         <p className="hint">
-          {scene.module.kind === 'journey'
+          {scene.module.kind === 'sequence'
+            ? 'The sequence blends several tabs, so it has no single vector frame: export SVGs from the tabs themselves.'
+            : scene.module.kind === 'journey'
             ? 'The journey blends two scenes, so it has no single vector frame: export SVGs from the Tissue-level or Body tabs.'
             : 'This view blends a video with the network, so it has no vector frame: use PNG, a PNG sequence or video.'}
         </p>

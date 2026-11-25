@@ -98,6 +98,13 @@ the cells round it show (tabs 1–3 with "Show neighbouring cells" on). "Zoom" a
 node and receptor sizes, and the neighbours round it, together. They start at
 0.6. It is saved with each tab; scene files saved before it load at 1.
 
+9. **Tabs in sequence** (`src/core/sequence.ts`, `src/render/sequence.ts`): the tabs you tick (1–6 by default), in
+   the order you set, played one after another, each crossfading into the next ("Crossfade", 0–5 s; eased), so one
+   PNG sequence (or video) runs from tab to tab with smooth transitions. Each tab plays exactly as it is set up in its
+   own tab ("Loops of each tab" times; the journey and real-cell tabs once), fitted inside this tab's canvas
+   (Landscape, Square or Portrait). The export panel lists the frame each tab starts on. The other tabs, and their
+   own video and PNG exports, are unchanged.
+
 **Neighbouring cells.** In the single-cell views (the plain animator, tabs 1–3 and 8), "Cell membrane → Show
 neighbouring cells" draws the cells round the cell behind it, outlines only, without changing the cell's size or
 place: the selected cell's real neighbours when a tissue map is uploaded (with the same transform that fits the
