@@ -280,7 +280,7 @@ export function buildDisplayList(
   }
   // Organs (body view): no outline, a soft radial wash in the body's purple marks each zone.
   if (scene.nucleus.visible && g.organs?.length) {
-    const zone = makeRamp([scene.cell.glowColor, scene.cell.edgeColor])(0.35);
+    const zone = makeRamp([scene.cell.glowColor, scene.cell.edgeColor])(0.45);
     g.organs.forEach((o, i) => {
       const pts = o.points;
       let cx = 0, cy = 0;
@@ -289,7 +289,9 @@ export function buildDisplayList(
       cy /= pts.length;
       let r = 0;
       for (const q of pts) r = Math.max(r, Math.hypot(q.x - cx, q.y - cy));
-      prims.push({ kind: 'glow', id: `organ${i + 1}-zone`, group: 'membrane', c: { x: cx, y: cy }, r: r * 1.7, color: withAlpha(zone, 0.75) });
+      prims.push({ kind: 'glow', id: `organ${i + 1}-zone`, group: 'membrane', c: { x: cx, y: cy }, r: r * 1.8, color: withAlpha(zone, 1) });
+      // A brighter core, added on top, so the zone reads against the body's glow.
+      prims.push({ kind: 'glow', id: `organ${i + 1}-zone-core`, group: 'membrane', blend: 'lighter', c: { x: cx, y: cy }, r: r * 1.2, color: withAlpha(zone, 0.3) });
     });
   }
   // Body view: wireframe, anatomy lines and the resting particle field.
