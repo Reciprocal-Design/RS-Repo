@@ -59,7 +59,6 @@ export function SequenceSettings() {
         </div>
       </div>
       <Slider label="Crossfade" value={m.seqTransition} min={0} max={5} step={0.25} unit=" s" onChange={(seqTransition) => set({ seqTransition })} />
-      <Slider label="Loops of each tab" value={m.seqLoops} min={1} max={10} step={1} onChange={(seqLoops) => set({ seqLoops })} />
       <div className="field">
         <span>Canvas</span>
         <div className="seg">
@@ -72,9 +71,11 @@ export function SequenceSettings() {
         </div>
       </div>
       <p className="hint">
-        Each tab plays exactly as it is set up in its own tab (change a tab there and the sequence follows), fitted inside
-        this canvas. The journey and real-cell tabs run once. Export it under Export → PNG sequence: one numbered run of
-        frames, the transitions included.
+        Each tab plays as it is set up in its own tab (change a tab there and the sequence follows), fitted inside this
+        canvas, with one pulse from the receptor to the DEGs. In the sequence only: target combination builds its second
+        pathway out from where it meets the first, back to its receptor; target toxicity uses tab 1's pathway, the rest
+        of the network faded round the route to the red dot; a tissue after a single cell starts on that cell and zooms
+        out. Export it under Export → PNG sequence: one numbered run of frames, the transitions included.
       </p>
       {plan.segments.length > 0 ? (
         <div className="sections">

@@ -13,6 +13,8 @@ const COMBINATION_GAP = 0.3;
 const COMBINATION_DEPTH = 0.2;
 /** Target combination: how wide the added pathway's rows are, relative to the first. */
 const COMBINATION_WIDTH = 0.62;
+/** The same, as the sequence tab plays it: roomier rows, so the added pathway's proteins crowd less. */
+const SEQUENCE_COMBINATION_WIDTH = 0.75;
 /** Target combination: the least angle (radians, seen from the nucleus) between the two pathways. */
 const COMBINATION_APART = (48 * Math.PI) / 180;
 /** Target combination: the gap the added pathway's proteins want from the first's (× cell radius). */
@@ -251,7 +253,8 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
   // nucleus-centred one, so they bend gently instead of curling round the
   // centre. With more, rows stay concentric so each keeps to its own wedge.
   const minArc = n === 1 ? 0.5 * R : n === 2 ? 0.25 * R : 0;
-  const baseSpacing = (n === 1 ? 0.2 : 0.15) * R * (added ? COMBINATION_WIDTH : 1);
+  const addedWidth = scene.module.seqPart ? SEQUENCE_COMBINATION_WIDTH : COMBINATION_WIDTH;
+  const baseSpacing = (n === 1 ? 0.2 : 0.15) * R * (added ? addedWidth : 1);
   const pad = 0.035 * R + scene.style.haloRadius * scale;
 
   const out: NodeGeom[][] = [];

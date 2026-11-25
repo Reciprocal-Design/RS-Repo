@@ -1,3 +1,4 @@
+import { defaultModule } from '../core/defaults';
 import { MODULES } from '../core/modules';
 import { normalizeScene } from '../core/sceneIO';
 import type { Scene } from '../core/types';
@@ -6,6 +7,7 @@ import type { Scene } from '../core/types';
 // open tab, saved a moment after each change and restored on the next load.
 
 const KEY = 'pathway-animator:settings:v1';
+const OLD_SEQUENCE_TABS = 'moa,combination,toxicity,tissue,crossTissue,body';
 let stopped = false;
 
 /**
@@ -27,6 +29,12 @@ export function loadSaved(): { tabs: (Scene | null)[]; active: number } | null {
       }
     }
     const tabs = MODULES.map((m) => saved.find((s) => s.module.kind === m.kind) ?? null);
+    // The sequence's first default played the body last; it no longer does.
+    for (const s of tabs) {
+      if (s?.module.kind === 'sequence' && s.module.seqTabs.join() === OLD_SEQUENCE_TABS) {
+        s.module = { ...s.module, seqTabs: defaultModule('sequence').seqTabs };
+      }
+    }
     if (!tabs.some(Boolean)) return null;
     const active = typeof data.active === 'number' && data.active >= 0 && data.active < tabs.length ? Math.floor(data.active) : 0;
     return { tabs, active };

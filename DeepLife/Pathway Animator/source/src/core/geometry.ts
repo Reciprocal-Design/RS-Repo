@@ -24,7 +24,8 @@ export function buildGeometry(scene: Scene): SceneGeom {
     ? buildBodyGeometry(scene)
     : kind === 'realCell' || kind === 'realCellNet'
       ? buildDiscoveryGeometry(scene, plain)
-      : plain(kind === 'toxicity' ? withToxicPathway(scene) : scene);
+      // In the sequence, toxicity keeps tab 1's pathway.
+      : plain(kind === 'toxicity' && !scene.module.seqPart ? withToxicPathway(scene) : scene);
   cache.set(scene, geom);
   return geom;
 }

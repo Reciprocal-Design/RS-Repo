@@ -286,10 +286,16 @@ export function applyModule(scene: Scene, g: SceneGeom): SceneGeom {
 
   let nodes = g.nodes;
   const crosstalk = kind === 'combination' ? degCrosstalk(scene, g.nodes) : [];
-  const edges = [...g.edges, ...crosstalk].map((e) => ({ ...e, traced: true }));
+  let edges: EdgeGeom[] = [...g.edges, ...crosstalk].map((e) => ({ ...e, traced: true }));
   if (kind === 'toxicity') {
     const toxic = new Set([...degsByPathway(nodes).values()].map((list) => list[list.length - 1].id));
     nodes = nodes.map((n) => (toxic.has(n.id) ? { ...n, toxic: true } : n));
+    // In the sequence: the route into the toxic DEG stands out, everything else fades back.
+    if (m.seqPart) {
+      const route = toxicRoute(edges, toxic);
+      edges = edges.map((e) => (route.edges.has(e.id) ? e : { ...e, dim: OFF_ROUTE }));
+      nodes = nodes.map((n) => (route.nodes.has(n.id) ? n : { ...n, dim: OFF_ROUTE }));
+    }
   }
 
   let receptors = g.receptors;
@@ -299,5 +305,60 @@ export function applyModule(scene: Scene, g: SceneGeom): SceneGeom {
     receptors = receptors.map((r) => (own(r) ? { ...r, target: true } : r));
   }
 
-  return { ...g, nodes, edges, receptors, nodeById: new Map(nodes.map((n) => [n.id, n])) };
+  let discoverSpan = g.discoverSpan;
+  if (kind === 'combination' && m.seqPart) ({ nodes, edges, receptors, discoverSpan } = buildOut(nodes, edges, receptors));
+
+  return { ...g, nodes, edges, receptors, discoverSpan, nodeById: new Map(nodes.map((n) => [n.id, n])) };
+}
+
+/** Opacity of the network off the route to the toxic DEG, in the sequence's toxicity scene. */
+const OFF_ROUTE = 0.28;
+/** Inputs each protein on that route keeps (the shortest lines into it). */
+const ROUTE_INPUTS = 2;
+
+/**
+ * The route into the toxic DEG: back from it, layer by layer, each protein on
+ * the route keeping its ROUTE_INPUTS shortest incoming lines, out to the
+ * receptor. (Following every line back would take in nearly the whole
+ * pathway, which is densely wired.)
+ */
+function toxicRoute(edges: EdgeGeom[], toxic: Set<string>) {
+  const nodes = new Set(toxic);
+  const kept = new Set<string>();
+  const into = new Map<string, EdgeGeom[]>();
+  for (const e of edges) if (!e.crosstalk) into.set(e.to, [...(into.get(e.to) ?? []), e]);
+  const queue = [...toxic];
+  while (queue.length) {
+    const id = queue.shift()!;
+    for (const e of [...(into.get(id) ?? [])].sort((a, b) => a.length - b.length).slice(0, ROUTE_INPUTS)) {
+      kept.add(e.id);
+      if (!nodes.has(e.from)) (nodes.add(e.from), queue.push(e.from));
+    }
+  }
+  return { nodes, edges: kept };
+}
+
+/**
+ * The sequence's combination scene: the added pathways build out from where
+ * they meet the first one (the DEG crosstalk, in the nucleus) back to their
+ * receptor, a layer at a time, as discovery (0–1) runs. Each edge grows from
+ * its DEG end; each node pops up as its edge reaches it; the receptor last.
+ */
+function buildOut(nodes: NodeGeom[], edges: EdgeGeom[], receptors: ReceptorGeom[]) {
+  const first = nodes.find((n) => n.layer === 0)?.pathwayId;
+  const added = (pid: string | null) => pid !== null && pid !== first;
+  const last = Math.max(0, ...nodes.filter((n) => added(n.pathwayId)).map((n) => n.layer));
+  const steps = last + 2; // the crosstalk, then each layer back to the receptor
+  const at = (step: number) => step / steps;
+  const layerOf = new Map(nodes.map((n) => [n.id, n.layer]));
+  return {
+    discoverSpan: 1 / steps,
+    nodes: nodes.map((n) => (added(n.pathwayId) ? { ...n, discoverAt: at(last - n.layer + 1) } : n)),
+    edges: edges.map((e) => {
+      if (e.crosstalk && added(e.pathwayId)) return { ...e, discoverAt: at(0), growBack: true };
+      if (!added(e.pathwayId)) return e;
+      return { ...e, discoverAt: at(last - (layerOf.get(e.to) ?? last) + 1), growBack: true };
+    }),
+    receptors: receptors.map((r) => (added(r.pathwayId) ? { ...r, discoverAt: at(last + 1) } : r)),
+  };
 }

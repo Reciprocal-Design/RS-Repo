@@ -50,6 +50,14 @@ describe('saved settings', () => {
     expect(saved?.tabs[MODULES.findIndex((m) => m.kind === 'moa')]?.seed).toBe(5);
     expect(saved?.tabs[MODULES.findIndex((m) => m.kind === 'body')]?.seed).toBe(6);
     expect(saved?.tabs.filter(Boolean)).toHaveLength(2);
+    // A sequence saved with its first default list (ending on the body) drops the body; any other list is kept.
+    const seq = (seqTabs: string[]) => {
+      const s = moduleScene('sequence', 1);
+      mem.set('pathway-animator:settings:v1', JSON.stringify({ tabs: [{ ...s, module: { ...s.module, seqTabs } }], active: 0 }));
+      return loadSaved()?.tabs.find((t) => t?.module.kind === 'sequence')?.module.seqTabs;
+    };
+    expect(seq(['moa', 'combination', 'toxicity', 'tissue', 'crossTissue', 'body'])).toEqual(['moa', 'combination', 'toxicity', 'tissue', 'crossTissue']);
+    expect(seq(['body', 'moa'])).toEqual(['body', 'moa']);
     mem.set('pathway-animator:settings:v1', JSON.stringify({ tabs: [], active: 0 }));
     expect(loadSaved()).toBeNull();
     mem.set('pathway-animator:settings:v1', 'not json');

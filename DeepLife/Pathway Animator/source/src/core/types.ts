@@ -181,6 +181,12 @@ export interface ModuleSettings {
   seqLoops: number;
   /** Sequence: seconds each tab crossfades into the next. */
   seqTransition: number;
+  /**
+   * Internal, never saved: this scene is a tab as the sequence plays it (core/sequence.ts): one pulse from the
+   * receptor to the DEGs; the combination's added pathway builds out; toxicity keeps tab 1's pathway and dims the
+   * rest of the network round the route to the toxic DEG.
+   */
+  seqPart?: boolean;
 }
 
 /** One cell of an imported map. Coordinates are flat x,y pairs in the map's own units. */
@@ -255,6 +261,8 @@ export interface NodeGeom {
   discoverAt?: number;
   /** A DEG that makes the cell toxic when it fires (target toxicity). */
   toxic?: boolean;
+  /** Drawn fainter, at this opacity (the sequence's toxicity scene: off the route to the toxic DEG). */
+  dim?: number;
 }
 
 export type Bezier = [Vec2, Vec2, Vec2, Vec2];
@@ -282,6 +290,10 @@ export interface EdgeGeom {
   weight?: number;
   /** Discovered (the real-cell view): absent until discovery reaches this point (0–1), then grows in. */
   discoverAt?: number;
+  /** Grows in from its end (`to`) back towards its start, instead of from the start. */
+  growBack?: boolean;
+  /** Drawn fainter, at this opacity, its signal too (the sequence's toxicity scene: off the route to the toxic DEG). */
+  dim?: number;
 }
 
 export interface ReceptorGeom {
@@ -294,6 +306,8 @@ export interface ReceptorGeom {
   nodeId?: string;
   /** Marked as a drug target. */
   target?: boolean;
+  /** Absent until discovery reaches this point (0–1), then grows in (the sequence's combination scene). */
+  discoverAt?: number;
 }
 
 export interface Outline {

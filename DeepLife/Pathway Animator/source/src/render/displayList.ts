@@ -171,6 +171,14 @@ function particleBuckets(g: SceneGeom, ramp: (t: number) => RGBA, tones: number,
 
 const withAlpha = ([r, g, b]: RGBA, a: number) => rgbaString([r, g, b, a]);
 
+/** The end of an edge from `from` (a share of its length, 0–1) to its end, still running from start to end. */
+function bezierTail(e: { bezier: Bezier; lut: Float32Array; length: number }, from: number): Bezier {
+  const t0 = tAtDistance(e.lut, from * e.length);
+  const [a, b, c, d] = e.bezier;
+  const [p0, p1, p2, p3] = bezierHead([d, c, b, a], 1 - t0);
+  return [p3, p2, p1, p0];
+}
+
 /**
  * Everything drawn at time `t` (seconds). Pure: the same scene and t always
  * give the same list. Draw order: outlines → receptors → edges and lit edges →
@@ -318,11 +326,14 @@ export function buildDisplayList(
   for (const r of g.receptors) {
     const decorative = r.pathwayId === null;
     if (decorative && !scene.cell.showDecorativeReceptors) continue;
+    // A receptor still being built (the sequence's combination scene) grows in.
+    const rIn = shownBy(r.discoverAt);
+    if (rIn <= 0) continue;
     if (capsule) {
       prims.push({
         kind: 'capsule', id: r.id, group: 'receptors', c: r.center, angle: r.angle,
-        length: len, width: wid, stroke: scene.cell.color, strokeWidth: scene.cell.strokeWidth * s,
-        opacity: decorative ? 0.75 : 1,
+        length: len * Math.max(wid / Math.max(len, 1e-6), rIn), width: wid, stroke: scene.cell.color, strokeWidth: scene.cell.strokeWidth * s,
+        opacity: (decorative ? 0.75 : 1) * rIn,
       });
     } else if (decorative) {
       prims.push({
@@ -334,10 +345,10 @@ export function buildDisplayList(
 
   // Drug targets: a ring round each targeted receptor.
   for (const r of g.receptors) {
-    if (!r.target) continue;
+    if (!r.target || shownBy(r.discoverAt) <= 0) continue;
     prims.push({
       kind: 'ring', id: `${r.id}-target`, group: 'receptors', c: r.center, r: Math.max(len, wid) * 0.72,
-      stroke: scene.module.targetColor, width: Math.max(0.75, 1.5 * s), opacity: 0.9,
+      stroke: scene.module.targetColor, width: Math.max(0.75, 1.5 * s), opacity: 0.9 * shownBy(r.discoverAt),
     });
   }
 
@@ -352,15 +363,21 @@ export function buildDisplayList(
     // A discovered edge grows in from its start.
     const grown = shownBy(e.discoverAt);
     if (grown <= 0) continue;
-    const p = grown < 1 ? bezierHead(e.bezier, tAtDistance(e.lut, grown * e.length)) : e.bezier;
+    // Growing from its start, or (growBack) from its end back towards its start.
+    const p = grown >= 1 ? e.bezier : e.growBack ? bezierTail(e, 1 - grown) : bezierHead(e.bezier, tAtDistance(e.lut, grown * e.length));
+    const tipDepth = e.growBack ? e.depthTo + (e.depthFrom - e.depthTo) * grown : e.depthTo;
     if (grown < 1) {
-      prims.push({ kind: 'glow', id: `${e.id}-tip`, group: 'edges', blend: 'lighter', c: p[3], r: st.haloRadius * s * 1.2, color: withAlpha(ramp(e.depthTo), 0.6) });
+      prims.push({
+        kind: 'glow', id: `${e.id}-tip`, group: 'edges', blend: 'lighter', c: e.growBack ? p[0] : p[3],
+        r: st.haloRadius * s * 1.2, color: withAlpha(ramp(tipDepth), 0.6),
+      });
     }
+    const dim = e.dim ?? 1;
     prims.push({
       kind: 'bezier', id: e.id, group: e.crosstalk ? 'crosstalk' : 'edges', p, width: st.edgeWidth * s * (e.weight ?? 1),
       ...(grey
-        ? { from: greyCss, to: greyCss, opacity: e.opacity * idle }
-        : { from: color(e.depthFrom), to: color(e.depthTo), opacity: e.opacity }),
+        ? { from: greyCss, to: greyCss, opacity: e.opacity * idle * dim }
+        : { from: color(grown < 1 && e.growBack ? tipDepth : e.depthFrom), to: color(e.depthTo), opacity: e.opacity * dim }),
     });
   }
 
@@ -431,6 +448,7 @@ export function buildDisplayList(
     for (const { et, q, id } of along) {
       if (q <= 0 || q - trail >= 1 || shownBy(et.edge.discoverAt) < 1) continue;
       const e = et.edge;
+      const dimmed = e.dim !== undefined ? { opacity: e.dim } : {};
       const head = ease(Math.min(1, q), an.easing);
       const tail = ease(Math.max(0, Math.min(1, q - trail)), an.easing);
       if (head - tail > 1e-4) {
@@ -448,16 +466,16 @@ export function buildDisplayList(
         if (an.glow > 0) {
           prims.push({
             kind: 'trail', id: `${id}-trail-glow`, group: 'signal', blend: 'lighter', points: pts,
-            tail: withAlpha(cTail, 0), head: withAlpha(cHead, 0.22 * an.glow), width: cometW * (2.5 + 4 * an.glow),
+            tail: withAlpha(cTail, 0), head: withAlpha(cHead, 0.22 * an.glow), width: cometW * (2.5 + 4 * an.glow), ...dimmed,
           });
         }
         prims.push({
           kind: 'trail', id: `${id}-trail`, group: 'signal', blend: 'lighter', points: pts,
-          tail: withAlpha(cTail, 0), head: withAlpha(cHead, 0.85), width: cometW * 0.5,
+          tail: withAlpha(cTail, 0), head: withAlpha(cHead, 0.85), width: cometW * 0.5, ...dimmed,
         });
         prims.push({
           kind: 'trail', id: `${id}-trail-core`, group: 'signal', blend: 'lighter', points: front,
-          tail: withAlpha(cMid, 0), head: withAlpha(cHead, 1), width: cometW,
+          tail: withAlpha(cMid, 0), head: withAlpha(cHead, 1), width: cometW, ...dimmed,
         });
       }
       if (q < 1) {
@@ -466,10 +484,10 @@ export function buildDisplayList(
         if (an.glow > 0) {
           prims.push({
             kind: 'glow', id: `${id}-head-glow`, group: 'signal', blend: 'lighter', c,
-            r: cometW * (3 + 7 * an.glow), color: withAlpha(rgb, 0.55 * an.glow),
+            r: cometW * (3 + 7 * an.glow), color: withAlpha(rgb, 0.55 * an.glow), ...dimmed,
           });
         }
-        prims.push({ kind: 'circle', id: `${id}-head`, group: 'signal', blend: 'lighter', c, r: cometW * 0.9, fill: rgbaString(mixWhite(rgb, 0.7)) });
+        prims.push({ kind: 'circle', id: `${id}-head`, group: 'signal', blend: 'lighter', c, r: cometW * 0.9, fill: rgbaString(mixWhite(rgb, 0.7)), ...dimmed });
       }
     }
   }
@@ -521,7 +539,7 @@ export function buildDisplayList(
       const n = g.nodeById.get(id)!;
       prims.push({
         kind: 'glow', id: `${id}-flash`, group: 'signal', blend: 'lighter', c: n,
-        r: st.haloRadius * s * (1.4 + 1.6 * e), color: withAlpha(ramp(n.depth), 0.7 * e),
+        r: st.haloRadius * s * (1.4 + 1.6 * e), color: withAlpha(ramp(n.depth), 0.7 * e * (n.dim ?? 1)),
       });
     }
     for (const n of g.nodes) {
@@ -561,7 +579,7 @@ export function buildDisplayList(
     const isReceptor = n.layer === 0;
     if (isReceptor && st.receptorStyle === 'capsule') continue;
     const v = shown(n);
-    const a = on(n) * v.a;
+    const a = on(n) * v.a * (n.dim ?? 1);
     if (a <= 0) continue;
     prims.push({
       kind: 'circle', id: `${n.id}-halo`, group: 'nodes-active', c: n, r: st.haloRadius * s * grow(n.id) * v.k, fill: halo,
@@ -578,7 +596,7 @@ export function buildDisplayList(
       prims.push({
         kind: 'diamond', id: `${n.id}-diamond`, group: 'nodes-active', c: n,
         r: st.activeNodeRadius * 1.6 * s * grow(n.id) * v.k, angle: rec.angle, fill: nodeFill(a),
-        ...(a < 1 || v.a < 1 ? { opacity: (a < 1 ? idle + (1 - idle) * a : 1) * v.a } : {}),
+        ...(a < 1 || v.a < 1 || n.dim ? { opacity: (a < 1 ? idle + (1 - idle) * a : 1) * v.a * (n.dim ?? 1) } : {}),
       });
     } else {
       const a = on(n);
@@ -587,7 +605,7 @@ export function buildDisplayList(
       prims.push({
         kind: 'circle', id: n.id, group: 'nodes-active', c: n, r: st.activeNodeRadius * s * (n.toxic ? TOXIC_DOT + 0.5 * toxicPulse : grow(n.id)) * v.k,
         fill: n.toxic ? toxicFill : nodeFill(a),
-        ...(a < 1 || v.a < 1 ? { opacity: (a < 1 ? idle + (1 - idle) * a : 1) * v.a } : {}),
+        ...(a < 1 || v.a < 1 || n.dim ? { opacity: (a < 1 ? idle + (1 - idle) * a : 1) * v.a * (n.dim ?? 1) } : {}),
       });
     }
   }
