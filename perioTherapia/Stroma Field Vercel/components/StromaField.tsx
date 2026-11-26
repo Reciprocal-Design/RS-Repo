@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ExportPanel, { type Clip } from "./ExportPanel";
 import LayoutPad, { loadStoredLayout } from "./LayoutPad";
 import {
-  DAYS_PER_S, DEFAULT_N, LOOP, MAX_DOSE, MAX_N, MIN_N, STAGE, STYLES, THEMES, autoState, clamp, cloneSim, computeView, createSim, draw, generate, metrics, resetSim, stepSim,
-  type Layout, type Sim, type StyleName, type Tissue, type View,
+  DAYS_PER_S, DEFAULT_N, LOOP, MAX_DOSE, MAX_N, MIN_N, STAGE, STYLES, STYLE_LABEL, THEMES, COLOUR_KEYS, baseColours, resolveTheme, autoState, clamp, cloneSim, computeView, createSim, draw, generate, metrics, resetSim, stepSim,
+  type ColourKey, type ColourOverrides, type Layout, type Sim, type StyleName, type Theme, type Tissue, type View,
 } from "@/lib/engine";
 import type { ExportApp } from "@/lib/exportMedia";
 
@@ -43,6 +43,12 @@ type Engine = {
   mode: Mode;
   autoT: number; // position on the two-stage timeline (s)
   panel: boolean;
+  theme: Theme;
+};
+const COLOUR_KEY = (st: StyleName) => `stroma-field-vercel.colours.${st}`;
+const COLOUR_LABEL: Record<ColourKey, string> = {
+  tumour: "Cancer cell", caf: "Fibroblast", myeloid: "Macrophage", tcell: "T cell", vessel: "Vessel", dead: "Cleared cell",
+  ecmLo: "ECM, loose", ecmMid: "ECM, mid", ecmHi: "ECM, dense", outline: "Tumour outline", field: "Edge dots",
 };
 
 export default function StromaField() {
@@ -81,7 +87,36 @@ export default function StromaField() {
     } catch {}
   }, []);
   const [bgColor, setBgColorState] = useState<string | null>(null); // null = the style's own background
-  const theme = THEMES[style];
+  // per-element colour changes, saved separately for each style
+  const [colours, setColours] = useState<ColourOverrides>({});
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(COLOUR_KEY(style)) || "{}");
+      setColours(saved && typeof saved === "object" ? saved : {});
+    } catch {
+      setColours({});
+    }
+  }, [style]);
+  const setColour = useCallback((k: ColourKey | "reset", v?: string) => {
+    setColours((prev) => {
+      const next: ColourOverrides = k === "reset" ? {} : { ...prev, [k]: v };
+      try {
+        const st = eng.current?.style ?? "brand";
+        if (Object.keys(next).length) localStorage.setItem(COLOUR_KEY(st), JSON.stringify(next));
+        else localStorage.removeItem(COLOUR_KEY(st));
+      } catch {}
+      return next;
+    });
+  }, []);
+  const theme = useMemo(() => resolveTheme(style, colours), [style, colours]);
+  const base = useMemo(() => baseColours(style), [style]);
+  useEffect(() => {
+    if (eng.current) eng.current.theme = theme;
+    // keep the side panel's swatches and bars in step with the map
+    const r = document.documentElement.style;
+    ["--tumour", "--caf", "--myeloid", "--tcell", "--vessel", "--dead"].forEach((v, i) => r.setProperty(v, theme.inner[i]));
+    ["--fib-lo", "--fib-mid", "--fib-hi"].forEach((v, i) => r.setProperty(v, theme.fib[i]));
+  }, [theme]);
   const bg = bgColor ?? theme.bg;
   const setBgColor = useCallback((c: string | null) => {
     setBgColorState(c);
@@ -247,7 +282,7 @@ export default function StromaField() {
     if (new URLSearchParams(location.search).get("panel") === "off") pn = false;
     setModeState(md);
     setPanelOn(pn);
-    const e: Engine = { T, dots: n, layout: null, resize: () => {}, mode: md, autoT: 0, panel: pn, S: createSim(T), view: computeView(2, 2, 1, false, T.N), dpr: 1, animT: 0, pointer: null, hist: [], exporting: false, exportBg: THEMES[st].bg, clip: "sweep", hold: null, sweep: null, style: st, bleed: bl, bg: THEMES[st].bg };
+    const e: Engine = { T, dots: n, layout: null, resize: () => {}, mode: md, autoT: 0, panel: pn, theme: THEMES[st], S: createSim(T), view: computeView(2, 2, 1, false, T.N), dpr: 1, animT: 0, pointer: null, hist: [], exporting: false, exportBg: THEMES[st].bg, clip: "sweep", hold: null, sweep: null, style: st, bleed: bl, bg: THEMES[st].bg };
     eng.current = e;
     const reduce = matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -315,6 +350,7 @@ export default function StromaField() {
       if (e.mode === "auto" && pausedRef.current) autoState(e.T, e.S, Math.min(e.autoT, STAGE.end)); // scrubbing while paused
       const mt0 = e.panel ? metrics(e.T, e.S) : null;
       draw(ctx, e.T, e.S, e.view, e.animT, {
+        theme: e.theme,
         bg: e.bg, reduceMotion: reduce.matches, style: e.style, bleed: e.bleed,
         panel: mt0 && { ecm: mt0.ecm, chemo: mt0.chemo, chemoOn: mt0.chemoOn || (e.mode === "auto" && e.autoT >= STAGE.chemoStart) },
       });
@@ -324,7 +360,7 @@ export default function StromaField() {
         const mt = metrics(e.T, e.S);
         const prev = e.hist.length > 8 ? e.hist[e.hist.length - 9] : mt.burden, d = mt.burden - prev;
         setReadout({ ...mt, autoT: Math.min(e.autoT, STAGE.end), day: (e.mode === "auto" ? Math.min(e.autoT, STAGE.end) : e.S.simT) * DAYS_PER_S, trend: d < -0.3 ? "shrinking" : d > 0.3 ? "regrowing" : "stable" });
-        drawSpark(spark, e.hist, e.dpr, THEMES[e.style].inner[0], e.style !== "neon" ? "rgba(60,60,80,.16)" : "rgba(154,148,182,.18)");
+        drawSpark(spark, e.hist, e.dpr, e.theme.inner[0], e.style !== "neon" ? "rgba(60,60,80,.16)" : "rgba(154,148,182,.18)");
       }
     };
     raf = requestAnimationFrame(frame);
@@ -398,7 +434,7 @@ export default function StromaField() {
       const e = eng.current!, ctx = canvasRef.current!.getContext("2d")!;
       if (e.clip === "loop") {
         const mh = e.panel ? metrics(e.T, e.hold!) : null;
-        draw(ctx, e.T, e.hold!, e.view, t, { bg: e.exportBg, style: e.style, bleed: e.bleed, panel: mh && { ecm: mh.ecm, chemo: mh.chemo, chemoOn: mh.chemoOn } });
+        draw(ctx, e.T, e.hold!, e.view, t, { bg: e.exportBg, style: e.style, theme: e.theme, bleed: e.bleed, panel: mh && { ecm: mh.ecm, chemo: mh.chemo, chemoOn: mh.chemoOn } });
         return;
       }
       // the two-stage timeline is a pure function of t, so exports are exact
@@ -407,7 +443,7 @@ export default function StromaField() {
       resetSim(S);
       autoState(e.T, S, Math.min(t, STAGE.end));
       const mt = e.panel ? metrics(e.T, S) : null;
-      draw(ctx, e.T, S, e.view, t, { bg: e.exportBg, style: e.style, bleed: e.bleed, panel: mt && { ecm: mt.ecm, chemo: mt.chemo, chemoOn: t >= STAGE.chemoStart } });
+      draw(ctx, e.T, S, e.view, t, { bg: e.exportBg, style: e.style, theme: e.theme, bleed: e.bleed, panel: mt && { ecm: mt.ecm, chemo: mt.chemo, chemoOn: t >= STAGE.chemoStart } });
     },
     beginExport({ width, height, transparent, matte }) {
       const e = eng.current!, canvas = canvasRef.current!, stage = stageRef.current!;
@@ -477,7 +513,7 @@ export default function StromaField() {
             <div className="style-switch" role="group" aria-labelledby="styleLabel">
               {STYLES.map((st) => (
                 <button key={st} type="button" className="chip" aria-pressed={style === st} onClick={() => setStyle(st)}>
-                  {st === "neon" ? "Neon" : st === "clinical" ? "Clinical" : "Periotherapia"}
+                  {STYLE_LABEL[st]}
                 </button>
               ))}
             </div>
@@ -512,6 +548,20 @@ export default function StromaField() {
             </span>
           </label>
         </div>
+
+        <details className="colours">
+          <summary><span className="label">Colours</span><span className="swatches" aria-hidden="true">{theme.inner.slice(0, 5).map((c, i) => <i key={i} style={{ background: c }} />)}</span></summary>
+          <div className="colour-grid">
+            {COLOUR_KEYS.map((k) => (
+              <label key={k} className="colour-item">
+                <input type="color" value={colours[k] ?? base[k]} onChange={(ev) => setColour(k, ev.target.value)} />
+                <span>{COLOUR_LABEL[k]}</span>
+                {colours[k] && <em>changed</em>}
+              </label>
+            ))}
+          </div>
+          <button type="button" className="chip" disabled={!Object.keys(colours).length} onClick={() => setColour("reset")}>Reset {STYLE_LABEL[style]} colours</button>
+        </details>
 
         <section className="playback" aria-labelledby="playLabel">
           <div className="switch-row">

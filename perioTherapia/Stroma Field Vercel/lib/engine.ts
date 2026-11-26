@@ -29,9 +29,10 @@ export const sm = (a: number, b: number, x: number) => {
 };
 
 /* ---------- styles ---------- */
-export type StyleName = "brand" | "neon" | "clinical";
-export const STYLES: StyleName[] = ["brand", "clinical", "neon"];
-export const LIGHT_STYLES: StyleName[] = ["brand", "clinical"];
+export type StyleName = "brand" | "mark" | "neon" | "clinical";
+export const STYLES: StyleName[] = ["brand", "mark", "clinical", "neon"];
+export const LIGHT_STYLES: StyleName[] = ["brand", "mark", "clinical"];
+export const STYLE_LABEL: Record<StyleName, string> = { brand: "Periotherapia", mark: "Logo", clinical: "Clinical", neon: "Neon" };
 export type Theme = {
   bg: string;
   inner: string[]; // tumour, CAF, macrophage, T cell, vessel, dying
@@ -41,6 +42,15 @@ export type Theme = {
   field: string; // background dots when the grid bleeds to the edges
 };
 export const THEMES: Record<StyleName, Theme> = {
+  // colours of the Periotherapia logo mark
+  mark: {
+    bg: "#ffffff",
+    inner: ["#f4a987", "#1f4e89", "#3d6fb4", "#a1d8c7", "#f4ce7e", "#c4c4cb"],
+    fib: ["#ddd8f1", "#b8afdf", "#8b80c6"],
+    outline: "rgba(31,78,137,.6)",
+    ringAlpha: 0.92,
+    field: "#80b2e0",
+  },
   // Periotherapia brand palette (Design Approach 3), keeping the red for cancer
   brand: {
     bg: "#f5f5f5",
@@ -82,7 +92,43 @@ const fibScale = (th: Theme) =>
     const t = i / (FIB_LV - 1);
     return t < 0.5 ? mixHex(th.fib[0], th.fib[1], t * 2) : mixHex(th.fib[1], th.fib[2], (t - 0.5) * 2);
   });
-const FIB: Record<StyleName, string[]> = { brand: fibScale(THEMES.brand), neon: fibScale(THEMES.neon), clinical: fibScale(THEMES.clinical) };
+const fibCache = new Map<string, string[]>();
+const fibFor = (th: Theme) => {
+  const key = th.fib.join();
+  let v = fibCache.get(key);
+  if (!v) fibCache.set(key, (v = fibScale(th)));
+  return v;
+};
+
+/* ---------- user colour overrides ---------- */
+export const COLOUR_KEYS = ["tumour", "caf", "myeloid", "tcell", "vessel", "dead", "ecmLo", "ecmMid", "ecmHi", "outline", "field"] as const;
+export type ColourKey = (typeof COLOUR_KEYS)[number];
+export type ColourOverrides = Partial<Record<ColourKey, string>>;
+const toHex = (c: string) => {
+  if (c.startsWith("#")) return c.toLowerCase();
+  const m = c.match(/\d+(\.\d+)?/g);
+  return m ? "#" + m.slice(0, 3).map((v) => Math.round(+v).toString(16).padStart(2, "0")).join("") : "#000000";
+};
+/** The style's own colour for each editable element, as hex for colour pickers. */
+export function baseColours(style: StyleName): Record<ColourKey, string> {
+  const t = THEMES[style];
+  return {
+    tumour: t.inner[0], caf: t.inner[1], myeloid: t.inner[2], tcell: t.inner[3], vessel: t.inner[4], dead: t.inner[5],
+    ecmLo: t.fib[0], ecmMid: t.fib[1], ecmHi: t.fib[2], outline: toHex(t.outline), field: t.field,
+  };
+}
+/** The style's theme with the user's colour changes applied. */
+export function resolveTheme(style: StyleName, o: ColourOverrides = {}): Theme {
+  const t = THEMES[style];
+  const [r, g, b] = hex(o.outline ?? "#000000");
+  return {
+    ...t,
+    inner: [o.tumour ?? t.inner[0], o.caf ?? t.inner[1], o.myeloid ?? t.inner[2], o.tcell ?? t.inner[3], o.vessel ?? t.inner[4], o.dead ?? t.inner[5]],
+    fib: [o.ecmLo ?? t.fib[0], o.ecmMid ?? t.fib[1], o.ecmHi ?? t.fib[2]],
+    outline: o.outline ? `rgba(${r},${g},${b},.75)` : t.outline,
+    field: o.field ?? t.field,
+  };
+}
 const ALPHAS = [0.3, 0.55, 0.8, 1];
 
 /* ---------- seeded noise ---------- */
@@ -542,9 +588,9 @@ export function draw(
   S: Sim,
   view: View,
   t: number,
-  { bg = THEMES.neon.bg as string | null, reduceMotion = false, style = "neon" as StyleName, bleed = false, panel = null as StagePanel | null } = {},
+  { bg = THEMES.neon.bg as string | null, reduceMotion = false, style = "neon" as StyleName, bleed = false, panel = null as StagePanel | null, theme: themeIn = null as Theme | null } = {},
 ) {
-  const theme = THEMES[style], fibCols = FIB[style];
+  const theme = themeIn ?? THEMES[style], fibCols = fibFor(theme);
   const N = T.N;
   const { p, ox, oy, W, H, unit } = view;
   ctx.globalCompositeOperation = "source-over";
