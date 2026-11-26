@@ -41,7 +41,7 @@ export type Theme = {
 export const THEMES: Record<StyleName, Theme> = {
   neon: {
     bg: "#06050c",
-    inner: ["#ff2fd0", "#9b5cff", "#4f86ff", "#28efe0", "#7d8bff", "#6c4b78"],
+    inner: ["#ff2fd0", "#9b5cff", "#4f86ff", "#28efe0", "#7d8bff", "#77738c"],
     fib: ["#b6ff3b", "#ffd60a", "#ff6f1a"],
     outline: "rgba(236,226,255,.8)",
     ringAlpha: 0.96,
@@ -49,7 +49,7 @@ export const THEMES: Record<StyleName, Theme> = {
   },
   clinical: {
     bg: "#cdcdd1",
-    inner: ["#dd5fa6", "#977fe3", "#5c78e2", "#6aa6c9", "#a9b6ec", "#b3a5c4"],
+    inner: ["#dd5fa6", "#977fe3", "#5c78e2", "#6aa6c9", "#a9b6ec", "#9c9ba8"],
     fib: ["#b0b1c1", "#7f8199", "#4d4f66"],
     outline: "rgba(196,64,140,.8)",
     ringAlpha: 0.85,
@@ -151,6 +151,8 @@ export type Tissue = {
   FL: Uint8Array; // ring colour level
   TUM: Int32Array;
   RINGED: Int32Array;
+  TO: Float32Array; // auto timeline: time each ring starts to come down (stage 1)
+  TK: Float32Array; // auto timeline: time each tumour cell starts to die (stage 2)
   OUTLINE: Float32Array; // tumour boundary segments [x1, y1, x2, y2, ...] in grid units
   preT: number;
   sumC0: number;
@@ -167,8 +169,9 @@ export function generate(seed: number, N = DEFAULT_N, layout: Layout | null = nu
   for (let j = 0; j < N; j++)
     for (let i = 0; i < N; i++) {
       const k = j * N + i, u = (i + 0.5) / N, v = (j + 0.5) / N, r = Math.hypot(u - 0.5, v - 0.5) * 2;
-      env[k] = fbm(u * 1.7 + o[0], v * 1.7 + o[1], 4) - (layout ? 0 : 0.32 * Math.max(0, r - 0.5));
-      tn[k] = fbm(u * 2.5 + o[2], v * 2.5 + o[3], 4) + 0.18 * fbm(u * 7 + o[4], v * 7 + o[5], 2);
+      env[k] = fbm(u * 1.7 + o[0], v * 1.7 + o[1], 4) - (layout ? 0 : 0.32 * Math.max(0, r - 0.5) - 0.22 * Math.max(0, 1 - r));
+      // the main tumour mass sits in the centre as the hero, with smaller satellite nests around it
+      tn[k] = fbm(u * 2.5 + o[2], v * 2.5 + o[3], 4) + 0.18 * fbm(u * 7 + o[4], v * 7 + o[5], 2) - (layout ? 0 : 0.95 * r * r);
       fr[k] = 1 - Math.abs(2 * fbm(u * 3.1 + o[6], v * 3.1 + o[7], 4) - 1);
       vr[k] = 1 - Math.abs(2 * fbm(u * 2.2 + o[8], v * 2.2 + o[9], 3) - 1);
       tex[k] = fbm(u * 11 + o[10], v * 11 + o[11], 2);
@@ -248,7 +251,7 @@ export function generate(seed: number, N = DEFAULT_N, layout: Layout | null = nu
       if (isT[k]) {
         if (r < 0.06) TY[k] = 2;
         else if (r < 0.09) (TY[k] = 3), preT++;
-        else (TY[k] = 0), TUM.push(k), (INF[k] = rand() < 0.55 ? 1 : 0);
+        else (TY[k] = 0), TUM.push(k), (INF[k] = 0), rand();
         RB[k] = 0.14 + 0.22 * D[k];
         continue;
       }
@@ -269,7 +272,61 @@ export function generate(seed: number, N = DEFAULT_N, layout: Layout | null = nu
     seed, N, M, um: (REF_UM * REF_N) / N, s: sc,
     TY, RB, FR: FRB, C0, RES, PH, RO, DIR, INF, KR, FL, TUM: Int32Array.from(TUM), RINGED: Int32Array.from(RINGED), preT, sumC0,
     OUTLINE: tumourOutline(isT, N, Math.max(1, Math.round(2 * sc))),
+    ...stageTimes(N, TY, TUM, PH, rand),
   };
+}
+
+/* ---------- the two-stage timeline ---------- */
+export const STAGE = {
+  ecmStart: 0.6, // s: antibody arrives
+  ecmSpan: 6.4, // s: outer edge to tumour core
+  ecmFade: 0.9, // s: how long one ring takes to come down
+  chemoStart: 6.2, // s: chemotherapy begins (slight overlap with stage 1)
+  chemoSpan: 6.0,
+  chemoFade: 1.3,
+  end: 15,
+};
+/** Per-cell start times: both stages sweep in from the outside toward the tumour's centre,
+ *  stage 1 in a six-petal wave pattern, stage 2 in a gentler spiral. */
+function stageTimes(N: number, TY: Int8Array, TUM: number[], PH: Float32Array, rand: () => number) {
+  const M = N * N;
+  let cx = N / 2, cy = N / 2;
+  if (TUM.length) {
+    cx = cy = 0;
+    for (const k of TUM) (cx += (k % N) + 0.5), (cy += ((k / N) | 0) + 0.5);
+    cx /= TUM.length;
+    cy /= TUM.length;
+  }
+  let maxD = 1;
+  for (let k = 0; k < M; k++) if (TY[k] >= 0) maxD = Math.max(maxD, Math.hypot((k % N) + 0.5 - cx, ((k / N) | 0) + 0.5 - cy));
+  let maxT = 1;
+  for (const k of TUM) maxT = Math.max(maxT, Math.hypot((k % N) + 0.5 - cx, ((k / N) | 0) + 0.5 - cy));
+  const TO = new Float32Array(M), TK = new Float32Array(M);
+  for (let k = 0; k < M; k++) {
+    const dx = (k % N) + 0.5 - cx, dy = ((k / N) | 0) + 0.5 - cy, d = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+    const inward = 1 - clamp(d / maxD, 0, 1); // 0 at the outer edge, 1 at the centre
+    const petal = 0.07 * Math.cos(6 * a + d * 0.12);
+    TO[k] = STAGE.ecmStart + STAGE.ecmSpan * clamp(inward + petal + 0.05 * (rand() - 0.5), 0, 1) - STAGE.ecmFade * 0.5;
+    const inT = 1 - clamp(d / maxT, 0, 1);
+    const spiral = 0.05 * Math.sin(a * 2 + d * 0.08);
+    TK[k] = Math.max(TO[k] + STAGE.ecmFade, STAGE.chemoStart + STAGE.chemoSpan * clamp(inT + spiral + 0.06 * (rand() - 0.5), 0, 1) - STAGE.chemoFade * 0.5);
+  }
+  void PH;
+  return { TO, TK };
+}
+/** Fill the treatment state for time t on the auto timeline (pure function of t). */
+export function autoState(T: Tissue, S: Sim, t: number) {
+  const { TO, TK, RINGED, TUM, KR } = T;
+  for (let n = 0; n < RINGED.length; n++) {
+    const k = RINGED[n];
+    S.BF[k] = 1 - 0.9 * sm(TO[k], TO[k] + STAGE.ecmFade, t);
+  }
+  for (let n = 0; n < TUM.length; n++) {
+    const k = TUM[n];
+    S.K[k] = KR[k] * sm(TK[k], TK[k] + STAGE.chemoFade, t);
+  }
+  S.simT = t;
+  S.chemo = sm(STAGE.chemoStart - 0.3, STAGE.chemoStart + 0.6, t);
 }
 
 /** Smooth contour around the tumour nests: marching squares over a blurred tumour mask. */
@@ -338,6 +395,8 @@ export type Sim = {
   travel: number;
   rand: () => number;
   delivered: number;
+  chemo: number; // 0..1, chemotherapy level (stage 2)
+  ecm: number; // 0..1, share of the collagen barrier cleared (stage 1)
 };
 export function createSim(T: Tissue): Sim {
   const f = () => new Float32Array(PULSES);
@@ -345,11 +404,19 @@ export function createSim(T: Tissue): Sim {
     E: new Float32Array(T.M), BF: new Float32Array(T.M).fill(1), K: new Float32Array(T.M),
     simT: 0, lx: NaN, ly: NaN,
     px: f(), py: f(), pt: f(), pa: f(), pr: f(), prMax: f(), prot: f(),
-    pNext: 0, travel: 0, rand: mulberry32(T.seed * 31 + 5), delivered: 0,
+    pNext: 0, travel: 0, rand: mulberry32(T.seed * 31 + 5), delivered: 0, chemo: 0, ecm: 0,
   };
 }
 export function cloneSim(S: Sim): Sim {
   return { ...S, E: S.E.slice(), BF: S.BF.slice(), K: S.K.slice(), pa: new Float32Array(PULSES), rand: mulberry32(1) };
+}
+/** Reset a sim to untouched tissue in place (used by the auto timeline). */
+export function resetSim(S: Sim) {
+  S.BF.fill(1);
+  S.K.fill(0);
+  S.E.fill(0);
+  S.pa.fill(0);
+  S.chemo = S.ecm = 0;
 }
 /** Advance the treatment by dt seconds. pointer is in grid units, or null when the cursor is away. */
 export function stepSim(T: Tissue, S: Sim, dt: number, pointer: { x: number; y: number } | null, dose: number) {
@@ -401,35 +468,39 @@ export function stepSim(T: Tissue, S: Sim, dt: number, pointer: { x: number; y: 
 
   // barrier: opens fast under exposure, grows back slowly as exposure fades
   const { RES, RINGED } = T;
+  let rem = 0;
   for (let n = 0; n < RINGED.length; n++) {
     const k = RINGED[n];
+    rem += T.C0[k] * S.BF[k];
     S.E[k] = Math.max(0, S.E[k] - dt * 0.03);
     const target = 1 - 0.9 * sm(0.15, 1, S.E[k] / RES[k]);
     const rate = target < S.BF[k] ? 3.2 : 0.12;
     S.BF[k] += (target - S.BF[k]) * Math.min(1, rate * dt);
   }
-  // tumour cells die back where their ring has opened
+  S.ecm = clamp((1 - rem / (T.sumC0 || 1)) / 0.9, 0, 1);
+  // stage 2: chemotherapy starts once 40% of the barrier is down, then reaches tumour cells whose ring is open
+  if (S.ecm >= 0.4 || S.chemo > 0) S.chemo = Math.min(1, S.chemo + dt / 1.5);
   const { TUM, KR } = T;
   for (let n = 0; n < TUM.length; n++) {
     const k = TUM[n];
     const open = (1 - S.BF[k]) / 0.9;
-    if (open > 0.3 && S.K[k] < KR[k]) S.K[k] = Math.min(KR[k], S.K[k] + dt * 0.26 * sm(0.3, 0.85, open));
+    if (S.chemo > 0 && open > 0.3 && S.K[k] < KR[k]) S.K[k] = Math.min(KR[k], S.K[k] + dt * 0.3 * S.chemo * sm(0.3, 0.85, open));
   }
 }
 
 export function metrics(T: Tissue, S: Sim) {
-  let burden = 0, inf = 0;
-  for (const k of T.TUM) {
-    burden += 1 - S.K[k];
-    if (T.INF[k] && S.K[k] > 0.85) inf++;
-  }
+  let burden = 0;
+  for (const k of T.TUM) burden += 1 - S.K[k] / (T.KR[k] || 1);
   let rem = 0;
   for (const k of T.RINGED) rem += T.C0[k] * S.BF[k];
   const tumN = T.TUM.length || 1;
+  const barrier = (100 * rem) / (T.sumC0 || 1);
   return {
     burden: (100 * burden) / tumN,
-    barrier: (100 * rem) / (T.sumC0 || 1),
-    tcell: (100 * (inf + T.preT)) / (tumN + T.preT),
+    barrier,
+    ecm: clamp((100 - barrier) / 0.9, 0, 100), // stage 1 progress
+    chemo: clamp(100 - (100 * burden) / tumN, 0, 100), // stage 2 progress
+    chemoOn: S.chemo > 0.02,
   };
 }
 
@@ -457,7 +528,7 @@ export function draw(
   S: Sim,
   view: View,
   t: number,
-  { bg = THEMES.neon.bg as string | null, reduceMotion = false, style = "neon" as StyleName, bleed = false } = {},
+  { bg = THEMES.neon.bg as string | null, reduceMotion = false, style = "neon" as StyleName, bleed = false, panel = null as StagePanel | null } = {},
 ) {
   const theme = THEMES[style], fibCols = FIB[style];
   const N = T.N;
@@ -475,7 +546,7 @@ export function draw(
   const i0 = Math.max(0, Math.floor(-ox / p) - 1), i1 = Math.min(N - 1, Math.ceil((W - ox) / p) + 1);
   const j0 = Math.max(0, Math.floor(-oy / p) - 1), j1 = Math.min(N - 1, Math.ceil((H - oy) / p) + 1);
   const gap = p * 0.045, minTh = 0.4 * unit;
-  const { TY, RB, C0, PH, RO, DIR, INF, FL } = T;
+  const { TY, RB, C0, PH, RO, DIR, FL } = T;
   const { BF, K } = S;
   const field = new Path2D();
   // bleed: every dot shrinks smoothly toward the canvas edges, so the matrix never ends abruptly
@@ -506,13 +577,14 @@ export function draw(
       let a = 1;
       if (ty === 0) {
         const kk = K[k];
-        if (kk < 0.55) (r *= 1 - 0.45 * kk), (a = 1 - 0.3 * kk);
-        else if (kk < 0.85 || !INF[k]) {
-          const q = clamp((kk - 0.55) / 0.45, 0, 1);
+        // stage 2: the cancer cell shrinks and turns into a small grey dot
+        if (kk < 0.45) (r *= 1 - 0.5 * kk), (a = 1 - 0.2 * kk);
+        else {
+          const q = clamp((kk - 0.45) / 0.55, 0, 1);
           ty = 5;
-          r *= Math.max(0.25, 0.62 - 0.45 * q);
-          a = 0.9 - 0.45 * q;
-        } else (ty = 3), (r *= 0.9 * sm(0.85, 1, kk));
+          r *= 0.72 - 0.34 * q;
+          a = 1 - 0.25 * q;
+        }
       }
       if (r > 0.25 * unit) {
         const lv = a > 0.9 ? 3 : a > 0.67 ? 2 : a > 0.42 ? 1 : 0;
@@ -585,4 +657,67 @@ export function draw(
     });
   }
   ctx.globalAlpha = 1;
+  if (panel) drawStagePanel(ctx, view, theme, style, panel);
+}
+
+/* ---------- stage panel (drawn into the canvas, so it renders out with the map) ---------- */
+export type StagePanel = { ecm: number; chemo: number; chemoOn: boolean; corner?: "br" | "bl" | "tr" | "tl" };
+export function drawStagePanel(ctx: CanvasRenderingContext2D, view: View, theme: Theme, style: StyleName, P: StagePanel) {
+  const u = Math.max(view.unit, Math.min(view.W, view.H) / 1080), W = view.W, H = view.H;
+  const light = style === "clinical";
+  const pad = 16 * u, R = 27 * u, lw = 6 * u, rowH = 2 * R + 24 * u, w = 252 * u, h = 2 * rowH + 2 * pad - 24 * u + 30 * u;
+  const corner = P.corner ?? "br";
+  const x0 = corner.endsWith("r") ? W - w - 24 * u : 24 * u;
+  const y0 = corner.startsWith("b") ? H - h - 24 * u : 24 * u;
+  const text = light ? "#25242d" : "#eeebf8", mute = light ? "#5c5b6a" : "#9a94b6", track = light ? "rgba(37,36,45,.12)" : "rgba(238,235,248,.12)";
+  ctx.save();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = light ? "rgba(240,240,243,.88)" : "rgba(13,11,23,.82)";
+  ctx.strokeStyle = light ? "rgba(37,36,45,.12)" : "rgba(238,235,248,.1)";
+  ctx.lineWidth = 1 * u;
+  ctx.beginPath();
+  ctx.roundRect(x0, y0, w, h, 10 * u);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = mute;
+  ctx.font = `500 ${10.5 * u}px "IBM Plex Mono", ui-monospace, monospace`;
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText("TREATMENT", x0 + pad, y0 + pad + 9 * u);
+  const ecmActive = !P.chemoOn || P.ecm < 99.5;
+  const rows = [
+    { n: "1", title: "Antibody", sub: "ECM cleared", v: P.ecm, col: theme.fib[1], active: ecmActive && !(P.chemoOn && P.ecm > 97) },
+    { n: "2", title: "Chemotherapy", sub: "Tumour cleared", v: P.chemo, col: theme.inner[0], active: P.chemoOn },
+  ];
+  rows.forEach((r, i) => {
+    const cx = x0 + pad + R + lw / 2, cy = y0 + pad + 26 * u + i * rowH + R;
+    ctx.globalAlpha = r.active || r.v >= 95 ? 1 : 0.45;
+    ctx.lineWidth = lw;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = track;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, TAU);
+    ctx.stroke();
+    if (r.v > 0.3) {
+      ctx.strokeStyle = r.col;
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, -Math.PI / 2, -Math.PI / 2 + (TAU * clamp(r.v, 0, 100)) / 100);
+      ctx.stroke();
+    }
+    ctx.fillStyle = text;
+    ctx.textAlign = "center";
+    ctx.font = `500 ${14 * u}px "IBM Plex Mono", ui-monospace, monospace`;
+    ctx.fillText(`${Math.round(r.v)}%`, cx, cy + 5 * u);
+    ctx.textAlign = "left";
+    const tx = cx + R + lw / 2 + 16 * u;
+    ctx.fillStyle = mute;
+    ctx.font = `500 ${10.5 * u}px "IBM Plex Mono", ui-monospace, monospace`;
+    ctx.fillText(`STAGE ${r.n}`, tx, cy - 12 * u);
+    ctx.fillStyle = text;
+    ctx.font = `600 ${16 * u}px "Instrument Sans", system-ui, sans-serif`;
+    ctx.fillText(r.title, tx, cy + 6 * u);
+    ctx.fillStyle = mute;
+    ctx.font = `400 ${12.5 * u}px "Instrument Sans", system-ui, sans-serif`;
+    ctx.fillText(r.sub, tx, cy + 23 * u);
+  });
+  ctx.restore();
 }

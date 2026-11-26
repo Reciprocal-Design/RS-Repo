@@ -6,7 +6,12 @@ A neon density map of a tumour section. Each dot is a 20 µm patch of tissue: th
 
 ## How it behaves
 
+- **Two-stage timeline (default).** A 15 s sequence. Stage 1, antibody: the ECM rings come down in waves that close in from the outside toward the tumour. Stage 2, chemotherapy: starts just before stage 1 ends and shrinks the cancer cells into small grey dots, again from the outside in. Play, pause and scrub it in the panel. The Cursor playback mode keeps the interactive version (see below).
+- **Stage panel.** Two radial progress rings, Antibody (ECM cleared) and Chemotherapy (tumour cleared), drawn on the map itself so they render into exports. Toggle in the panel or with `?panel=off`.
+- **Hero tumour.** Generated tissue puts the main tumour mass in the centre with smaller satellite nests around it. Drawn layouts keep exactly what you draw.
+
 - **Two styles.** Neon (black ground, saturated colours) and Clinical (light grey ground, muted pinks, periwinkles and graphite fibres). Switch in the panel, or open the page with `?style=clinical` or `?style=neon`. The last choice is remembered.
+- **Cursor mode** (`?mode=cursor`). The cursor carries the antibody (stage 1); chemotherapy (stage 2) starts once 40% of the ECM is cleared and reaches cancer cells whose rings are open.
 - **The cursor carries the antibody.** Moving across the tissue sends out ripples from your path. As each ripple spreads, the collagen rings it crosses come down in a six-petal pattern, breaking into fibre fragments that drift apart and thin out. Dense collagen needs more passes than loose fibres.
 - **Edges.** Cropped lets the grid run off the canvas; Bleed shrinks every dot smoothly toward all four edges (most at the corners) and fills the gaps with small background dots, so the matrix tapers away instead of ending abruptly. Switch in the panel or with `?edge=bleed` / `?edge=fade`. Applies to exports too.
 - **Background colour.** Pick any ground colour in the panel (Reset returns to the style's own); it is remembered per style, used as the export background, and can be set with `?bg=e4e4e8`.
@@ -15,7 +20,7 @@ A neon density map of a tumour section. Each dot is a 20 µm patch of tissue: th
 - **Tumour boundary.** A thin outline traces where the tumour started, so its bounds stay visible as it clears.
 - **Movement, not hovering.** Holding the cursor still delivers nothing; the amount scales with how far you move. On touch screens, drag.
 - **Antibody dose bar** (0–20 mg/kg) sets the ripples: a higher dose sends wider, stronger ripples. At 0 the cursor does nothing.
-- **Tumour response.** Once a tumour cell's ring is open, the drug reaches it: it dies back over a few seconds, and about half are replaced by T cells (cyan).
+- **Tumour response.** Cleared cancer cells shrink into small grey dots.
 - **Regrowth.** Exposure fades slowly, so a barrier you leave alone grows back. Tumour cells that already died stay cleared until you press Restart.
 - Keyboard: focus the map and use the arrow keys to move a virtual cursor. Space pauses, R restarts, N makes new tissue, E opens Export.
 
@@ -23,7 +28,7 @@ A neon density map of a tumour section. Each dot is a 20 µm patch of tissue: th
 
 The standard studio export panel: MP4 (H.264), WebM (VP9, optional alpha), PNG sequence (.zip) and single PNG, with size, frame rate, range and quality options. Two clips:
 
-- **Cursor sweep:** 15 s from untouched tissue, a scripted cursor path clears it at the current dose. Replayed frame by frame, so exports are exact.
+- **Two-stage treatment:** the 15 s timeline, rendered frame by frame (it is a pure function of time, so exports are exact).
 - **Current state, looping:** a seamless 6 s loop of the tissue as you left it.
 
 MP4 cannot carry transparency; use WebM with alpha (Chrome or Edge) for the web, or the PNG sequence for After Effects, Premiere, DaVinci or Final Cut. ProRes 4444 from the PNG sequence:

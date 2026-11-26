@@ -217,8 +217,8 @@ export default function ExportPanel({ open, onClose, app, setClip, doseLabel, ma
           <label className="clip">
             <input type="radio" name="clip" checked={s.clip === "sweep"} onChange={() => setClipKind("sweep")} />
             <span>
-              <strong>Cursor sweep</strong>
-              <em>15 s from untouched tissue, a scripted cursor clears it at {doseLabel}</em>
+              <strong>Two-stage treatment</strong>
+              <em>15 s: antibody clears the ECM, then chemotherapy clears the tumour{doseLabel ? "" : ""}</em>
             </span>
           </label>
           <label className="clip">
