@@ -238,3 +238,33 @@ i.sw-tumour{background:#dd5fa6}
 :root[data-style="brand"] .tl-stage.s1{background:rgba(140,140,144,.22);border-color:rgba(53,53,53,.35)}
 :root[data-style="brand"] .stage.checker{background:repeating-conic-gradient(#ececee 0 25%,#fafafa 0 50%) 0 0/22px 22px}
 .style-switch{flex-wrap:wrap}
+
+/* Logo style: the colours of the Periotherapia mark on white */
+:root[data-style="mark"]{
+  --ink:#ffffff; --ink-2:#f6f8fb; --ink-3:#eef2f7; --line:#dde3ec; --text:#1b2d4a; --mute:#5d6b80; --faint:#97a2b3;
+  --ab:#1f4e89; --ab-soft:#80b2e0; --warn:#c07a2c; --bad:#c2321f; --front:#1f4e89;
+  --hud-bg:rgba(255,255,255,.85); --hint-bg:rgba(255,255,255,.94); --kbd-on-primary:#a9b6c9;
+  color-scheme:light;
+}
+:root[data-style="mark"] .brand h1 span{color:var(--ab)}
+:root[data-style="mark"] .gauge .fill{background:linear-gradient(90deg,rgba(128,178,224,.35),var(--ab-soft) 55%,var(--ab));box-shadow:none}
+:root[data-style="mark"] .gauge input::-webkit-slider-thumb{box-shadow:0 0 0 2px var(--ink-2)}
+:root[data-style="mark"] .gauge input::-moz-range-thumb{box-shadow:0 0 0 2px var(--ink-2)}
+:root[data-style="mark"] .hud .live::before{box-shadow:none}
+:root[data-style="mark"] .chip[aria-pressed="true"]{color:#fff}
+:root[data-style="mark"] .cmd code{background:#1b2d4a;color:#dbe8f7}
+:root[data-style="mark"] .stage.checker{background:repeating-conic-gradient(#eef1f5 0 25%,#fff 0 50%) 0 0/22px 22px}
+:root[data-style="mark"] .tl-stage.s1{background:rgba(184,175,223,.3);border-color:rgba(139,128,198,.6)}
+
+.colours{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding-block:10px}
+.colours summary{display:flex;align-items:center;justify-content:space-between;cursor:pointer;list-style:none}
+.colours summary::-webkit-details-marker{display:none}
+.colours summary::after{content:"+";font:500 16px/1 var(--f-mono);color:var(--mute)}
+.colours[open] summary::after{content:"–"}
+.colours .swatches{display:flex;gap:3px;margin-left:auto;margin-right:10px}
+.colours .swatches i{width:10px;height:10px;border-radius:50%}
+.colour-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin:12px 0}
+.colour-item{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text);min-width:0;cursor:pointer}
+.colour-item input[type=color]{width:28px;height:24px;padding:1px;border:1px solid var(--line);border-radius:4px;background:var(--ink-3);flex:none;cursor:pointer}
+.colour-item span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.colour-item em{font-style:normal;font-size:10px;color:var(--mute);margin-left:auto}
