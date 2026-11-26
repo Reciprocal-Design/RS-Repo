@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ExportPanel, { type Clip } from "./ExportPanel";
 import LayoutPad, { loadStoredLayout } from "./LayoutPad";
 import {
-  DAYS_PER_S, DEFAULT_N, LOOP, MAX_DOSE, MAX_N, MIN_N, THEMES, clamp, cloneSim, computeView, createSim, draw, generate, metrics, stepSim, sweepPointer,
+  DAYS_PER_S, DEFAULT_N, LOOP, MAX_DOSE, MAX_N, MIN_N, STAGE, THEMES, autoState, clamp, cloneSim, computeView, createSim, draw, generate, metrics, resetSim, stepSim,
   type Layout, type Sim, type StyleName, type Tissue, type View,
 } from "@/lib/engine";
 import type { ExportApp } from "@/lib/exportMedia";
@@ -16,6 +16,9 @@ const BG_KEY = (st: StyleName) => `stroma-field-vercel.bg.${st}`;
 const HEX = /^#?[0-9a-f]{6}$/i;
 const DOTS_KEY = "stroma-field-vercel.dots";
 const LAYOUT_ON_KEY = "stroma-field-vercel.layoutOn";
+const MODE_KEY = "stroma-field-vercel.mode";
+const PANEL_KEY = "stroma-field-vercel.panel";
+type Mode = "auto" | "cursor";
 const SWEEP_DT = 1 / 120;
 
 type Engine = {
@@ -37,6 +40,9 @@ type Engine = {
   dots: number;
   layout: Layout | null;
   resize: () => void;
+  mode: Mode;
+  autoT: number; // position on the two-stage timeline (s)
+  panel: boolean;
 };
 
 export default function StromaField() {
@@ -48,7 +54,9 @@ export default function StromaField() {
   const doseRef = useRef(10);
   const [paused, setPaused] = useState(false);
   const pausedRef = useRef(false);
-  const [readout, setReadout] = useState({ burden: 100, barrier: 100, tcell: 0, day: 0, trend: "stable" as "stable" | "shrinking" | "regrowing" });
+  const [readout, setReadout] = useState({ burden: 100, barrier: 100, ecm: 0, chemo: 0, chemoOn: false, day: 0, autoT: 0, trend: "stable" as "stable" | "shrinking" | "regrowing" });
+  const [mode, setModeState] = useState<Mode>("auto");
+  const [panelOn, setPanelOn] = useState(true);
   const [hud, setHud] = useState({ field: "", scaleUm: 200, scalePx: 60 });
   const [touched, setTouched] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -112,6 +120,34 @@ export default function StromaField() {
     const e = eng.current;
     if (!e) return;
     e.S = createSim(e.T);
+    e.autoT = 0;
+    e.hist.length = 0;
+  }, []);
+  const setMode = useCallback((m: Mode) => {
+    setModeState(m);
+    const e = eng.current;
+    if (e) {
+      e.mode = m;
+      e.S = createSim(e.T);
+      e.autoT = 0;
+      e.hist.length = 0;
+      e.pointer = null;
+    }
+    try {
+      localStorage.setItem(MODE_KEY, m);
+    } catch {}
+  }, []);
+  const togglePanel = useCallback((on: boolean) => {
+    setPanelOn(on);
+    if (eng.current) eng.current.panel = on;
+    try {
+      localStorage.setItem(PANEL_KEY, on ? "1" : "0");
+    } catch {}
+  }, []);
+  const scrub = useCallback((t: number) => {
+    const e = eng.current;
+    if (!e) return;
+    e.autoT = clamp(t, 0, STAGE.end);
     e.hist.length = 0;
   }, []);
   /** Rebuild the tissue with the current seed, dot count and layout. */
@@ -202,7 +238,16 @@ export default function StromaField() {
     n = Math.round(clamp(n, MIN_N, MAX_N));
     setDots(n);
     const T = generate(seed, n);
-    const e: Engine = { T, dots: n, layout: null, resize: () => {}, S: createSim(T), view: computeView(2, 2, 1, false, T.N), dpr: 1, animT: 0, pointer: null, hist: [], exporting: false, exportBg: THEMES[st].bg, clip: "sweep", hold: null, sweep: null, style: st, bleed: bl, bg: THEMES[st].bg };
+    let md: Mode = "auto", pn = true;
+    const qm = new URLSearchParams(location.search).get("mode");
+    try {
+      md = qm === "cursor" || qm === "auto" ? qm : localStorage.getItem(MODE_KEY) === "cursor" ? "cursor" : "auto";
+      pn = localStorage.getItem(PANEL_KEY) !== "0";
+    } catch {}
+    if (new URLSearchParams(location.search).get("panel") === "off") pn = false;
+    setModeState(md);
+    setPanelOn(pn);
+    const e: Engine = { T, dots: n, layout: null, resize: () => {}, mode: md, autoT: 0, panel: pn, S: createSim(T), view: computeView(2, 2, 1, false, T.N), dpr: 1, animT: 0, pointer: null, hist: [], exporting: false, exportBg: THEMES[st].bg, clip: "sweep", hold: null, sweep: null, style: st, bleed: bl, bg: THEMES[st].bg };
     eng.current = e;
     const reduce = matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -254,7 +299,12 @@ export default function StromaField() {
       if (e.exporting || !visible || document.hidden) return;
       if (!pausedRef.current) {
         e.animT = (e.animT + dt) % (LOOP * 100);
-        stepSim(e.T, e.S, dt, e.pointer, doseRef.current);
+        if (e.mode === "auto") {
+          // the two-stage timeline plays once, holds on the final frame for a moment, then starts again
+          e.autoT += dt;
+          if (e.autoT > STAGE.end + 2.5) (e.autoT = 0), (e.hist.length = 0);
+          autoState(e.T, e.S, Math.min(e.autoT, STAGE.end));
+        } else stepSim(e.T, e.S, dt, e.pointer, doseRef.current);
         histAcc += dt;
         if (histAcc >= 0.25) {
           histAcc = 0;
@@ -262,13 +312,18 @@ export default function StromaField() {
           if (e.hist.length > 240) e.hist.shift();
         }
       }
-      draw(ctx, e.T, e.S, e.view, e.animT, { bg: e.bg, reduceMotion: reduce.matches, style: e.style, bleed: e.bleed });
+      if (e.mode === "auto" && pausedRef.current) autoState(e.T, e.S, Math.min(e.autoT, STAGE.end)); // scrubbing while paused
+      const mt0 = e.panel ? metrics(e.T, e.S) : null;
+      draw(ctx, e.T, e.S, e.view, e.animT, {
+        bg: e.bg, reduceMotion: reduce.matches, style: e.style, bleed: e.bleed,
+        panel: mt0 && { ecm: mt0.ecm, chemo: mt0.chemo, chemoOn: mt0.chemoOn || (e.mode === "auto" && e.autoT >= STAGE.chemoStart) },
+      });
       uiAcc += dt;
       if (uiAcc > 0.1) {
         uiAcc = 0;
         const mt = metrics(e.T, e.S);
         const prev = e.hist.length > 8 ? e.hist[e.hist.length - 9] : mt.burden, d = mt.burden - prev;
-        setReadout({ ...mt, day: e.S.simT * DAYS_PER_S, trend: d < -0.3 ? "shrinking" : d > 0.3 ? "regrowing" : "stable" });
+        setReadout({ ...mt, autoT: Math.min(e.autoT, STAGE.end), day: (e.mode === "auto" ? Math.min(e.autoT, STAGE.end) : e.S.simT) * DAYS_PER_S, trend: d < -0.3 ? "shrinking" : d > 0.3 ? "regrowing" : "stable" });
         drawSpark(spark, e.hist, e.dpr, THEMES[e.style].inner[0], e.style === "clinical" ? "rgba(60,60,80,.16)" : "rgba(154,148,182,.18)");
       }
     };
@@ -288,6 +343,7 @@ export default function StromaField() {
   const onPointerMove = (ev: React.PointerEvent) => {
     const e = eng.current;
     if (!e) return;
+    if (e.mode !== "cursor") return;
     if (ev.pointerType !== "mouse" && ev.buttons === 0) return; // touch and pen deliver while pressed
     e.pointer = toGrid(ev.clientX, ev.clientY);
     if (!touched && doseRef.current > 0) setTouched(true);
@@ -341,22 +397,17 @@ export default function StromaField() {
     async renderAt(t: number) {
       const e = eng.current!, ctx = canvasRef.current!.getContext("2d")!;
       if (e.clip === "loop") {
-        draw(ctx, e.T, e.hold!, e.view, t, { bg: e.exportBg, style: e.style, bleed: e.bleed });
+        const mh = e.panel ? metrics(e.T, e.hold!) : null;
+        draw(ctx, e.T, e.hold!, e.view, t, { bg: e.exportBg, style: e.style, bleed: e.bleed, panel: mh && { ecm: mh.ecm, chemo: mh.chemo, chemoOn: mh.chemoOn } });
         return;
       }
-      // scripted sweep: replay the treatment deterministically from untouched tissue up to t
-      if (!e.sweep || t < e.sweep.simT - 1e-6) e.sweep = createSim(e.T);
-      const S = e.sweep, dose = doseRef.current || 12;
-      if (!Number.isFinite(S.lx)) {
-        const p0 = sweepPointer(0, e.view, e.T.N);
-        S.lx = p0.x;
-        S.ly = p0.y;
-      }
-      while (S.simT < t - 1e-9) {
-        const dt = Math.min(SWEEP_DT, t - S.simT);
-        stepSim(e.T, S, dt, sweepPointer(S.simT + dt, e.view, e.T.N), dose);
-      }
-      draw(ctx, e.T, S, e.view, t, { bg: e.exportBg, style: e.style, bleed: e.bleed });
+      // the two-stage timeline is a pure function of t, so exports are exact
+      if (!e.sweep) e.sweep = createSim(e.T);
+      const S = e.sweep;
+      resetSim(S);
+      autoState(e.T, S, Math.min(t, STAGE.end));
+      const mt = e.panel ? metrics(e.T, S) : null;
+      draw(ctx, e.T, S, e.view, t, { bg: e.exportBg, style: e.style, bleed: e.bleed, panel: mt && { ecm: mt.ecm, chemo: mt.chemo, chemoOn: t >= STAGE.chemoStart } });
     },
     beginExport({ width, height, transparent, matte }) {
       const e = eng.current!, canvas = canvasRef.current!, stage = stageRef.current!;
@@ -409,7 +460,7 @@ export default function StromaField() {
           <span className="scalebar" style={{ width: hud.scalePx }} />
           <span>{hud.scaleUm} µm</span>
         </div>
-        <div className={`hint${touched ? " gone" : ""}`} aria-hidden={touched}>
+        <div className={`hint${touched || mode === "auto" ? " gone" : ""}`} aria-hidden={touched || mode === "auto"}>
           {dose > 0 ? "Move or drag across the tissue to deliver antibody" : "Raise the antibody dose, then move across the tissue"}
         </div>
       </main>
@@ -417,7 +468,7 @@ export default function StromaField() {
       <aside className="panel" aria-label="Controls and readouts">
         <header className="brand">
           <h1>Stroma <span>Field</span></h1>
-          <p>A simulated tumour section. Each dot is a 20 µm patch of tissue: the core shows its main cell type, the ring shows the collagen wrapped around it. Your cursor carries the antibody.</p>
+          <p>A simulated tumour section. Each dot is a 20 µm patch of tissue: the core shows its main cell type, the grey ring is the collagen (ECM) wrapped around it. Treatment runs in two stages: an antibody clears the ECM, then chemotherapy clears the tumour.</p>
         </header>
 
         <div className="switches">
@@ -462,7 +513,35 @@ export default function StromaField() {
           </label>
         </div>
 
-        <section className="dose" aria-labelledby="doseLabel">
+        <section className="playback" aria-labelledby="playLabel">
+          <div className="switch-row">
+            <span className="label" id="playLabel">Playback</span>
+            <div className="style-switch" role="group" aria-labelledby="playLabel">
+              <button type="button" className="chip" aria-pressed={mode === "auto"} onClick={() => setMode("auto")}>Two-stage timeline</button>
+              <button type="button" className="chip" aria-pressed={mode === "cursor"} onClick={() => setMode("cursor")}>Cursor</button>
+            </div>
+          </div>
+          {mode === "auto" && (
+            <div className="timeline">
+              <div className="tl-track" aria-hidden="true">
+                <span className="tl-stage s1" style={{ left: `${(STAGE.ecmStart / STAGE.end) * 100}%`, width: `${((STAGE.ecmStart + STAGE.ecmSpan + STAGE.ecmFade * 0.5 - STAGE.ecmStart) / STAGE.end) * 100}%` }}>1 Antibody</span>
+                <span className="tl-stage s2" style={{ left: `${(STAGE.chemoStart / STAGE.end) * 100}%`, width: `${((STAGE.chemoSpan + STAGE.chemoFade * 0.5) / STAGE.end) * 100}%` }}>2 Chemo</span>
+              </div>
+              <input
+                type="range" min={0} max={STAGE.end} step={0.05} value={readout.autoT} aria-label="Timeline position"
+                aria-valuetext={`${readout.autoT.toFixed(1)} seconds`}
+                onChange={(ev) => { if (!pausedRef.current) togglePause(); scrub(+ev.target.value); }}
+              />
+              <div className="tl-time num">{readout.autoT.toFixed(1)} s / {STAGE.end} s</div>
+            </div>
+          )}
+          <label className="check-row">
+            <input type="checkbox" checked={panelOn} onChange={(ev) => togglePanel(ev.target.checked)} />
+            <span>Show stage panel on the map (included in exports)</span>
+          </label>
+        </section>
+
+        {mode === "cursor" && <section className="dose" aria-labelledby="doseLabel">
           <div className="head">
             <h2 className="label" id="doseLabel">Antibody dose</h2>
             <output htmlFor="dose">{dose.toFixed(1)}<small>mg/kg</small></output>
@@ -483,9 +562,9 @@ export default function StromaField() {
             ))}
           </div>
           <p className="help" id="doseHelp">
-            Move across the tissue to send out ripples of antibody. The collagen rings come down in a petal pattern as each ripple spreads; a higher dose sends wider, stronger ripples, and dense rings take more passes. Where a ring opens, the drug reaches the tumour cell inside, it dies back and T cells move in. Leave an area alone and its barrier slowly grows back.
+            Stage 1: move across the tissue to send out ripples of antibody that bring the grey ECM rings down; a higher dose sends wider, stronger ripples. Stage 2: once 40% of the ECM is cleared, chemotherapy starts and the cancer cells whose rings are open shrink into small grey dots. Leave an area alone and its ECM slowly grows back.
           </p>
-        </section>
+        </section>}
 
         <section aria-labelledby="burdenLabel">
           <div className="burden">
@@ -497,12 +576,12 @@ export default function StromaField() {
           </div>
           <dl className="kv">
             <div>
-              <dt>Collagen barrier intact</dt><dd>{readout.barrier.toFixed(0)}%</dd>
-              <span className="mini fib"><i style={{ width: `${readout.barrier}%` }} /></span>
+              <dt>Stage 1 · ECM cleared (antibody)</dt><dd>{readout.ecm.toFixed(0)}%</dd>
+              <span className="mini fib"><i style={{ width: `${readout.ecm}%` }} /></span>
             </div>
             <div>
-              <dt>T cells inside tumour nests</dt><dd>{readout.tcell.toFixed(0)}%</dd>
-              <span className="mini cyan"><i style={{ width: `${readout.tcell}%` }} /></span>
+              <dt>Stage 2 · Tumour cleared (chemo)</dt><dd>{readout.chemo.toFixed(0)}%</dd>
+              <span className="mini tum"><i style={{ width: `${readout.chemo}%` }} /></span>
             </div>
           </dl>
         </section>
@@ -510,7 +589,7 @@ export default function StromaField() {
         <section className="key" aria-labelledby="keyLabel">
           <h2 className="label" id="keyLabel">Core: cell type</h2>
           <ul>
-            {["Tumour cell", "Fibroblast (CAF)", "Macrophage", "Cytotoxic T cell", "Blood vessel", "Dying cell"].map((n, i) => (
+            {["Tumour cell", "Fibroblast (CAF)", "Macrophage", "Cytotoxic T cell", "Blood vessel", "Cleared cancer cell"].map((n, i) => (
               <li key={n}><span className="dot" style={{ background: theme.inner[i] }} />{n}</li>
             ))}
           </ul>

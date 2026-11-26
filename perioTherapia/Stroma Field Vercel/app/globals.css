@@ -206,3 +206,14 @@ dialog.pad-dlg{width:min(900px,calc(100vw - 24px))}
 i.sw-tissue{background:#8270e2}
 i.sw-tumour{background:#dd5fa6}
 @media (max-width:720px){.pad-body{grid-template-columns:1fr}}
+.playback{display:grid;gap:12px}
+.timeline{display:grid;gap:6px}
+.tl-track{position:relative;height:48px}
+.tl-stage{position:absolute;top:0;height:22px;border-radius:4px;font:500 10.5px/22px var(--f-mono);letter-spacing:.04em;padding-left:7px;white-space:nowrap;overflow:hidden;color:var(--text)}
+.tl-stage.s1{background:color-mix(in srgb,var(--fib-mid) 30%,transparent);border:1px solid color-mix(in srgb,var(--fib-mid) 60%,transparent)}
+.tl-stage.s2{top:26px;background:color-mix(in srgb,var(--tumour) 22%,transparent);border:1px solid color-mix(in srgb,var(--tumour) 55%,transparent)}
+.timeline input[type=range]{width:100%;accent-color:var(--ab-soft)}
+.tl-time{font-size:12px;color:var(--mute);text-align:right}
+.check-row{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--mute);cursor:pointer}
+.check-row input{width:16px;height:16px;accent-color:var(--ab-soft)}
+.kv .mini.tum i{background:var(--tumour)}
