@@ -217,3 +217,24 @@ i.sw-tumour{background:#dd5fa6}
 .check-row{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--mute);cursor:pointer}
 .check-row input{width:16px;height:16px;accent-color:var(--ab-soft)}
 .kv .mini.tum i{background:var(--tumour)}
+
+/* Periotherapia style: brand palette (off-white, blue, yellow, salmon, lavender, mint, charcoal) */
+:root[data-style="brand"]{
+  --ink:#f5f5f5; --ink-2:#ffffff; --ink-3:#efeff0; --line:#dedee1; --text:#353535; --mute:#6b6b70; --faint:#9a9aa0;
+  --tumour:#dd5f7a; --caf:#3d6fb4; --myeloid:#b5b0df; --tcell:#9ed9c6; --vessel:#f4cf7e; --dead:#b9b9be;
+  --fib-lo:#cfcfd2; --fib-mid:#8c8c90; --fib-hi:#353535; --front:#353535;
+  --ab:#3d6fb4; --ab-soft:#9db6dc; --warn:#c07a2c; --bad:#c2321f;
+  --hud-bg:rgba(255,255,255,.82); --hint-bg:rgba(255,255,255,.92); --kbd-on-primary:#b0b0b5;
+  color-scheme:light;
+}
+:root[data-style="brand"] .brand h1 span{color:var(--ab)}
+:root[data-style="brand"] .gauge .fill{background:linear-gradient(90deg,rgba(157,182,220,.4),var(--ab-soft) 55%,var(--ab));box-shadow:none}
+:root[data-style="brand"] .gauge input::-webkit-slider-thumb{box-shadow:0 0 0 2px var(--ink-2)}
+:root[data-style="brand"] .gauge input::-moz-range-thumb{box-shadow:0 0 0 2px var(--ink-2)}
+:root[data-style="brand"] .hud .live::before{box-shadow:none}
+:root[data-style="brand"] .chip[aria-pressed="true"]{color:#fff}
+:root[data-style="brand"] .cmd code{background:#353535;color:#dfe8f6}
+:root[data-style="brand"] .burden .big{color:var(--tumour)}
+:root[data-style="brand"] .tl-stage.s1{background:rgba(140,140,144,.22);border-color:rgba(53,53,53,.35)}
+:root[data-style="brand"] .stage.checker{background:repeating-conic-gradient(#ececee 0 25%,#fafafa 0 50%) 0 0/22px 22px}
+.style-switch{flex-wrap:wrap}
