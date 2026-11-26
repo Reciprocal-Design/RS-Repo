@@ -86,7 +86,7 @@ button,input,select{font:inherit;color:inherit}
 .ramp-labels{display:flex;justify-content:space-between;font-size:11.5px;color:var(--mute)}
 .frontkey{grid-column:1/-1;display:flex;align-items:center;gap:9px;font-size:13px;color:var(--mute);margin-top:6px}
 .frontkey i{width:12px;height:12px;border-radius:50%;border:3px solid var(--front);box-shadow:0 0 8px var(--front);flex:none}
-.frontkey i.frag{border:3px dashed var(--fib-mid);box-shadow:none}
+.frontkey i.frag{border:2px solid var(--fib-mid);box-shadow:none}
 .frontkey em{font-style:normal;color:var(--text)}
 .abkey i{border:0;width:5px;height:5px;margin:0 3.5px;background:var(--speck);box-shadow:0 0 6px var(--speck)}
 
@@ -221,7 +221,7 @@ i.sw-tumour{background:#dd5fa6}
 /* Periotherapia style: brand palette (off-white, blue, yellow, salmon, lavender, mint, charcoal) */
 :root[data-style="brand"]{
   --ink:#f5f5f5; --ink-2:#ffffff; --ink-3:#efeff0; --line:#dedee1; --text:#353535; --mute:#6b6b70; --faint:#9a9aa0;
-  --tumour:#dd5f7a; --caf:#3d6fb4; --myeloid:#b5b0df; --tcell:#9ed9c6; --vessel:#f4cf7e; --dead:#b9b9be;
+  --tumour:#e8936f; --caf:#3d6fb4; --myeloid:#b5b0df; --tcell:#9ed9c6; --vessel:#f4cf7e; --dead:#b9b9be;
   --fib-lo:#cfcfd2; --fib-mid:#8c8c90; --fib-hi:#353535; --front:#353535;
   --ab:#3d6fb4; --ab-soft:#9db6dc; --warn:#c07a2c; --bad:#c2321f;
   --hud-bg:rgba(255,255,255,.82); --hint-bg:rgba(255,255,255,.92); --kbd-on-primary:#b0b0b5;
