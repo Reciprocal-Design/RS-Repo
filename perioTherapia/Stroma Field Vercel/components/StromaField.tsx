@@ -597,7 +597,7 @@ export default function StromaField() {
             <span className="ring-sample" aria-hidden="true" />
             <h2 className="label">Ring: collagen barrier</h2>
             <div><div className="ramp" /><div className="ramp-labels"><span>Loose fibres</span><span>Dense, cross-linked</span></div></div>
-            <div className="frontkey"><i className="frag" /><span><em>Broken ring</em>: barrier being digested</span></div>
+            <div className="frontkey"><i className="frag" /><span><em>Thinning ring</em>: ECM being cleared</span></div>
             <div className="frontkey"><i className="edge" /><span><em>Outline</em>: where the tumour started</span></div>
           </div>
         </section>

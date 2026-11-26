@@ -44,7 +44,7 @@ export const THEMES: Record<StyleName, Theme> = {
   // Periotherapia brand palette (Design Approach 3), keeping the red for cancer
   brand: {
     bg: "#f5f5f5",
-    inner: ["#dd5f7a", "#3d6fb4", "#b5b0df", "#9ed9c6", "#f4cf7e", "#b9b9be"],
+    inner: ["#f2a887", "#3d6fb4", "#b5b0df", "#9ed9c6", "#f4cf7e", "#b9b9be"],
     fib: ["#cfcfd2", "#8c8c90", "#353535"],
     outline: "rgba(53,53,53,.55)",
     ringAlpha: 0.9,
@@ -560,7 +560,7 @@ export function draw(
   const i0 = Math.max(0, Math.floor(-ox / p) - 1), i1 = Math.min(N - 1, Math.ceil((W - ox) / p) + 1);
   const j0 = Math.max(0, Math.floor(-oy / p) - 1), j1 = Math.min(N - 1, Math.ceil((H - oy) / p) + 1);
   const gap = p * 0.045, minTh = 0.4 * unit;
-  const { TY, RB, C0, PH, RO, DIR, FL } = T;
+  const { TY, RB, C0, PH, FL } = T;
   const { BF, K } = S;
   const field = new Path2D();
   // bleed: every dot shrinks smoothly toward the canvas edges, so the matrix never ends abruptly
@@ -608,30 +608,16 @@ export function draw(
       }
       const c0 = C0[k];
       if (c0 > 0.04) {
-        const bf = BF[k], op = clamp(1 - bf, 0, 1);
-        const th = p * 0.22 * c0 * (0.25 + 0.75 * bf) * (1 + m * 0.06 * Math.sin(ph + phase)) * tf;
-        if (bf > 0.04 && th > minTh * 0.4) {
-          const fade = bf > 0.75 ? 3 : bf > 0.5 ? 2 : bf > 0.25 ? 1 : 0;
-          const path = rings[FL[k] * 4 + fade];
+        // the ring thins continuously to nothing, the same way a cancer cell shrinks
+        const bf = BF[k];
+        const th = p * 0.22 * c0 * bf * (1 + m * 0.06 * Math.sin(ph + phase)) * tf;
+        if (th > 0.08 * unit) {
+          const path = rings[FL[k] * 4 + 3];
           const ri = Math.max(r, p * 0.06 * tf) + gap * tf, ro = ri + th;
-          if (op < 0.03) {
-            path.moveTo(x + ro, y);
-            path.arc(x, y, ro, 0, TAU);
-            path.moveTo(x + ri, y);
-            path.arc(x, y, ri, TAU, 0, true);
-          } else {
-            // the ring breaks into fibre fragments that drift apart as it opens
-            const nseg = 6, span = (TAU / nseg) * (1 - 0.78 * op), rot = RO[k] + ph * DIR[k];
-            const spread = 1 + 0.35 * op;
-            for (let s = 0; s < nseg; s++) {
-              const a0 = rot + (s * TAU) / nseg, a1 = a0 + span;
-              const ri2 = ri * spread, ro2 = ri2 + th;
-              path.moveTo(x + ro2 * Math.cos(a0), y + ro2 * Math.sin(a0));
-              path.arc(x, y, ro2, a0, a1);
-              path.arc(x, y, ri2, a1, a0, true);
-              path.closePath();
-            }
-          }
+          path.moveTo(x + ro, y);
+          path.arc(x, y, ro, 0, TAU);
+          path.moveTo(x + ri, y);
+          path.arc(x, y, ri, TAU, 0, true);
         }
       }
     }
