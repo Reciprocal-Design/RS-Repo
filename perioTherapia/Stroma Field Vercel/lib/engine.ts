@@ -29,7 +29,9 @@ export const sm = (a: number, b: number, x: number) => {
 };
 
 /* ---------- styles ---------- */
-export type StyleName = "neon" | "clinical";
+export type StyleName = "brand" | "neon" | "clinical";
+export const STYLES: StyleName[] = ["brand", "clinical", "neon"];
+export const LIGHT_STYLES: StyleName[] = ["brand", "clinical"];
 export type Theme = {
   bg: string;
   inner: string[]; // tumour, CAF, macrophage, T cell, vessel, dying
@@ -39,6 +41,15 @@ export type Theme = {
   field: string; // background dots when the grid bleeds to the edges
 };
 export const THEMES: Record<StyleName, Theme> = {
+  // Periotherapia brand palette (Design Approach 3), keeping the red for cancer
+  brand: {
+    bg: "#f5f5f5",
+    inner: ["#dd5f7a", "#3d6fb4", "#b5b0df", "#9ed9c6", "#f4cf7e", "#b9b9be"],
+    fib: ["#cfcfd2", "#8c8c90", "#353535"],
+    outline: "rgba(53,53,53,.55)",
+    ringAlpha: 0.9,
+    field: "#b5b0df",
+  },
   neon: {
     bg: "#06050c",
     inner: ["#ff2fd0", "#9b5cff", "#4f86ff", "#28efe0", "#7d8bff", "#77738c"],
@@ -71,7 +82,7 @@ const fibScale = (th: Theme) =>
     const t = i / (FIB_LV - 1);
     return t < 0.5 ? mixHex(th.fib[0], th.fib[1], t * 2) : mixHex(th.fib[1], th.fib[2], (t - 0.5) * 2);
   });
-const FIB: Record<StyleName, string[]> = { neon: fibScale(THEMES.neon), clinical: fibScale(THEMES.clinical) };
+const FIB: Record<StyleName, string[]> = { brand: fibScale(THEMES.brand), neon: fibScale(THEMES.neon), clinical: fibScale(THEMES.clinical) };
 const ALPHAS = [0.3, 0.55, 0.8, 1];
 
 /* ---------- seeded noise ---------- */
@@ -272,23 +283,23 @@ export function generate(seed: number, N = DEFAULT_N, layout: Layout | null = nu
     seed, N, M, um: (REF_UM * REF_N) / N, s: sc,
     TY, RB, FR: FRB, C0, RES, PH, RO, DIR, INF, KR, FL, TUM: Int32Array.from(TUM), RINGED: Int32Array.from(RINGED), preT, sumC0,
     OUTLINE: tumourOutline(isT, N, Math.max(1, Math.round(2 * sc))),
-    ...stageTimes(N, TY, TUM, PH, rand),
+    ...stageTimes(N, TY, TUM, E),
   };
 }
 
 /* ---------- the two-stage timeline ---------- */
 export const STAGE = {
   ecmStart: 0.6, // s: antibody arrives
-  ecmSpan: 6.4, // s: outer edge to tumour core
-  ecmFade: 0.9, // s: how long one ring takes to come down
+  ecmSpan: 5.4, // s: outer edge to tumour core
+  ecmFade: 2.2, // s: how long one ring takes to thin and fade away
   chemoStart: 6.2, // s: chemotherapy begins (slight overlap with stage 1)
-  chemoSpan: 6.0,
-  chemoFade: 1.3,
+  chemoSpan: 5.6,
+  chemoFade: 1.8,
   end: 15,
 };
 /** Per-cell start times: both stages sweep in from the outside toward the tumour's centre,
  *  stage 1 in a six-petal wave pattern, stage 2 in a gentler spiral. */
-function stageTimes(N: number, TY: Int8Array, TUM: number[], PH: Float32Array, rand: () => number) {
+function stageTimes(N: number, TY: Int8Array, TUM: number[], smooth: Float32Array) {
   const M = N * N;
   let cx = N / 2, cy = N / 2;
   if (TUM.length) {
@@ -306,12 +317,12 @@ function stageTimes(N: number, TY: Int8Array, TUM: number[], PH: Float32Array, r
     const dx = (k % N) + 0.5 - cx, dy = ((k / N) | 0) + 0.5 - cy, d = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
     const inward = 1 - clamp(d / maxD, 0, 1); // 0 at the outer edge, 1 at the centre
     const petal = 0.07 * Math.cos(6 * a + d * 0.12);
-    TO[k] = STAGE.ecmStart + STAGE.ecmSpan * clamp(inward + petal + 0.05 * (rand() - 0.5), 0, 1) - STAGE.ecmFade * 0.5;
+    // only smooth, large-scale variation, so neighbouring rings fade together rather than popping
+    TO[k] = STAGE.ecmStart + STAGE.ecmSpan * clamp(inward + petal + 0.08 * (smooth[k] - 0.5), 0, 1) - STAGE.ecmFade * 0.5;
     const inT = 1 - clamp(d / maxT, 0, 1);
     const spiral = 0.05 * Math.sin(a * 2 + d * 0.08);
-    TK[k] = Math.max(TO[k] + STAGE.ecmFade, STAGE.chemoStart + STAGE.chemoSpan * clamp(inT + spiral + 0.06 * (rand() - 0.5), 0, 1) - STAGE.chemoFade * 0.5);
+    TK[k] = Math.max(TO[k] + STAGE.ecmFade * 0.7, STAGE.chemoStart + STAGE.chemoSpan * clamp(inT + spiral + 0.08 * (smooth[k] - 0.5), 0, 1) - STAGE.chemoFade * 0.5);
   }
-  void PH;
   return { TO, TK };
 }
 /** Fill the treatment state for time t on the auto timeline (pure function of t). */
@@ -319,7 +330,8 @@ export function autoState(T: Tissue, S: Sim, t: number) {
   const { TO, TK, RINGED, TUM, KR } = T;
   for (let n = 0; n < RINGED.length; n++) {
     const k = RINGED[n];
-    S.BF[k] = 1 - 0.9 * sm(TO[k], TO[k] + STAGE.ecmFade, t);
+    const q = clamp((t - TO[k]) / STAGE.ecmFade, 0, 1);
+    S.BF[k] = 1 - q * q * (3 - 2 * q); // thins and fades all the way to nothing
   }
   for (let n = 0; n < TUM.length; n++) {
     const k = TUM[n];
@@ -327,6 +339,7 @@ export function autoState(T: Tissue, S: Sim, t: number) {
   }
   S.simT = t;
   S.chemo = sm(STAGE.chemoStart - 0.3, STAGE.chemoStart + 0.6, t);
+  S.floor = 0;
 }
 
 /** Smooth contour around the tumour nests: marching squares over a blurred tumour mask. */
@@ -397,6 +410,7 @@ export type Sim = {
   delivered: number;
   chemo: number; // 0..1, chemotherapy level (stage 2)
   ecm: number; // 0..1, share of the collagen barrier cleared (stage 1)
+  floor: number; // ring fraction left when fully open: 0.1 in cursor mode, 0 on the timeline
 };
 export function createSim(T: Tissue): Sim {
   const f = () => new Float32Array(PULSES);
@@ -404,7 +418,7 @@ export function createSim(T: Tissue): Sim {
     E: new Float32Array(T.M), BF: new Float32Array(T.M).fill(1), K: new Float32Array(T.M),
     simT: 0, lx: NaN, ly: NaN,
     px: f(), py: f(), pt: f(), pa: f(), pr: f(), prMax: f(), prot: f(),
-    pNext: 0, travel: 0, rand: mulberry32(T.seed * 31 + 5), delivered: 0, chemo: 0, ecm: 0,
+    pNext: 0, travel: 0, rand: mulberry32(T.seed * 31 + 5), delivered: 0, chemo: 0, ecm: 0, floor: 0.1,
   };
 }
 export function cloneSim(S: Sim): Sim {
@@ -498,7 +512,7 @@ export function metrics(T: Tissue, S: Sim) {
   return {
     burden: (100 * burden) / tumN,
     barrier,
-    ecm: clamp((100 - barrier) / 0.9, 0, 100), // stage 1 progress
+    ecm: clamp((100 - barrier) / (1 - S.floor), 0, 100), // stage 1 progress
     chemo: clamp(100 - (100 * burden) / tumN, 0, 100), // stage 2 progress
     chemoOn: S.chemo > 0.02,
   };
@@ -542,7 +556,7 @@ export function draw(
   const ph = (TAU * t) / LOOP;
   const m = reduceMotion ? 0.2 : 1;
   const inner = Array.from({ length: 6 * 4 }, () => new Path2D());
-  const rings = Array.from({ length: FIB_LV }, () => new Path2D());
+  const rings = Array.from({ length: FIB_LV * 4 }, () => new Path2D()); // colour level × opacity step
   const i0 = Math.max(0, Math.floor(-ox / p) - 1), i1 = Math.min(N - 1, Math.ceil((W - ox) / p) + 1);
   const j0 = Math.max(0, Math.floor(-oy / p) - 1), j1 = Math.min(N - 1, Math.ceil((H - oy) / p) + 1);
   const gap = p * 0.045, minTh = 0.4 * unit;
@@ -594,10 +608,11 @@ export function draw(
       }
       const c0 = C0[k];
       if (c0 > 0.04) {
-        const bf = BF[k], op = (1 - bf) / 0.9;
-        const th = p * 0.22 * c0 * bf * (1 + m * 0.06 * Math.sin(ph + phase)) * tf;
-        if (th > minTh) {
-          const path = rings[FL[k]];
+        const bf = BF[k], op = clamp(1 - bf, 0, 1);
+        const th = p * 0.22 * c0 * (0.25 + 0.75 * bf) * (1 + m * 0.06 * Math.sin(ph + phase)) * tf;
+        if (bf > 0.04 && th > minTh * 0.4) {
+          const fade = bf > 0.75 ? 3 : bf > 0.5 ? 2 : bf > 0.25 ? 1 : 0;
+          const path = rings[FL[k] * 4 + fade];
           const ri = Math.max(r, p * 0.06 * tf) + gap * tf, ro = ri + th;
           if (op < 0.03) {
             path.moveTo(x + ro, y);
@@ -621,15 +636,16 @@ export function draw(
       }
     }
   if (bleed) {
-    ctx.globalAlpha = style === "clinical" ? 0.75 : 0.6;
+    ctx.globalAlpha = style === "neon" ? 0.6 : 0.75;
     ctx.fillStyle = theme.field;
     ctx.fill(field);
   }
-  ctx.globalAlpha = theme.ringAlpha;
-  for (let l = 0; l < FIB_LV; l++) {
-    ctx.fillStyle = fibCols[l];
-    ctx.fill(rings[l]);
-  }
+  for (let l = 0; l < FIB_LV; l++)
+    for (let f = 0; f < 4; f++) {
+      ctx.globalAlpha = theme.ringAlpha * [0.22, 0.48, 0.74, 1][f];
+      ctx.fillStyle = fibCols[l];
+      ctx.fill(rings[l * 4 + f]);
+    }
   for (let ty = 0; ty < 6; ty++)
     for (let lv = 0; lv < 4; lv++) {
       ctx.globalAlpha = ALPHAS[lv];
@@ -664,7 +680,7 @@ export function draw(
 export type StagePanel = { ecm: number; chemo: number; chemoOn: boolean; corner?: "br" | "bl" | "tr" | "tl" };
 export function drawStagePanel(ctx: CanvasRenderingContext2D, view: View, theme: Theme, style: StyleName, P: StagePanel) {
   const u = Math.max(view.unit, Math.min(view.W, view.H) / 1080), W = view.W, H = view.H;
-  const light = style === "clinical";
+  const light = style !== "neon";
   const pad = 16 * u, R = 27 * u, lw = 6 * u, rowH = 2 * R + 24 * u, w = 252 * u, h = 2 * rowH + 2 * pad - 24 * u + 30 * u;
   const corner = P.corner ?? "br";
   const x0 = corner.endsWith("r") ? W - w - 24 * u : 24 * u;

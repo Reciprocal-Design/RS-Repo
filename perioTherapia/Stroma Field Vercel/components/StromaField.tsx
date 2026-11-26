@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ExportPanel, { type Clip } from "./ExportPanel";
 import LayoutPad, { loadStoredLayout } from "./LayoutPad";
 import {
-  DAYS_PER_S, DEFAULT_N, LOOP, MAX_DOSE, MAX_N, MIN_N, STAGE, THEMES, autoState, clamp, cloneSim, computeView, createSim, draw, generate, metrics, resetSim, stepSim,
+  DAYS_PER_S, DEFAULT_N, LOOP, MAX_DOSE, MAX_N, MIN_N, STAGE, STYLES, THEMES, autoState, clamp, cloneSim, computeView, createSim, draw, generate, metrics, resetSim, stepSim,
   type Layout, type Sim, type StyleName, type Tissue, type View,
 } from "@/lib/engine";
 import type { ExportApp } from "@/lib/exportMedia";
@@ -64,7 +64,7 @@ export default function StromaField() {
   const [layoutOn, setLayoutOn] = useState(false);
   const [dots, setDots] = useState(DEFAULT_N);
   const [frame, setFrame] = useState({ w: 1, h: 1 });
-  const [style, setStyleState] = useState<StyleName>("neon");
+  const [style, setStyleState] = useState<StyleName>("brand");
   const setStyle = useCallback((st: StyleName) => {
     setStyleState(st);
     if (eng.current) eng.current.style = st;
@@ -86,7 +86,7 @@ export default function StromaField() {
   const setBgColor = useCallback((c: string | null) => {
     setBgColorState(c);
     try {
-      const k = BG_KEY(eng.current?.style ?? "neon");
+      const k = BG_KEY(eng.current?.style ?? "brand");
       if (c) localStorage.setItem(k, c);
       else localStorage.removeItem(k);
     } catch {}
@@ -203,13 +203,13 @@ export default function StromaField() {
       const s = Number(localStorage.getItem(SEED_KEY));
       if (Number.isFinite(s) && s > 0) seed = s;
     } catch {}
-    let st: StyleName = "neon";
+    let st: StyleName = "brand";
     const qs = new URLSearchParams(location.search).get("style");
-    if (qs === "neon" || qs === "clinical") st = qs;
+    if (STYLES.includes(qs as StyleName)) st = qs as StyleName;
     else
       try {
         const saved = localStorage.getItem(STYLE_KEY);
-        if (saved === "neon" || saved === "clinical") st = saved;
+        if (STYLES.includes(saved as StyleName)) st = saved as StyleName;
       } catch {}
     setStyleState(st);
     let bl = false;
@@ -324,7 +324,7 @@ export default function StromaField() {
         const mt = metrics(e.T, e.S);
         const prev = e.hist.length > 8 ? e.hist[e.hist.length - 9] : mt.burden, d = mt.burden - prev;
         setReadout({ ...mt, autoT: Math.min(e.autoT, STAGE.end), day: (e.mode === "auto" ? Math.min(e.autoT, STAGE.end) : e.S.simT) * DAYS_PER_S, trend: d < -0.3 ? "shrinking" : d > 0.3 ? "regrowing" : "stable" });
-        drawSpark(spark, e.hist, e.dpr, THEMES[e.style].inner[0], e.style === "clinical" ? "rgba(60,60,80,.16)" : "rgba(154,148,182,.18)");
+        drawSpark(spark, e.hist, e.dpr, THEMES[e.style].inner[0], e.style !== "neon" ? "rgba(60,60,80,.16)" : "rgba(154,148,182,.18)");
       }
     };
     raf = requestAnimationFrame(frame);
@@ -475,9 +475,9 @@ export default function StromaField() {
           <div className="switch-row">
             <span className="label" id="styleLabel">Style</span>
             <div className="style-switch" role="group" aria-labelledby="styleLabel">
-              {(["neon", "clinical"] as const).map((st) => (
+              {STYLES.map((st) => (
                 <button key={st} type="button" className="chip" aria-pressed={style === st} onClick={() => setStyle(st)}>
-                  {st === "neon" ? "Neon" : "Clinical"}
+                  {st === "neon" ? "Neon" : st === "clinical" ? "Clinical" : "Periotherapia"}
                 </button>
               ))}
             </div>
