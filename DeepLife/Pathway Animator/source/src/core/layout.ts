@@ -21,6 +21,8 @@ const COMBINATION_CLEAR = 0.1;
 const RIGHT_SIDE = 0.35;
 /** Target combination: on the right-hand side the second pathway may come this much nearer the first (× the least angle). */
 const RIGHT_APART = 0.6;
+/** Target combination: on the right-hand side, how far above the furthest-right place the receptor goes (× cell radius). */
+const RIGHT_UP = 0.1;
 /** Target combination: the second receptor's least distance from an unconnected one (× receptor length). */
 const COMBINATION_RECEPTOR_GAP = 1.6;
 
@@ -154,8 +156,9 @@ function convexHull(points: Vec2[]): Vec2[] {
  * membrane is tried with the pathway laid out from it, and scored by the depth
  * of cytoplasm it has to spread through, marked down where its cytoplasm
  * proteins land among the first pathway's, so the two stay apart on the way in.
- * Places well on the right-hand side of the cell (as seen on the canvas) win
- * over any others.
+ * Places well on the right-hand side of the cell (as seen on the canvas),
+ * above the first receptor where there are any, win over any others: the
+ * furthest right of them, then a little way up from it.
  */
 function secondReceptorAngle(frame: CellFrame, scene: Scene, pathway: Pathway, index: number): number {
   const { cell, nucleus, R } = frame;
@@ -169,13 +172,16 @@ function secondReceptorAngle(frame: CellFrame, scene: Scene, pathway: Pathway, i
   // The unconnected receptors stay where they are on tabs 1–3: this one goes between them.
   const others = decorativeReceptors(frame, scene);
   const clear = COMBINATION_RECEPTOR_GAP * scene.style.receptorSize.length * frame.scale;
-  // Places well on the right-hand side first (even a little nearer the first pathway than elsewhere); then anywhere.
-  const pass = (onRight: boolean) => {
+  // Places well on the right-hand side and above the first receptor first (even a little nearer the first pathway
+  // than elsewhere); then anywhere on the right-hand side; then anywhere.
+  const firstAt = onOutline(cell, start);
+  const pass = (onRight: boolean, above = false) => {
     let best = NaN, bestScore = -Infinity;
+    const allowed: { phi: number; q: Vec2 }[] = [];
     for (let deg = 0; deg < 360; deg += 3) {
       const phi = start + (deg * Math.PI) / 180;
       const q = onOutline(cell, phi);
-      if (onRight && q.x < cell.center.x + RIGHT_SIDE * R) continue;
+      if (onRight && (q.x < cell.center.x + RIGHT_SIDE * R || (above && q.y > firstAt.y))) continue;
       if (apart(bearing(phi), axis) < COMBINATION_APART * (onRight ? RIGHT_APART : 1)) continue;
       if (others.some((r) => dist(r.center, q) < clear)) continue;
       const depth = dist(N, q) - nucleus.radiusAt(angleOf(N, q));
@@ -185,14 +191,21 @@ function secondReceptorAngle(frame: CellFrame, scene: Scene, pathway: Pathway, i
       const inside = way.filter((n) => pointInPolygon(n, hull)).length / way.length;
       const gap = Math.min(...way.flatMap((n) => firstNodes.map((m) => dist(n, m))));
       const room = depth * (1 - inside) ** 2 * Math.min(1, gap / (COMBINATION_CLEAR * R));
-      // On the right-hand side, the furthest right place that leaves the pathway room enough.
+      // On the right-hand side, the place furthest right that leaves the pathway room enough.
+      if (onRight && room > 0.2 * R) allowed.push({ phi, q });
       const score = onRight ? (room > 0.2 * R ? q.x : -Infinity) : room;
       if (score > bestScore) (bestScore = score), (best = phi);
     }
-    return best;
+    if (!onRight || Number.isNaN(best)) return best;
+    // Then a little way up from there, to the allowed place nearest that.
+    const top = onOutline(cell, best);
+    const want = { x: top.x, y: top.y - RIGHT_UP * R };
+    return allowed.reduce((a, b) => (dist(b.q, want) < dist(a.q, want) ? b : a)).phi;
   };
-  const right = pass(true);
-  if (!Number.isNaN(right)) return right;
+  for (const above of [true, false]) {
+    const right = pass(true, above);
+    if (!Number.isNaN(right)) return right;
+  }
   const any = pass(false);
   return Number.isNaN(any) ? start + COMBINATION_GAP * TAU : any;
 }

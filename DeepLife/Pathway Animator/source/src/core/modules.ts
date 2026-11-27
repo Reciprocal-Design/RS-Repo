@@ -5,7 +5,7 @@ import { ZOOM_VIEWS } from './layout';
 import { organicTissue } from './organic';
 import { withStructureOf } from './layers';
 import { hash, rngFor } from './rng';
-import type { CellMap, EdgeGeom, ModuleKind, NodeGeom, ReceptorGeom, Scene, SceneGeom } from './types';
+import type { CellMap, EdgeGeom, LayerSpec, ModuleKind, NodeGeom, ReceptorGeom, Scene, SceneGeom } from './types';
 
 /** A tissue built round the single cell: the same cell at the centre, neighbours relaying its signal on. */
 export function tissueMap(): CellMap {
@@ -264,23 +264,42 @@ function degsByPathway(nodes: NodeGeom[]): Map<string, NodeGeom[]> {
 /** Hops a signal takes to cross between the combination's DEGs. */
 const DEG_CROSSTALK_HOPS = 0.5;
 
-/** Target combination: each DEG of an added pathway talks to the nearest DEG of the first. */
+/** Target combination: DEGs of the first pathway each DEG of an added one talks to (the nearest). */
+const DEG_CROSSTALK_LINKS = 2;
+
+/**
+ * Target combination: each DEG of an added pathway talks to the nearest DEGs
+ * of the first (DEG_CROSSTALK_LINKS of them), and every DEG of the first
+ * hears from at least one, so the two meet across all of the first's DEGs.
+ */
 function degCrosstalk(scene: Scene, nodes: NodeGeom[]): EdgeGeom[] {
   const [first, ...added] = [...degsByPathway(nodes).values()];
-  if (!first) return [];
-  return added.flat().map((a) => {
-    const b = first.reduce((near, d) => (Math.hypot(d.x - a.x, d.y - a.y) < Math.hypot(near.x - a.x, near.y - a.y) ? d : near));
-    return { ...makeEdge(scene, a, b, true, rngFor(scene.seed, 'deg-crosstalk', a.id, b.id)), hops: DEG_CROSSTALK_HOPS };
-  });
+  if (!first || !added.length) return [];
+  const d = (a: NodeGeom, b: NodeGeom) => Math.hypot(a.x - b.x, a.y - b.y);
+  const pairs = new Map<string, [NodeGeom, NodeGeom]>();
+  for (const a of added.flat()) {
+    for (const b of [...first].sort((x, y) => d(a, x) - d(a, y)).slice(0, DEG_CROSSTALK_LINKS)) pairs.set(`${a.id}|${b.id}`, [a, b]);
+  }
+  for (const b of first) {
+    if ([...pairs.values()].some(([, x]) => x === b)) continue;
+    const a = added.flat().reduce((near, x) => (d(x, b) < d(near, b) ? x : near));
+    pairs.set(`${a.id}|${b.id}`, [a, b]);
+  }
+  return [...pairs.values()].map(([a, b]) => ({ ...makeEdge(scene, a, b, true, rngFor(scene.seed, 'deg-crosstalk', a.id, b.id)), hops: DEG_CROSSTALK_HOPS }));
 }
 
 /**
  * Target combination: the added pathway, simpler than the first so the two
- * stay clear of each other where they meet: a protein fewer in each of its
- * three deepest rows (4-3-2-2 from 4-4-3-3), and fewer branches and merges.
- * The first pathway is tab 1's, unchanged.
+ * stay clear of each other where they meet: one cytoplasm row fewer, a
+ * protein fewer in each of its three deepest rows (3-2-2 from 4-4-3-3), and
+ * fewer branches and merges. The first pathway is tab 1's, unchanged.
  */
 const memoSimpler = new WeakMap<Scene, Scene>();
+/** A pathway's layers less its last cytoplasm row (when it has more than one). */
+function oneRowFewer(layers: LayerSpec[]): LayerSpec[] {
+  const cyto = layers.map((l, i) => (i > 0 && l.region === 'cytoplasm' ? i : -1)).filter((i) => i >= 0);
+  return cyto.length > 1 ? layers.filter((_, i) => i !== cyto[cyto.length - 1]) : layers;
+}
 export function withSimplerAdded(scene: Scene): Scene {
   const hit = memoSimpler.get(scene);
   if (hit) return hit;
@@ -290,8 +309,8 @@ export function withSimplerAdded(scene: Scene): Scene {
       ...p,
       branching: Math.min(p.branching, 0.15),
       convergence: Math.min(p.convergence, 0.15),
-      layers: p.layers.map((l, li) => {
-        if (li === 0 || li < p.layers.length - 3) return l;
+      layers: oneRowFewer(p.layers).map((l, li, ls) => {
+        if (li === 0 || li < ls.length - 3) return l;
         const n = Math.max(1, l.nodeCount - 1);
         return { ...l, nodeCount: n, activeCount: Math.min(l.activeCount, n) };
       }),

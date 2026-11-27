@@ -48,9 +48,11 @@ cell or generated tissue.
    pathway is always on in the gradient, and a pulse runs one way, from the receptor down to the DEGs, then starts
    again. The loop closes seamlessly.
 2. **Target combination**: the pathway of tab 1, unchanged, and one more: two ringed receptors, pulsing together. The
-   second comes in on the right-hand side of the cell (the furthest right place with room clear of the first; where
-   there is none, wherever there is most room), is simpler than the first (4-3-2-2 proteins, fewer branches and
-   merges, roomy rows) so the two crowd each other less, and the two talk to each other at their DEGs. Tabs
+   second comes in on the right-hand side of the cell, above the first (the furthest right place with room clear of
+   the first, then a little way up; failing that anywhere on the right, then wherever there is most room). It is
+   simpler than the first (a cytoplasm row fewer, 3-2-2 proteins, fewer branches and merges, roomy rows) so the two
+   crowd each other less, and each of its DEGs talks to the two nearest of the first's orange DEGs, every one of
+   those reached. Tabs
    1–3 stay in step: the cell, look, motion and layer settings changed in one change in the others. They start with a
    6.5 px comet and 3.55 px lines.
 3. **Target toxicity**: exactly tab 1's pathway. One DEG in the nucleus is larger, red, and radiates rings for the

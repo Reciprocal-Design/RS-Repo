@@ -93,14 +93,20 @@ describe('modules', () => {
     const g = buildGeometry(s);
     expect(g.receptors.filter((r) => r.target).length).toBe(2);
     expect(g.pathways.every((p) => p.startDelay === 0)).toBe(true);
-    // The two pathways talk only at the DEG level.
+    // The two pathways talk only at the DEG level: each added DEG to two of the first's, every one of those reached.
     const last = lastLayer(s);
+    const lastOf = (pid: string) => Math.max(...g.nodes.filter((n) => n.pathwayId === pid).map((n) => n.layer));
     const cross = g.edges.filter((e) => e.crosstalk);
     expect(cross.length).toBeGreaterThan(0);
     for (const e of cross) {
       expect([g.nodeById.get(e.from)!.pathwayId, g.nodeById.get(e.to)!.pathwayId]).toEqual(['p2', 'p1']);
-      expect([g.nodeById.get(e.from)!.layer, g.nodeById.get(e.to)!.layer]).toEqual([last, last]);
+      expect([g.nodeById.get(e.from)!.layer, g.nodeById.get(e.to)!.layer]).toEqual([lastOf('p2'), last]);
       expect(e.traced).toBe(true);
+    }
+    const firstDegs = g.nodes.filter((n) => n.pathwayId === 'p1' && n.layer === last && n.active);
+    for (const d of firstDegs) expect(cross.some((e) => e.to === d.id)).toBe(true);
+    for (const d of g.nodes.filter((n) => n.pathwayId === 'p2' && n.layer === lastOf('p2'))) {
+      expect(cross.filter((e) => e.from === d.id).length).toBeGreaterThanOrEqual(Math.min(2, firstDegs.length));
     }
     expect(buildSchedule(s).edges.some((et) => et.edge.crosstalk)).toBe(true);
     // The first pathway: the same proteins in the same places, the same route lit.
@@ -111,13 +117,15 @@ describe('modules', () => {
     }
     expect(lit(g, 'p1')).toEqual(lit(one, 'p1'));
     // The second: its own receptor and its own route to the nucleus, on the right-hand side of the cell,
-    // simpler than the first (a protein fewer in each deep row, fewer lines).
+    // simpler than the first (a cytoplasm row fewer, a protein fewer in each deep row, fewer lines).
     expect(lit(g, 'p2').length).toBeGreaterThan(0);
     expect(lit(g, 'p2').length).toBeLessThan(lit(g, 'p1').length);
     const second = g.receptors.find((r) => r.pathwayId === 'p2')!;
     expect(second.center.x).toBeGreaterThanOrEqual(g.cell.center.x);
-    const rows = (pid: string) => s.pathways[0].layers.map((_, li) => g.nodes.filter((n) => n.pathwayId === pid && n.layer === li).length);
-    expect(rows('p2')).toEqual(rows('p1').map((n, li) => (li >= rows('p1').length - 3 ? n - 1 : n)));
+    const rows = (pid: string) => [...new Set(g.nodes.filter((n) => n.pathwayId === pid).map((n) => n.layer))].sort()
+      .map((li) => g.nodes.filter((n) => n.pathwayId === pid && n.layer === li).length);
+    expect(rows('p1')).toEqual([1, 4, 4, 3, 3]);
+    expect(rows('p2')).toEqual([1, 3, 2, 2]);
     const sched = buildSchedule(s);
     for (const pid of ['p1', 'p2']) {
       const receptor = g.nodes.find((n) => n.pathwayId === pid && n.layer === 0)!;
