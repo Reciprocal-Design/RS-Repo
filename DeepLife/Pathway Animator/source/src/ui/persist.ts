@@ -9,6 +9,7 @@ import type { ModuleKind, Scene } from '../core/types';
 const KEY = 'pathway-animator:settings:v1';
 const OLD_SEQUENCE_TABS = 'moa,combination,toxicity,tissue,crossTissue,body';
 const SLOW: ModuleKind[] = ['moa', 'combination', 'toxicity', 'tissue', 'crossTissue'];
+const OLD_TAB_SPEEDS = [0.5, 0.8];
 let stopped = false;
 
 /**
@@ -35,8 +36,8 @@ export function loadSaved(): { tabs: (Scene | null)[]; active: number } | null {
       if (s?.module.kind === 'sequence' && s.module.seqTabs.join() === OLD_SEQUENCE_TABS) {
         s.module = { ...s.module, seqTabs: defaultModule('sequence').seqTabs };
       }
-      // Tabs 1–5 used to run their pulse at the plain animator's speed; it is slower now.
-      if (s && SLOW.includes(s.module.kind) && s.animation.layerDuration === 0.5) {
+      // Tabs 1–5 saved at an earlier default pulse speed (0.5, then 0.8 s a layer) get the current, slower one.
+      if (s && SLOW.includes(s.module.kind) && OLD_TAB_SPEEDS.includes(s.animation.layerDuration)) {
         s.animation = { ...s.animation, layerDuration: TAB_LAYER_DURATION };
       }
       // Tabs 4 and 5 used to spread the signal out from the selected cell (a long loop); now every cell is active.

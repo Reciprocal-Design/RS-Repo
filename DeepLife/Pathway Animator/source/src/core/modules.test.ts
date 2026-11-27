@@ -42,7 +42,7 @@ describe('modules', () => {
     expect(seconds('realCell')).toBe(10);
     // Tabs 4 and 5: every cell active at once, signals crossing between them; about one pathway long.
     for (const kind of ['tissue', 'crossTissue'] as ModuleKind[]) {
-      expect(seconds(kind)).toBeLessThan(8);
+      expect(seconds(kind)).toBeLessThan(9);
       expect(moduleScene(kind, 1234).cellMap).toMatchObject({ startShare: 1, relayHops: 0, stagger: 1 });
     }
   });

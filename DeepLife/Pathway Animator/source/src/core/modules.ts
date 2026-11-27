@@ -81,7 +81,7 @@ export const moduleInfo = (kind: ModuleKind): ModuleInfo =>
  */
 export const TISSUE_ALL_ACTIVE = { startShare: 1, relayHops: 0, stagger: 1 };
 /** Tabs 1–5: seconds a pulse takes per layer (slower than the plain animator's 0.5). */
-export const TAB_LAYER_DURATION = 0.8;
+export const TAB_LAYER_DURATION = 1;
 const SLOW_TABS: ModuleKind[] = ['moa', 'combination', 'toxicity', 'tissue', 'crossTissue'];
 /** Short loops keep exported videos small: the rest at the end of a loop (seconds). */
 const SHORT_HOLD = 0.5;
