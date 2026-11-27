@@ -183,6 +183,8 @@ export interface ModuleSettings {
   seqTransition: number;
   /** Sequence: seconds per tab, every tab the same (a scroll sequence); 0 fits the longest tab. */
   seqSection: number;
+  /** Sequence: every tab gets the same section (else each moves on as soon as its pulse arrives). */
+  seqEqual: boolean;
   /**
    * Internal, never saved: this scene is a tab as the sequence plays it (core/sequence.ts): one pulse from the
    * receptor to the DEGs; the combination's added pathway builds out; toxicity keeps tab 1's pathway and dims the

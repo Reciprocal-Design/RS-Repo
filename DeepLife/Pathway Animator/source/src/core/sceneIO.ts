@@ -144,6 +144,7 @@ function normalizeModule(raw: unknown): ModuleSettings {
     seqLoops: Math.round(num(m.seqLoops, base.seqLoops, 1, 10)),
     seqTransition: num(m.seqTransition, base.seqTransition, 0, 5),
     seqSection: num(m.seqSection, base.seqSection, 0, 30),
+    seqEqual: bool(m.seqEqual, base.seqEqual),
   };
 }
 

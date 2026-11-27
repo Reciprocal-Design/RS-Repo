@@ -58,15 +58,20 @@ export function SequenceSettings() {
           })}
         </div>
       </div>
-      <Toggle label="Section length: fit the longest tab" checked={m.seqSection === 0}
-        onChange={(auto) => set({ seqSection: auto ? 0 : plan.section })} />
-      {m.seqSection > 0 && (
-        <Slider label="Section length" value={m.seqSection} min={1} max={15} step={0.5} unit=" s" onChange={(seqSection) => set({ seqSection })} />
+      <Toggle label="Equal sections" checked={m.seqEqual} onChange={(seqEqual) => set({ seqEqual })} />
+      {m.seqEqual && (
+        <>
+          <Toggle label="Section length: fit the longest tab" checked={m.seqSection === 0}
+            onChange={(auto) => set({ seqSection: auto ? 0 : plan.section })} />
+          {m.seqSection > 0 && (
+            <Slider label="Section length" value={m.seqSection} min={1} max={15} step={0.5} unit=" s" onChange={(seqSection) => set({ seqSection })} />
+          )}
+        </>
       )}
       <p className="hint">
-        Every tab gets a section of the same length ({plan.section} s, {Math.round(plan.section * 30)} frames at 30 fps), so a
-        scroll sequence moves evenly from tab to tab. A tab runs its pulse once and holds to the end of its section
-        {plan.segments.some((g) => g.needs > plan.section + 1e-6) ? '; some tabs need longer than this and are cut short' : ''}.
+        {m.seqEqual
+          ? `Every tab gets a section of the same length (${plan.section} s, ${Math.round(plan.section * 30)} frames at 30 fps); a tab runs its pulse once and holds to the end of its section${plan.segments.some((g) => g.needs > plan.section + 1e-6) ? ' (some tabs need longer than this and are cut short)' : ''}.`
+          : `Each tab moves on as soon as its pulse reaches the end of the pathway, the next one fading in over it: ${plan.total.toFixed(1)} s in all (${Math.round(plan.total * 30)} frames at 30 fps). Turn on Equal sections to give every tab the same length.`}
       </p>
       <Slider label="Crossfade" value={m.seqTransition} min={0} max={5} step={0.25} unit=" s" onChange={(seqTransition) => set({ seqTransition })} />
       <div className="field">
@@ -93,7 +98,7 @@ export function SequenceSettings() {
             <button key={seg.kind} className="btn small" title="Jump to this tab"
               onClick={() => { setPlaying(false); setTime(seg.start + (i ? plan.fade : 0)); }}>
               <em>{tabNo(seg.kind)}</em> {seg.label}
-              <span>{seg.start.toFixed(1)}–{(seg.start + plan.section).toFixed(1)} s</span>
+              <span>{seg.start.toFixed(1)}–{(seg.start + seg.section).toFixed(1)} s</span>
             </button>
           ))}
         </div>

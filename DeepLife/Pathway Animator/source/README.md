@@ -101,10 +101,10 @@ node and receptor sizes, and the neighbours round it, together. They start at
 0.6. It is saved with each tab; scene files saved before it load at 1.
 
 9. **Tabs in sequence** (`src/core/sequence.ts`, `src/render/sequence.ts`): the tabs you tick (1–5 by default), in
-   the order you set, played one after another in sections of equal length, so a scroll sequence moves evenly from
-   tab to tab: by default each section fits the tab that needs longest (rounded up to half a second; 7 s with the
-   defaults), or set "Section length". Each tab fades in over the start of its section ("Crossfade", 0–5 s; eased)
-   on top of the last moments of the one before, runs its pulse and holds to the end of its section. Each tab plays as it is set up in its own tab,
+   the order you set, played one after another: each moves on as soon as its pulse reaches the end of the pathway
+   (about 19 s and 580 frames at 30 fps for tabs 1–5), the next fading in over it ("Crossfade", 0–5 s; eased).
+   "Equal sections" gives every tab the same length instead (fitted to the tab that needs longest, rounded up to
+   half a second, or set "Section length"), each running its pulse and holding to the end of its section. Each tab plays as it is set up in its own tab,
    fitted inside this tab's canvas (Landscape, Square or Portrait), with these differences in the sequence only (the
    tabs themselves are unchanged; `module.seqPart`, never saved):
    - every tab's signal runs once: one pulse from the receptor to the DEGs (no return trips), then holds;

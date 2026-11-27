@@ -21,11 +21,13 @@ export interface SequenceSegment {
   scene: Scene;
   /** Sequence time its section starts at (it fades in over the first `fade` seconds of it). */
   start: number;
+  /** Seconds of its section. */
+  section: number;
   /** Seconds it shows: its section, and the crossfade into the next one. */
   length: number;
   /** Seconds before its own animation starts: a build-out or zoom-out. */
   lead: number;
-  /** Seconds it needs: the lead, then its signal's run. */
+  /** Seconds it needs: the lead, then until its pulse reaches the end of the pathway. */
   needs: number;
   /** The combination: its added pathway builds out over the first BUILD seconds. */
   build?: boolean;
@@ -35,9 +37,9 @@ export interface SequenceSegment {
 
 export interface SequencePlan {
   segments: SequenceSegment[];
-  /** Crossfade length actually used (at most half a section). */
+  /** Crossfade length actually used (at most half the shortest section). */
   fade: number;
-  /** Seconds per section: every tab gets the same, so a scroll sequence moves evenly from tab to tab. */
+  /** Seconds per section when every tab gets the same (seqEqual); else the longest tab's. */
   section: number;
   total: number;
 }
@@ -93,14 +95,21 @@ export function sequenceScene(scene: Scene): Scene {
 
 const plans = new WeakMap<Scene, { from: readonly Scene[]; plan: SequencePlan }>();
 
+/** Seconds until a scene's pulse has reached the end of its last line (the whole run for the journey and real-cell views). */
+function arrival(scene: Scene): number {
+  const sc = buildSchedule(scene);
+  if (RUNS_ONCE.includes(scene.module.kind) || !sc.edges.length) return sc.total;
+  return Math.max(...sc.edges.map((et) => et.start + et.duration));
+}
+
 /**
- * When each tab plays: in sections of equal length (`seqSection`, or fitted
- * to the tab that needs longest, rounded up to half a second), one tab per
- * section, each fading in over the start of its section on top of the last
- * moments of the one before. A tab runs its signal once and holds to the end
- * of its section. The combination first builds out its added pathway, and a
- * tissue after a single cell first zooms out from it, before their signal
- * starts.
+ * When each tab plays: one after another, each moving on as soon as its
+ * pulse reaches the end of the pathway (or, with `seqEqual`, in sections of
+ * equal length: `seqSection`, or fitted to the tab that needs longest,
+ * rounded up to half a second). The next tab fades in over the start of its
+ * section, on top of the last moments of the one before. The combination
+ * first builds out its added pathway, and a tissue after a single cell first
+ * zooms out from it, before their signal starts.
  */
 export function sequencePlan(scene: Scene, tabs: readonly Scene[] = sources): SequencePlan {
   const hit = plans.get(scene);
@@ -116,17 +125,23 @@ export function sequencePlan(scene: Scene, tabs: readonly Scene[] = sources): Se
     const build = kind === 'combination';
     const zoomFrom = prev && TISSUES.includes(kind) && SINGLE.includes(prev.module.kind) ? prev : undefined;
     const lead = build ? BUILD : zoomFrom ? ZOOM_OUT : 0;
-    return { s, kind, build, zoomFrom, lead, needs: lead + Math.max(0.1, buildSchedule(s).total) };
+    return { s, kind, build, zoomFrom, lead, needs: lead + Math.max(0.1, arrival(s)) };
   });
   const fit = Math.ceil(2 * Math.max(1, ...parts.map((p) => p.needs))) / 2;
-  const section = m.seqSection > 0 ? Math.max(1, m.seqSection) : fit;
-  const fade = parts.length > 1 ? Math.max(0, Math.min(m.seqTransition, section / 2)) : 0;
-  const segments: SequenceSegment[] = parts.map((p, i) => ({
-    kind: p.kind, label: moduleInfo(p.kind).label, scene: p.s,
-    start: i * section, length: section + (i < parts.length - 1 ? fade : 0), lead: p.lead, needs: p.needs,
-    ...(p.build ? { build: true } : {}), ...(p.zoomFrom ? { zoomFrom: p.zoomFrom } : {}),
-  }));
-  const plan = { segments, fade, section, total: Math.max(1, segments.length) * section };
+  const equal = m.seqSection > 0 ? Math.max(1, m.seqSection) : fit;
+  const sections = parts.map((p) => (m.seqEqual ? equal : p.needs));
+  const fade = parts.length > 1 ? Math.max(0, Math.min(m.seqTransition, ...sections.map((x) => x / 2))) : 0;
+  let at = 0;
+  const segments: SequenceSegment[] = parts.map((p, i) => {
+    const seg: SequenceSegment = {
+      kind: p.kind, label: moduleInfo(p.kind).label, scene: p.s,
+      start: at, section: sections[i], length: sections[i] + (i < parts.length - 1 ? fade : 0), lead: p.lead, needs: p.needs,
+      ...(p.build ? { build: true } : {}), ...(p.zoomFrom ? { zoomFrom: p.zoomFrom } : {}),
+    };
+    at += sections[i];
+    return seg;
+  });
+  const plan = { segments, fade, section: m.seqEqual ? equal : Math.max(1, ...sections), total: Math.max(1, at) };
   plans.set(scene, { from: tabs, plan });
   return plan;
 }

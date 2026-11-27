@@ -58,6 +58,7 @@ export function defaultModule(kind: ModuleKind = 'custom'): ModuleSettings {
     seqLoops: 1,
     seqTransition: 1,
     seqSection: 0,
+    seqEqual: false,
   };
 }
 

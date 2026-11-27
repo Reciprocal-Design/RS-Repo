@@ -14,6 +14,8 @@ const seqWith = (seqTabs: ModuleKind[], extra: Partial<Scene['module']> = {}): S
   return { ...s, module: { ...s.module, seqTabs, ...extra } };
 };
 const run = (kind: ModuleKind) => buildSchedule(sequenceScene(tab(kind))).total;
+/** When a tab's pulse reaches the end of its last line, as the sequence plays it. */
+const arrive = (kind: ModuleKind) => Math.max(...buildSchedule(sequenceScene(tab(kind))).edges.map((e) => e.start + e.duration));
 
 describe('the sequence tab', () => {
   it('is the last tab, and plays tabs 1–5 by default', () => {
@@ -77,12 +79,29 @@ describe('the sequence tab', () => {
     expect(count(g)).toBeLessThan(count(buildGeometry(tab('combination'))));
   });
 
-  it('gives every tab a section of the same length, fitted to the one that needs longest', () => {
+  it('moves on from each tab as soon as its pulse reaches the end of the pathway', () => {
     const s = seqWith(['moa', 'combination', 'toxicity', 'tissue', 'crossTissue'], { seqTransition: 1 });
     const p = sequencePlan(s, tabs);
     const [a, b, c, d, e] = p.segments;
+    expect(a.section).toBeCloseTo(arrive('moa'), 9);
+    expect(a.section).toBeLessThan(run('moa') - 1); // the rest at the end is cut
+    expect(b.section).toBeCloseTo(BUILD + arrive('combination'), 9);
+    expect(d.section).toBeCloseTo(ZOOM_OUT + arrive('tissue'), 9);
+    p.segments.slice(1).forEach((g, i) => expect(g.start).toBeCloseTo(p.segments[i].start + p.segments[i].section, 9));
+    expect(a.length).toBeCloseTo(a.section + 1, 9);
+    expect(e.length).toBeCloseTo(e.section, 9);
+    expect(p.total).toBeCloseTo(e.start + e.section, 9);
+    expect(c.lead).toBe(0);
+    // Far shorter than equal sections.
+    expect(p.total).toBeLessThan(sequencePlan(seqWith(s.module.seqTabs, { seqEqual: true }), tabs).total - 8);
+  });
+
+  it('can give every tab a section of the same length, fitted to the one that needs longest', () => {
+    const s = seqWith(['moa', 'combination', 'toxicity', 'tissue', 'crossTissue'], { seqTransition: 1, seqEqual: true });
+    const p = sequencePlan(s, tabs);
+    const [a, b, c, d, e] = p.segments;
     expect(b.lead).toBe(BUILD);
-    expect(b.needs).toBeCloseTo(BUILD + run('combination'), 9);
+    expect(b.needs).toBeCloseTo(BUILD + arrive('combination'), 9);
     expect(c.lead).toBe(0);
     expect(d.lead).toBe(ZOOM_OUT);
     expect(d.zoomFrom).toBe(c.scene);
@@ -98,13 +117,13 @@ describe('the sequence tab', () => {
     // Tabs 4 and 5 are now as short as the others: no section longer than about a pathway and a build-out.
     expect(p.section).toBeLessThan(8);
     // A set length overrides the fit.
-    expect(sequencePlan(seqWith(['moa', 'tissue'], { seqSection: 6 }), tabs).section).toBe(6);
+    expect(sequencePlan(seqWith(['moa', 'tissue'], { seqSection: 6, seqEqual: true }), tabs).section).toBe(6);
   });
 
   it('shows one tab, or two while they crossfade; builds and zooms from the start of the section', () => {
     setSequenceSources(tabs);
     const s = seqWith(['toxicity', 'combination', 'tissue'], { seqTransition: 1 });
-    const { segments: [, b, c], section } = sequencePlan(s);
+    const { segments: [, b, c] } = sequencePlan(s);
     const mid = sequenceFrame(s, b.start + 0.5);
     expect(mid.map((f) => f.segment.kind)).toEqual(['toxicity', 'combination']);
     expect(mid[1].mix).toBeCloseTo(0.5, 9);
@@ -117,9 +136,9 @@ describe('the sequence tab', () => {
     expect(sequenceFrame(s, c.start)[1].zoomIn).toBe(1);
     expect(sequenceFrame(s, c.start + ZOOM_OUT / 2)[0].zoomIn).toBeCloseTo(0.5, 9);
     expect(sequenceFrame(s, c.start + ZOOM_OUT)[0].zoomIn).toBe(0);
-    // The end of a section holds the tab's last frame.
-    const held = sequenceFrame(s, b.start + section - 0.01)[0];
-    expect(held.time).toBeCloseTo(Math.min(section - 0.01 - BUILD, buildSchedule(b.scene).total + 99), 6);
+    // The end of a section is the moment its pulse arrives.
+    const end = sequenceFrame(s, b.start + b.section - 0.01)[0];
+    expect(end.time).toBeCloseTo(b.section - 0.01 - BUILD, 6);
     expect(sequenceFrame(s, sequencePlan(s).total).map((f) => f.segment.kind)).toEqual(['tissue']);
   });
 
