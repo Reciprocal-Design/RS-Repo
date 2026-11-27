@@ -18,11 +18,11 @@ const COMBINATION_APART = (48 * Math.PI) / 180;
 /** Target combination: the gap the added pathway's proteins want from the first's (× cell radius). */
 const COMBINATION_CLEAR = 0.1;
 /** Target combination: how far right of the cell's middle the second receptor must sit to count as on the right (× cell radius). */
-const RIGHT_SIDE = 0.35;
+const RIGHT_SIDE = 0.25;
 /** Target combination: on the right-hand side the second pathway may come this much nearer the first (× the least angle). */
 const RIGHT_APART = 0.6;
 /** Target combination: on the right-hand side, how far above the furthest-right place the receptor goes (× cell radius). */
-const RIGHT_UP = 0.1;
+const RIGHT_UP = 0.4;
 /** Target combination: the second receptor's least distance from an unconnected one (× receptor length). */
 const COMBINATION_RECEPTOR_GAP = 1.6;
 

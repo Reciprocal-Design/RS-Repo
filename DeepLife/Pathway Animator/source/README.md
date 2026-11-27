@@ -49,7 +49,7 @@ cell or generated tissue.
    again. The loop closes seamlessly.
 2. **Target combination**: the pathway of tab 1, unchanged, and one more: two ringed receptors, pulsing together. The
    second comes in on the right-hand side of the cell, above the first (the furthest right place with room clear of
-   the first, then a little way up; failing that anywhere on the right, then wherever there is most room). It is
+   the first, then well up towards the top of the right-hand side; failing that anywhere on the right, then wherever there is most room). It is
    simpler than the first (a cytoplasm row fewer, 3-2-2 proteins, fewer branches and merges, roomy rows) so the two
    crowd each other less, and each of its DEGs talks to the two nearest of the first's orange DEGs, every one of
    those reached. Tabs
