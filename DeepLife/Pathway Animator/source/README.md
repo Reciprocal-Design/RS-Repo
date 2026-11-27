@@ -53,12 +53,14 @@ cell or generated tissue.
 3. **Target toxicity**: the receptor and layer settings of tab 1 with a different wiring. One DEG in the nucleus is
    larger, red, and radiates rings for the whole loop; nothing else on screen is red.
 4. **Tissue-level target ID** (indication extension): the layout of tab 5 in one colour. The whole tissue map fills the
-   canvas, the signal starts in the selected cell and spreads from cell to cell. With no map, the tissue is generated.
+   canvas, every cell active: all start within a second of each other, their signals crossing between cells along
+   the links (an arrival pulses; it does not run the next cell's pathway again), so the loop is about one pathway
+   long, like tabs 1–3. With no map, the tissue is generated.
 5. **Cross-tissue communication** (`src/core/crossTissue.ts`): one tissue map, its cells split between two tissues
    by colour. Click cells in the preview to switch them between the membrane colour and the second colour (pink by
    default); by default the right-hand half of the map is in the second colour ("Right half" puts that back,
-   "None" clears it). The selected cell starts the signal; it spreads through its tissue and crosses into the other
-   where they meet, and the links that cross between the two are drawn heavier. With no map uploaded, the tissue is
+   "None" clears it). Every cell is active, as on tab 4, its signals crossing between cells and into the other
+   tissue where they meet; the links that cross between the two are drawn heavier. With no map uploaded, the tissue is
    generated (`src/core/organic.ts`): irregular cells packed wall to wall in a wide clump with an uneven edge
    (Voronoi cells of evenly scattered points, corners rounded). "New tissue shapes" re-rolls it.
 6. **Body**: organ-level connectivity (`src/core/body.ts`). An anatomical front-view outline drawn like the
@@ -99,19 +101,22 @@ node and receptor sizes, and the neighbours round it, together. They start at
 0.6. It is saved with each tab; scene files saved before it load at 1.
 
 9. **Tabs in sequence** (`src/core/sequence.ts`, `src/render/sequence.ts`): the tabs you tick (1–5 by default), in
-   the order you set, played one after another, each crossfading into the next ("Crossfade", 0–5 s; eased), so one
-   PNG sequence (or video) runs from tab to tab with smooth transitions. Each tab plays as it is set up in its own tab,
+   the order you set, played one after another in sections of equal length, so a scroll sequence moves evenly from
+   tab to tab: by default each section fits the tab that needs longest (rounded up to half a second; 7 s with the
+   defaults), or set "Section length". Each tab fades in over the start of its section ("Crossfade", 0–5 s; eased)
+   on top of the last moments of the one before, runs its pulse and holds to the end of its section. Each tab plays as it is set up in its own tab,
    fitted inside this tab's canvas (Landscape, Square or Portrait), with these differences in the sequence only (the
    tabs themselves are unchanged; `module.seqPart`, never saved):
    - every tab's signal runs once: one pulse from the receptor to the DEGs (no return trips), then holds;
-   - target combination, after the crossfade, builds its second pathway out from where it meets the first (the DEG
+   - target combination, from the start of its section, builds its second pathway out from where it meets the first (the DEG
      crosstalk) back to its receptor, a layer at a time, before the pulse; that pathway has fewer proteins in its
      deeper rows (4-3-2-2), fewer branches and roomier rows, so it crowds the first pathway less;
    - target toxicity uses tab 1's pathway, and fades everything but the main route into the red dot (at most two
      inputs per protein on it, back to the receptor);
    - a tissue view that follows a single cell starts framed on that cell exactly as the previous tab showed it, and
-     zooms out into the tissue before its signal starts, so the transition is seamless.
-   The journey and real-cell tabs play as they are. The export panel lists the frame each tab starts on.
+     zooms out into the tissue (2 s) before its signal starts, so the transition is seamless.
+   The journey and real-cell tabs play as they are. The export panel lists the frames per tab and the frame each
+   starts on.
 
 **Neighbouring cells.** In the single-cell views (the plain animator, tabs 1–3 and 8), "Cell membrane → Show
 neighbouring cells" draws the cells round the cell behind it, outlines only, without changing the cell's size or

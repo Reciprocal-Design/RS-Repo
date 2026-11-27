@@ -40,8 +40,11 @@ describe('modules', () => {
     for (const kind of TRACED) expect(seconds(kind)).toBeLessThan(6.5);
     expect(seconds('body')).toBeLessThan(7);
     expect(seconds('realCell')).toBe(10);
-    expect(moduleScene('tissue', 1234).cellMap.relayHops).toBe(4);
-    expect(moduleScene('crossTissue', 1234).cellMap.relayHops).toBe(4);
+    // Tabs 4 and 5: every cell active at once, signals crossing between them; about one pathway long.
+    for (const kind of ['tissue', 'crossTissue'] as ModuleKind[]) {
+      expect(seconds(kind)).toBeLessThan(6.5);
+      expect(moduleScene(kind, 1234).cellMap).toMatchObject({ startShare: 1, relayHops: 0, stagger: 1 });
+    }
   });
 
   it('starts every pathway at 4 cytoplasm, 4 cytoplasm, 3 nucleus and 3 DEG, all active', () => {

@@ -77,41 +77,49 @@ describe('the sequence tab', () => {
     expect(count(g)).toBeLessThan(count(buildGeometry(tab('combination'))));
   });
 
-  it('times the tabs: crossfades between them, a build-out for the combination, a zoom-out into the tissue', () => {
-    const s = seqWith(['moa', 'combination', 'toxicity', 'tissue'], { seqTransition: 1 });
+  it('gives every tab a section of the same length, fitted to the one that needs longest', () => {
+    const s = seqWith(['moa', 'combination', 'toxicity', 'tissue', 'crossTissue'], { seqTransition: 1 });
     const p = sequencePlan(s, tabs);
-    const [a, b, c, d] = p.segments;
-    expect(p.fade).toBe(1);
-    expect(a.length).toBeCloseTo(run('moa'), 9);
-    expect(b.start).toBeCloseTo(a.length - 1, 9);
-    expect(b.lead).toBeCloseTo(1 + BUILD, 9);
-    expect(b.length).toBeCloseTo(1 + BUILD + run('combination'), 9);
+    const [a, b, c, d, e] = p.segments;
+    expect(b.lead).toBe(BUILD);
+    expect(b.needs).toBeCloseTo(BUILD + run('combination'), 9);
     expect(c.lead).toBe(0);
-    expect(d.lead).toBeCloseTo(1 + ZOOM_OUT, 9);
+    expect(d.lead).toBe(ZOOM_OUT);
     expect(d.zoomFrom).toBe(c.scene);
-    expect(p.total).toBeCloseTo(d.start + d.length, 9);
+    expect(e.lead).toBe(0);
+    // Sections: equal, back to back, long enough for every tab, in half seconds.
+    expect(p.section * 2).toBe(Math.round(p.section * 2));
+    expect(p.section).toBeGreaterThanOrEqual(Math.max(...p.segments.map((g) => g.needs)));
+    expect(p.section - Math.max(...p.segments.map((g) => g.needs))).toBeLessThan(0.5);
+    p.segments.forEach((g, i) => expect(g.start).toBeCloseTo(i * p.section, 9));
+    expect(a.length).toBeCloseTo(p.section + 1, 9);
+    expect(e.length).toBeCloseTo(p.section, 9);
+    expect(p.total).toBeCloseTo(5 * p.section, 9);
+    // Tabs 4 and 5 are now as short as the others: no section longer than about a pathway and a build-out.
+    expect(p.section).toBeLessThan(8);
+    // A set length overrides the fit.
+    expect(sequencePlan(seqWith(['moa', 'tissue'], { seqSection: 6 }), tabs).section).toBe(6);
   });
 
-  it('shows one tab, or two while they crossfade; builds and zooms after the crossfade', () => {
+  it('shows one tab, or two while they crossfade; builds and zooms from the start of the section', () => {
     setSequenceSources(tabs);
     const s = seqWith(['toxicity', 'combination', 'tissue'], { seqTransition: 1 });
-    const [, b, c] = sequencePlan(s).segments;
+    const { segments: [, b, c], section } = sequencePlan(s);
     const mid = sequenceFrame(s, b.start + 0.5);
     expect(mid.map((f) => f.segment.kind)).toEqual(['toxicity', 'combination']);
     expect(mid[1].mix).toBeCloseTo(0.5, 9);
-    expect(mid[1].built).toBe(0);
+    expect(mid[1].built).toBeCloseTo(0.5 / BUILD, 9);
     expect(mid[1].time).toBe(0);
-    const building = sequenceFrame(s, b.start + 1 + BUILD / 2);
-    expect(building).toHaveLength(1);
-    expect(building[0].built).toBeCloseTo(0.5, 9);
-    expect(building[0].time).toBe(0);
-    const running = sequenceFrame(s, b.start + b.lead + 0.75)[0];
+    const running = sequenceFrame(s, b.start + BUILD + 0.75)[0];
     expect(running.built).toBe(1);
     expect(running.time).toBeCloseTo(0.75, 9);
     // The tissue after the combination starts framed on its cell and zooms out.
-    expect(sequenceFrame(s, c.start + 0.5)[1].zoomIn).toBe(1);
-    expect(sequenceFrame(s, c.start + 1 + ZOOM_OUT / 2)[0].zoomIn).toBeCloseTo(0.5, 9);
-    expect(sequenceFrame(s, c.start + c.lead)[0].zoomIn).toBe(0);
+    expect(sequenceFrame(s, c.start)[1].zoomIn).toBe(1);
+    expect(sequenceFrame(s, c.start + ZOOM_OUT / 2)[0].zoomIn).toBeCloseTo(0.5, 9);
+    expect(sequenceFrame(s, c.start + ZOOM_OUT)[0].zoomIn).toBe(0);
+    // The end of a section holds the tab's last frame.
+    const held = sequenceFrame(s, b.start + section - 0.01)[0];
+    expect(held.time).toBeCloseTo(Math.min(section - 0.01 - BUILD, buildSchedule(b.scene).total + 99), 6);
     expect(sequenceFrame(s, sequencePlan(s).total).map((f) => f.segment.kind)).toEqual(['tissue']);
   });
 

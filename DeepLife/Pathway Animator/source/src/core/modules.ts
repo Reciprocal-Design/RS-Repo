@@ -73,8 +73,14 @@ export const MODULES: ModuleInfo[] = [
 export const moduleInfo = (kind: ModuleKind): ModuleInfo =>
   MODULES.find((m) => m.kind === kind) ?? { kind, label: 'Pathway', blurb: 'The standard animator.' };
 
-/** Short loops keep exported videos small: how far a tissue relays, and the rest at the end of a loop (seconds). */
-const TISSUE_RELAY_HOPS = 4;
+/**
+ * Tabs 4 and 5: every cell is active, all starting within this many seconds
+ * of each other, their signals crossing between cells along the links (an
+ * arrival pulses; it does not run the next cell's pathway again), so the
+ * loop is about one pathway long, like tabs 1–3.
+ */
+export const TISSUE_ALL_ACTIVE = { startShare: 1, relayHops: 0, stagger: 1 };
+/** Short loops keep exported videos small: the rest at the end of a loop (seconds). */
 const SHORT_HOLD = 0.5;
 /** Seconds per section of the virtual → real cell tab. */
 const REAL_CELL_SECTION = 2;
@@ -106,11 +112,11 @@ export function withTissueMap(scene: Scene, map: TissueUpload, heroId: string): 
   if (SINGLE_CELL.includes(kind)) return { ...scene, cellMap: { ...base, solo: true, detailScale: 1 } };
   const fit = (s: Scene) => suggestedDetailScale(s, map);
   // The tissue view lays the map out as the cross-tissue view does, in one colour.
-  if (kind === 'tissue') return { ...scene, cellMap: { ...base, startShare: 0, relayHops: TISSUE_RELAY_HOPS, detailScale: fit(scene) } };
+  if (kind === 'tissue') return { ...scene, cellMap: { ...base, ...TISSUE_ALL_ACTIVE, detailScale: fit(scene) } };
   if (kind === 'journey') return { ...scene, cellMap: { ...base, startShare: 0, relayHops: 4, detailScale: fit(scene) } };
   if (kind === 'crossTissue') {
     // A new map: the default split (right half in the second colour) applies again.
-    return { ...scene, module: { ...scene.module, pinkCells: null }, cellMap: { ...base, startShare: 0, relayHops: TISSUE_RELAY_HOPS, detailScale: fit(scene) } };
+    return { ...scene, module: { ...scene.module, pinkCells: null }, cellMap: { ...base, ...TISSUE_ALL_ACTIVE, detailScale: fit(scene) } };
   }
   return scene;
 }

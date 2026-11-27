@@ -1,5 +1,5 @@
 import { defaultModule } from '../core/defaults';
-import { MODULES } from '../core/modules';
+import { MODULES, TISSUE_ALL_ACTIVE } from '../core/modules';
 import { normalizeScene } from '../core/sceneIO';
 import type { Scene } from '../core/types';
 
@@ -29,10 +29,15 @@ export function loadSaved(): { tabs: (Scene | null)[]; active: number } | null {
       }
     }
     const tabs = MODULES.map((m) => saved.find((s) => s.module.kind === m.kind) ?? null);
-    // The sequence's first default played the body last; it no longer does.
     for (const s of tabs) {
+      // The sequence's first default played the body last; it no longer does.
       if (s?.module.kind === 'sequence' && s.module.seqTabs.join() === OLD_SEQUENCE_TABS) {
         s.module = { ...s.module, seqTabs: defaultModule('sequence').seqTabs };
+      }
+      // Tabs 4 and 5 used to spread the signal out from the selected cell (a long loop); now every cell is active.
+      const cm = s?.cellMap;
+      if (s && cm && (s.module.kind === 'tissue' || s.module.kind === 'crossTissue') && cm.startShare === 0 && cm.relayHops === 4) {
+        s.cellMap = { ...cm, ...TISSUE_ALL_ACTIVE };
       }
     }
     if (!tabs.some(Boolean)) return null;

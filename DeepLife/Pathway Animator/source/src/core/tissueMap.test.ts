@@ -100,7 +100,8 @@ describe('a shared tissue map', () => {
     expect([s.canvas.width, s.canvas.height]).toEqual([cross.canvas.width, cross.canvas.height]);
     expect(g.cells).toHaveLength(9);
     expect(g.cells.find((c) => c.hero)!.id).toBe('c1');
-    expect(g.pathways.filter((p) => !p.relayOnly).map((p) => p.id)).toEqual(['p1']);
+    // Every cell is active, starting on its own.
+    expect(g.pathways.every((p) => !p.relayOnly)).toBe(true);
     // The same cells and networks in the same places.
     const places = (x: typeof g) => JSON.stringify(x.nodes.map((n) => [n.id, n.x, n.y]));
     expect(places(g)).toBe(places(other));
@@ -260,8 +261,8 @@ describe('cross-tissue communication', () => {
       const xs = g.cells.map((c) => c.cell.center.x);
       const mid = (Math.min(...xs) + Math.max(...xs)) / 2;
       for (const c of g.cells) if (c !== hero) expect(pink.has(c.id)).toBe(c.cell.center.x > mid);
-      // The signal starts in the selected cell and reaches the other tissue.
-      expect(g.pathways.filter((p) => !p.relayOnly).map((p) => p.id)).toEqual(['p1']);
+      // Every cell is active, so both tissues fire, signals crossing where they meet.
+      expect(g.pathways.every((p) => !p.relayOnly)).toBe(true);
       const cellOf = (id: string) => /^(c\d+)-/.exec(id)?.[1] ?? hero.id;
       const fired = new Set([...buildSchedule(s).fire.keys()].map(cellOf));
       expect([...pink].some((id) => fired.has(id))).toBe(true);
@@ -353,7 +354,7 @@ describe('turning an uploaded map', () => {
     expect(r.cells[0].membrane.slice(0, 2)).toEqual([248, -48]);
     // Ids, seeds, the selected cell and the view's settings stay.
     expect(r.cells.map((c) => [c.id, c.seed])).toEqual(s.cellMap.cells.map((c) => [c.id, c.seed]));
-    expect(r).toMatchObject({ heroId: 'c2', startShare: 0, relayHops: 4 });
+    expect(r).toMatchObject({ heroId: 'c2', startShare: 1, relayHops: 0 });
   });
 
   it('comes back exactly after four quarter turns, or back to 0', () => {

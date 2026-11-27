@@ -57,6 +57,7 @@ export function defaultModule(kind: ModuleKind = 'custom'): ModuleSettings {
     seqTabs: ['moa', 'combination', 'toxicity', 'tissue', 'crossTissue'],
     seqLoops: 1,
     seqTransition: 1,
+    seqSection: 0,
   };
 }
 

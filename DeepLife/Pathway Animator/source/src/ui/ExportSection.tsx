@@ -272,8 +272,8 @@ function PngSequence({ busy, setBusy, setMessage }: { busy: boolean; setBusy: (b
               ? ` ${Number.isInteger(perSection) ? perSection : perSection.toFixed(1)} frames per section${Number.isInteger(perSection) ? '' : ': pick a section length that is a whole number of frames'}.`
               : '') +
             (seq
-              ? ' ' + seq.segments.map((g) => `${g.label}: from frame ${Math.round(g.start * fps) + 1}`).join('; ') +
-                (seq.fade > 0 ? ` (${Math.round(seq.fade * fps)}-frame crossfades).` : '.')
+              ? ` ${Math.round(seq.section * fps)} frames per tab (${seq.segments.map((g) => `${g.label} from frame ${Math.round(g.start * fps) + 1}`).join('; ')})` +
+                (seq.fade > 0 ? `, each fading in over its first ${Math.round(seq.fade * fps)}.` : '.')
               : '') +
             (canPickFolder() ? ' You pick a folder to save them in.' : ' Saved together in one ZIP.')}
       </p>

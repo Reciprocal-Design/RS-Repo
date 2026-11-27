@@ -19,13 +19,15 @@ export interface SequenceSegment {
   label: string;
   /** The tab's scene as the sequence plays it (sequenceScene). */
   scene: Scene;
-  /** Sequence time this tab starts at (it fades in over the transition before that from the previous one). */
+  /** Sequence time its section starts at (it fades in over the first `fade` seconds of it). */
   start: number;
-  /** Seconds it plays, its fade out included. */
+  /** Seconds it shows: its section, and the crossfade into the next one. */
   length: number;
-  /** Seconds before its own animation starts: the crossfade in, then a build-out or zoom-out. */
+  /** Seconds before its own animation starts: a build-out or zoom-out. */
   lead: number;
-  /** The combination: its added pathway builds out over BUILD seconds after the crossfade in. */
+  /** Seconds it needs: the lead, then its signal's run. */
+  needs: number;
+  /** The combination: its added pathway builds out over the first BUILD seconds. */
   build?: boolean;
   /** A tissue after a single cell: it starts on that cell, framed as the previous tab showed it, and zooms out. */
   zoomFrom?: Scene;
@@ -33,8 +35,10 @@ export interface SequenceSegment {
 
 export interface SequencePlan {
   segments: SequenceSegment[];
-  /** Crossfade length actually used (shortened for very short tabs). */
+  /** Crossfade length actually used (at most half a section). */
   fade: number;
+  /** Seconds per section: every tab gets the same, so a scroll sequence moves evenly from tab to tab. */
+  section: number;
   total: number;
 }
 
@@ -42,8 +46,8 @@ export interface SequencePlan {
 export const RUNS_ONCE: ModuleKind[] = ['journey', 'realCell', 'sequence'];
 
 /** Seconds the combination's added pathway takes to build out, and a tissue to zoom out from the cell before it. */
-export const BUILD = 2.5;
-export const ZOOM_OUT = 2.5;
+export const BUILD = 2;
+export const ZOOM_OUT = 2;
 
 /** The tabs that show one cell on its own, which a following tissue zooms out of. */
 const SINGLE: ModuleKind[] = ['moa', 'combination', 'toxicity'];
@@ -90,11 +94,13 @@ export function sequenceScene(scene: Scene): Scene {
 const plans = new WeakMap<Scene, { from: readonly Scene[]; plan: SequencePlan }>();
 
 /**
- * When each tab plays: back to back, each running its signal once (the
- * journey and real-cell views their whole run), the next starting
- * `seqTransition` seconds before the previous one ends so the two crossfade.
- * The combination first builds out its added pathway, and a tissue after a
- * single cell first zooms out from it, before their signal starts.
+ * When each tab plays: in sections of equal length (`seqSection`, or fitted
+ * to the tab that needs longest, rounded up to half a second), one tab per
+ * section, each fading in over the start of its section on top of the last
+ * moments of the one before. A tab runs its signal once and holds to the end
+ * of its section. The combination first builds out its added pathway, and a
+ * tissue after a single cell first zooms out from it, before their signal
+ * starts.
  */
 export function sequencePlan(scene: Scene, tabs: readonly Scene[] = sources): SequencePlan {
   const hit = plans.get(scene);
@@ -104,26 +110,23 @@ export function sequencePlan(scene: Scene, tabs: readonly Scene[] = sources): Se
     .map((kind) => tabs.find((s) => s.module.kind === kind))
     .filter((s): s is Scene => !!s && s.module.kind !== 'sequence')
     .map(sequenceScene);
-  const runs = picked.map((s) => Math.max(0.1, buildSchedule(s).total));
-  // A crossfade never takes more than half of the shortest run.
-  const fade = picked.length > 1 ? Math.max(0, Math.min(m.seqTransition, ...runs.map((l) => l / 2))) : 0;
-  const segments: SequenceSegment[] = [];
-  let at = 0;
-  picked.forEach((s, i) => {
+  const parts = picked.map((s, i) => {
     const kind = s.module.kind;
     const prev = picked[i - 1];
     const build = kind === 'combination';
     const zoomFrom = prev && TISSUES.includes(kind) && SINGLE.includes(prev.module.kind) ? prev : undefined;
-    const lead = i > 0 && (build || zoomFrom) ? fade + (build ? BUILD : ZOOM_OUT) : build ? BUILD : 0;
-    const length = lead + runs[i];
-    segments.push({
-      kind, label: moduleInfo(kind).label, scene: s, start: at, length, lead,
-      ...(build ? { build } : {}), ...(zoomFrom ? { zoomFrom } : {}),
-    });
-    at += length - fade;
+    const lead = build ? BUILD : zoomFrom ? ZOOM_OUT : 0;
+    return { s, kind, build, zoomFrom, lead, needs: lead + Math.max(0.1, buildSchedule(s).total) };
   });
-  const total = segments.length ? at + fade : 1;
-  const plan = { segments, fade, total };
+  const fit = Math.ceil(2 * Math.max(1, ...parts.map((p) => p.needs))) / 2;
+  const section = m.seqSection > 0 ? Math.max(1, m.seqSection) : fit;
+  const fade = parts.length > 1 ? Math.max(0, Math.min(m.seqTransition, section / 2)) : 0;
+  const segments: SequenceSegment[] = parts.map((p, i) => ({
+    kind: p.kind, label: moduleInfo(p.kind).label, scene: p.s,
+    start: i * section, length: section + (i < parts.length - 1 ? fade : 0), lead: p.lead, needs: p.needs,
+    ...(p.build ? { build: true } : {}), ...(p.zoomFrom ? { zoomFrom: p.zoomFrom } : {}),
+  }));
+  const plan = { segments, fade, section, total: Math.max(1, segments.length) * section };
   plans.set(scene, { from: tabs, plan });
   return plan;
 }
@@ -158,14 +161,13 @@ export function sequenceFrame(scene: Scene, t: number): SequenceFrameItem[] {
     const last = i === segments.length - 1;
     if (tt < seg.start || (tt >= end && !last)) return;
     const u = Math.min(tt - seg.start, seg.length);
-    const into = i === 0 ? 0 : fade; // the crossfade in comes first
     const item: SequenceFrameItem = {
       segment: seg,
       time: Math.max(0, u - seg.lead),
       mix: i === 0 || fade <= 0 ? 1 : smooth((tt - seg.start) / fade),
     };
-    if (seg.build) item.built = Math.max(0, Math.min(1, (u - into) / BUILD));
-    if (seg.zoomFrom) item.zoomIn = 1 - smooth((u - into) / ZOOM_OUT);
+    if (seg.build) item.built = Math.max(0, Math.min(1, u / BUILD));
+    if (seg.zoomFrom) item.zoomIn = 1 - smooth(u / ZOOM_OUT);
     out.push(item);
   });
   return out;

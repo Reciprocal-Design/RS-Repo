@@ -58,6 +58,14 @@ describe('saved settings', () => {
     };
     expect(seq(['moa', 'combination', 'toxicity', 'tissue', 'crossTissue', 'body'])).toEqual(['moa', 'combination', 'toxicity', 'tissue', 'crossTissue']);
     expect(seq(['body', 'moa'])).toEqual(['body', 'moa']);
+    // Tabs 4 and 5 saved when they spread the signal out from one cell: every cell active now; own settings kept.
+    const tissue = (cellMap: object) => {
+      const s = moduleScene('tissue', 1);
+      mem.set('pathway-animator:settings:v1', JSON.stringify({ tabs: [{ ...s, cellMap: { ...s.cellMap, ...cellMap } }], active: 0 }));
+      return loadSaved()?.tabs.find((t) => t?.module.kind === 'tissue')?.cellMap;
+    };
+    expect(tissue({ startShare: 0, relayHops: 4, stagger: 3 })).toMatchObject({ startShare: 1, relayHops: 0, stagger: 1 });
+    expect(tissue({ startShare: 0.5, relayHops: 2 })).toMatchObject({ startShare: 0.5, relayHops: 2 });
     mem.set('pathway-animator:settings:v1', JSON.stringify({ tabs: [], active: 0 }));
     expect(loadSaved()).toBeNull();
     mem.set('pathway-animator:settings:v1', 'not json');

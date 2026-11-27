@@ -177,10 +177,12 @@ export interface ModuleSettings {
   newNodes: number;
   /** Sequence: the tabs it plays, in order (by their module). */
   seqTabs: ModuleKind[];
-  /** Sequence: loops of each looping tab (the journey and real-cell views run once). */
+  /** No longer used (the sequence runs each tab's signal once). */
   seqLoops: number;
   /** Sequence: seconds each tab crossfades into the next. */
   seqTransition: number;
+  /** Sequence: seconds per tab, every tab the same (a scroll sequence); 0 fits the longest tab. */
+  seqSection: number;
   /**
    * Internal, never saved: this scene is a tab as the sequence plays it (core/sequence.ts): one pulse from the
    * receptor to the DEGs; the combination's added pathway builds out; toxicity keeps tab 1's pathway and dims the
