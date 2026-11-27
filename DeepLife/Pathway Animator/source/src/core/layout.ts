@@ -11,14 +11,16 @@ const TAU = Math.PI * 2;
 const COMBINATION_GAP = 0.3;
 /** Target combination: how deep into the nucleus the added pathway reaches, relative to the first. */
 const COMBINATION_DEPTH = 0.2;
-/** Target combination: how wide the added pathway's rows are, relative to the first. */
-const COMBINATION_WIDTH = 0.62;
-/** The same, as the sequence tab plays it: roomier rows, so the added pathway's proteins crowd less. */
-const SEQUENCE_COMBINATION_WIDTH = 0.75;
+/** Target combination: how wide the added pathway's rows are, relative to the first (roomy, so its proteins crowd less). */
+const COMBINATION_WIDTH = 0.75;
 /** Target combination: the least angle (radians, seen from the nucleus) between the two pathways. */
 const COMBINATION_APART = (48 * Math.PI) / 180;
 /** Target combination: the gap the added pathway's proteins want from the first's (× cell radius). */
 const COMBINATION_CLEAR = 0.1;
+/** Target combination: how far right of the cell's middle the second receptor must sit to count as on the right (× cell radius). */
+const RIGHT_SIDE = 0.35;
+/** Target combination: on the right-hand side the second pathway may come this much nearer the first (× the least angle). */
+const RIGHT_APART = 0.6;
 /** Target combination: the second receptor's least distance from an unconnected one (× receptor length). */
 const COMBINATION_RECEPTOR_GAP = 1.6;
 
@@ -152,6 +154,8 @@ function convexHull(points: Vec2[]): Vec2[] {
  * membrane is tried with the pathway laid out from it, and scored by the depth
  * of cytoplasm it has to spread through, marked down where its cytoplasm
  * proteins land among the first pathway's, so the two stay apart on the way in.
+ * Places well on the right-hand side of the cell (as seen on the canvas) win
+ * over any others.
  */
 function secondReceptorAngle(frame: CellFrame, scene: Scene, pathway: Pathway, index: number): number {
   const { cell, nucleus, R } = frame;
@@ -165,22 +169,32 @@ function secondReceptorAngle(frame: CellFrame, scene: Scene, pathway: Pathway, i
   // The unconnected receptors stay where they are on tabs 1–3: this one goes between them.
   const others = decorativeReceptors(frame, scene);
   const clear = COMBINATION_RECEPTOR_GAP * scene.style.receptorSize.length * frame.scale;
-  let best = start + COMBINATION_GAP * TAU, bestScore = -Infinity;
-  for (let deg = 0; deg < 360; deg += 3) {
-    const phi = start + (deg * Math.PI) / 180;
-    if (apart(bearing(phi), axis) < COMBINATION_APART) continue;
-    const q = onOutline(cell, phi);
-    if (others.some((r) => dist(r.center, q) < clear)) continue;
-    const depth = dist(N, q) - nucleus.radiusAt(angleOf(N, q));
-    const nodes = layoutPathway(frame, scene, pathway, index, phi).nodes.filter((n) => n.active);
-    // The two meet at the DEGs, so only the way there has to stay clear.
-    const way = nodes.filter((n) => n.region !== 'nucleus');
-    const inside = way.filter((n) => pointInPolygon(n, hull)).length / way.length;
-    const gap = Math.min(...way.flatMap((n) => firstNodes.map((m) => dist(n, m))));
-    const score = depth * (1 - inside) ** 2 * Math.min(1, gap / (COMBINATION_CLEAR * R));
-    if (score > bestScore) (bestScore = score), (best = phi);
-  }
-  return best;
+  // Places well on the right-hand side first (even a little nearer the first pathway than elsewhere); then anywhere.
+  const pass = (onRight: boolean) => {
+    let best = NaN, bestScore = -Infinity;
+    for (let deg = 0; deg < 360; deg += 3) {
+      const phi = start + (deg * Math.PI) / 180;
+      const q = onOutline(cell, phi);
+      if (onRight && q.x < cell.center.x + RIGHT_SIDE * R) continue;
+      if (apart(bearing(phi), axis) < COMBINATION_APART * (onRight ? RIGHT_APART : 1)) continue;
+      if (others.some((r) => dist(r.center, q) < clear)) continue;
+      const depth = dist(N, q) - nucleus.radiusAt(angleOf(N, q));
+      const nodes = layoutPathway(frame, scene, pathway, index, phi).nodes.filter((n) => n.active);
+      // The two meet at the DEGs, so only the way there has to stay clear.
+      const way = nodes.filter((n) => n.region !== 'nucleus');
+      const inside = way.filter((n) => pointInPolygon(n, hull)).length / way.length;
+      const gap = Math.min(...way.flatMap((n) => firstNodes.map((m) => dist(n, m))));
+      const room = depth * (1 - inside) ** 2 * Math.min(1, gap / (COMBINATION_CLEAR * R));
+      // On the right-hand side, the furthest right place that leaves the pathway room enough.
+      const score = onRight ? (room > 0.2 * R ? q.x : -Infinity) : room;
+      if (score > bestScore) (bestScore = score), (best = phi);
+    }
+    return best;
+  };
+  const right = pass(true);
+  if (!Number.isNaN(right)) return right;
+  const any = pass(false);
+  return Number.isNaN(any) ? start + COMBINATION_GAP * TAU : any;
 }
 
 /**
@@ -253,8 +267,7 @@ export function layoutPathway(frame: CellFrame, scene: Scene, pathway: Pathway, 
   // nucleus-centred one, so they bend gently instead of curling round the
   // centre. With more, rows stay concentric so each keeps to its own wedge.
   const minArc = n === 1 ? 0.5 * R : n === 2 ? 0.25 * R : 0;
-  const addedWidth = scene.module.seqPart ? SEQUENCE_COMBINATION_WIDTH : COMBINATION_WIDTH;
-  const baseSpacing = (n === 1 ? 0.2 : 0.15) * R * (added ? addedWidth : 1);
+  const baseSpacing = (n === 1 ? 0.2 : 0.15) * R * (added ? COMBINATION_WIDTH : 1);
   const pad = 0.035 * R + scene.style.haloRadius * scale;
 
   const out: NodeGeom[][] = [];

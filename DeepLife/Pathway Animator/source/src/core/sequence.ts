@@ -60,34 +60,18 @@ const variants = new WeakMap<Scene, Scene>();
 
 /**
  * A tab as the sequence plays it (the tab itself is unchanged): its signal
- * runs once, one pulse from the receptor to the DEGs, and holds. On top of
- * that (module.seqPart, core/modules.ts and core/timeline.ts) the
- * combination's added pathway is laid out sparser and builds out, and
- * toxicity keeps tab 1's pathway with the rest of the network dimmed round
- * the route to the toxic DEG. The journey and real-cell views play as they are.
+ * runs once, one pulse from the receptor to the DEGs, and holds; the
+ * combination's added pathway builds out (module.seqPart, core/modules.ts).
+ * The journey and real-cell views play as they are.
  */
 export function sequenceScene(scene: Scene): Scene {
   if (RUNS_ONCE.includes(scene.module.kind)) return scene;
   const hit = variants.get(scene);
   if (hit) return hit;
-  const kind = scene.module.kind;
   const v: Scene = {
     ...scene,
     animation: { ...scene.animation, loop: false, continuous: false },
     module: { ...scene.module, seqPart: true },
-    // The added pathway, less crowded where it meets the first: fewer proteins in its deeper rows, and
-    // fewer branches and merges between its layers.
-    ...(kind === 'combination'
-      ? { pathways: scene.pathways.map((p, i) => (i === 0 ? p : {
-        ...p,
-        branching: Math.min(p.branching, 0.15),
-        convergence: Math.min(p.convergence, 0.15),
-        layers: p.layers.map((l, li) => {
-          const deep = li >= p.layers.length - 3 ? Math.max(1, l.nodeCount - 1) : l.nodeCount;
-          return li > 0 ? { ...l, nodeCount: deep, activeCount: Math.min(l.activeCount, deep) } : l;
-        }),
-      })) }
-      : {}),
   };
   variants.set(scene, v);
   return v;

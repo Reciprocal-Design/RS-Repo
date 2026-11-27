@@ -80,6 +80,9 @@ export const moduleInfo = (kind: ModuleKind): ModuleInfo =>
  * loop is about one pathway long, like tabs 1–3.
  */
 export const TISSUE_ALL_ACTIVE = { startShare: 1, relayHops: 0, stagger: 1 };
+/** Tabs 1–5: seconds a pulse takes per layer (slower than the plain animator's 0.5). */
+export const TAB_LAYER_DURATION = 0.8;
+const SLOW_TABS: ModuleKind[] = ['moa', 'combination', 'toxicity', 'tissue', 'crossTissue'];
 /** Short loops keep exported videos small: the rest at the end of a loop (seconds). */
 const SHORT_HOLD = 0.5;
 /** Seconds per section of the virtual → real cell tab. */
@@ -167,6 +170,7 @@ export function moduleScene(kind: ModuleKind, seed = 1234): Scene {
     s.module.zoom = DEFAULT_ZOOM[kind] ?? 1;
     s.cell.neighbours = { ...s.cell.neighbours, show: true };
   }
+  if (SLOW_TABS.includes(kind)) s.animation = { ...s.animation, layerDuration: TAB_LAYER_DURATION };
   if (TRACED.includes(kind)) {
     s.animation = { ...s.animation, cometSize: TRACED_COMET_SIZE };
     s.style = { ...s.style, edgeWidth: TRACED_LINE_WIDTH };
@@ -270,19 +274,41 @@ function degCrosstalk(scene: Scene, nodes: NodeGeom[]): EdgeGeom[] {
   });
 }
 
-/** Target toxicity's own wiring: the same layer settings and receptor, a different signalling pathway. */
-export const withToxicPathway = (scene: Scene): Scene => ({
-  ...scene,
-  pathways: scene.pathways.map((p) => ({ ...p, seed: hash(p.seed, 'toxic') })),
-});
+/**
+ * Target combination: the added pathway, simpler than the first so the two
+ * stay clear of each other where they meet: a protein fewer in each of its
+ * three deepest rows (4-3-2-2 from 4-4-3-3), and fewer branches and merges.
+ * The first pathway is tab 1's, unchanged.
+ */
+const memoSimpler = new WeakMap<Scene, Scene>();
+export function withSimplerAdded(scene: Scene): Scene {
+  const hit = memoSimpler.get(scene);
+  if (hit) return hit;
+  const out = {
+    ...scene,
+    pathways: scene.pathways.map((p, i) => (i === 0 ? p : {
+      ...p,
+      branching: Math.min(p.branching, 0.15),
+      convergence: Math.min(p.convergence, 0.15),
+      layers: p.layers.map((l, li) => {
+        if (li === 0 || li < p.layers.length - 3) return l;
+        const n = Math.max(1, l.nodeCount - 1);
+        return { ...l, nodeCount: n, activeCount: Math.min(l.activeCount, n) };
+      }),
+    })),
+  };
+  memoSimpler.set(scene, out);
+  return out;
+}
 
 /**
  * The module's view of a scene's geometry. Pure: new node, edge and receptor
  * objects where anything changes, the input untouched.
  *
  * - Tabs 1–3: every active protein and line of the pathway, always on in the
- *   gradient, carrying a pulse back and forth.
- * - Toxicity: one DEG of each pathway is marked toxic.
+ *   gradient, carrying a pulse from the receptor to the DEGs.
+ * - Toxicity: one DEG of each pathway is marked toxic, and everything off the
+ *   main route into it fades back.
  * - Drug targets: each pathway's own receptor is marked.
  */
 export function applyModule(scene: Scene, g: SceneGeom): SceneGeom {
@@ -296,12 +322,10 @@ export function applyModule(scene: Scene, g: SceneGeom): SceneGeom {
   if (kind === 'toxicity') {
     const toxic = new Set([...degsByPathway(nodes).values()].map((list) => list[list.length - 1].id));
     nodes = nodes.map((n) => (toxic.has(n.id) ? { ...n, toxic: true } : n));
-    // In the sequence: the route into the toxic DEG stands out, everything else fades back.
-    if (m.seqPart) {
-      const route = toxicRoute(edges, toxic);
-      edges = edges.map((e) => (route.edges.has(e.id) ? e : { ...e, dim: OFF_ROUTE }));
-      nodes = nodes.map((n) => (route.nodes.has(n.id) ? n : { ...n, dim: OFF_ROUTE }));
-    }
+    // The route into the toxic DEG stands out; everything else fades back.
+    const route = toxicRoute(edges, toxic);
+    edges = edges.map((e) => (route.edges.has(e.id) ? e : { ...e, dim: OFF_ROUTE }));
+    nodes = nodes.map((n) => (route.nodes.has(n.id) ? n : { ...n, dim: OFF_ROUTE }));
   }
 
   let receptors = g.receptors;
@@ -317,7 +341,7 @@ export function applyModule(scene: Scene, g: SceneGeom): SceneGeom {
   return { ...g, nodes, edges, receptors, discoverSpan, nodeById: new Map(nodes.map((n) => [n.id, n])) };
 }
 
-/** Opacity of the network off the route to the toxic DEG, in the sequence's toxicity scene. */
+/** Opacity of the network off the route to the toxic DEG (target toxicity). */
 const OFF_ROUTE = 0.28;
 /** Inputs each protein on that route keeps (the shortest lines into it). */
 const ROUTE_INPUTS = 2;

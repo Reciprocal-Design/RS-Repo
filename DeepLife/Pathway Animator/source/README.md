@@ -26,9 +26,10 @@ the same pathway; "Use this look and pathway in all tabs" copies the current tab
 animation to the others (each keeps its module settings, pathway count, start delays and cell map). The modules are
 a preset scene plus a pure transform of the geometry (`src/core/modules.ts`):
 
-**Short loops.** To keep exported videos small, tabs 1–3 make one trip back and forth (about 5–6 s), tabs 4 and 5 relay
-the signal four cells out with a short rest at the end (about 16 s), the body rests briefly (about 6 s), and tab 8 runs
-five 2 s sections (10 s). "Back-and-forth trips", "Relay hops", "Hold at end" and "Section length" lengthen them.
+**Short loops.** To keep exported videos small, tabs 1–5 run one pulse, one way, from the receptor to the DEGs, at a
+slower pace than the plain animator (0.8 s a layer; about 4–5 s a loop for tabs 1–3, about 7.5 s for tabs 4 and 5,
+every cell active), the body rests briefly (about 6 s), and tab 8 runs five 2 s sections (10 s). "Relay hops",
+"Hold at end" and "Section length" lengthen them.
 
 **Default pathway and map.** Every pathway starts with a receptor, then 4 cytoplasm, 4 cytoplasm, 3 nucleus and 3 DEG
 nodes, all active, and every cell of a tissue follows those settings ("Cell variation" under Cell map adds drift). The
@@ -44,14 +45,17 @@ selected cell runs the scene's own pathways and starts the signal. "Remove the m
 cell or generated tissue.
 
 1. **Target identification and MOA**: the drug target's receptor is ringed. Every active protein and line of the
-   pathway is always on in the gradient, and pulses run back and forth between the receptor and the nucleus
-   ("Back-and-forth trips"). The loop closes seamlessly.
+   pathway is always on in the gradient, and a pulse runs one way, from the receptor down to the DEGs, then starts
+   again. The loop closes seamlessly.
 2. **Target combination**: the pathway of tab 1, unchanged, and one more: two ringed receptors, pulsing together. The
-   second sits where the cell has most room clear of the first, and the two talk to each other at their DEGs. Tabs
+   second comes in on the right-hand side of the cell (the furthest right place with room clear of the first; where
+   there is none, wherever there is most room), is simpler than the first (4-3-2-2 proteins, fewer branches and
+   merges, roomy rows) so the two crowd each other less, and the two talk to each other at their DEGs. Tabs
    1–3 stay in step: the cell, look, motion and layer settings changed in one change in the others. They start with a
    6.5 px comet and 3.55 px lines.
-3. **Target toxicity**: the receptor and layer settings of tab 1 with a different wiring. One DEG in the nucleus is
-   larger, red, and radiates rings for the whole loop; nothing else on screen is red.
+3. **Target toxicity**: exactly tab 1's pathway. One DEG in the nucleus is larger, red, and radiates rings for the
+   whole loop; nothing else on screen is red. The main route into it stands out (at most two inputs per protein on
+   it, back to the receptor) and every other line and protein fades back.
 4. **Tissue-level target ID** (indication extension): the layout of tab 5 in one colour. The whole tissue map fills the
    canvas, every cell active: all start within a second of each other, their signals crossing between cells along
    the links (an arrival pulses; it does not run the next cell's pathway again), so the loop is about one pathway
@@ -102,17 +106,14 @@ node and receptor sizes, and the neighbours round it, together. They start at
 
 9. **Tabs in sequence** (`src/core/sequence.ts`, `src/render/sequence.ts`): the tabs you tick (1–5 by default), in
    the order you set, played one after another: each moves on as soon as its pulse reaches the end of the pathway
-   (about 19 s and 580 frames at 30 fps for tabs 1–5), the next fading in over it ("Crossfade", 0–5 s; eased).
+   (about 27 s and 820 frames at 30 fps for tabs 1–5), the next fading in over it ("Crossfade", 0–5 s; eased).
    "Equal sections" gives every tab the same length instead (fitted to the tab that needs longest, rounded up to
    half a second, or set "Section length"), each running its pulse and holding to the end of its section. Each tab plays as it is set up in its own tab,
    fitted inside this tab's canvas (Landscape, Square or Portrait), with these differences in the sequence only (the
    tabs themselves are unchanged; `module.seqPart`, never saved):
    - every tab's signal runs once: one pulse from the receptor to the DEGs (no return trips), then holds;
-   - target combination, from the start of its section, builds its second pathway out from where it meets the first (the DEG
-     crosstalk) back to its receptor, a layer at a time, before the pulse; that pathway has fewer proteins in its
-     deeper rows (4-3-2-2), fewer branches and roomier rows, so it crowds the first pathway less;
-   - target toxicity uses tab 1's pathway, and fades everything but the main route into the red dot (at most two
-     inputs per protein on it, back to the receptor);
+   - target combination, from the start of its section, builds its second pathway out from where it meets the first
+     (the DEG crosstalk) back to its receptor, a layer at a time, before the pulse;
    - a tissue view that follows a single cell starts framed on that cell exactly as the previous tab showed it, and
      zooms out into the tissue (2 s) before its signal starts, so the transition is seamless.
    The journey and real-cell tabs play as they are. The export panel lists the frames per tab and the frame each

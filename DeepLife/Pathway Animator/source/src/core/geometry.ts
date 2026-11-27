@@ -4,7 +4,7 @@ import { buildCrossTissueGeometry } from './crossTissue';
 import { connectCrosstalk, connectPathway } from './connect';
 import { buildDiscoveryGeometry } from './discovery';
 import { cellFrame, decorativeReceptors, layoutPathway } from './layout';
-import { applyModule, withToxicPathway } from './modules';
+import { applyModule, withSimplerAdded } from './modules';
 import type { NodeGeom, Scene, SceneGeom } from './types';
 
 const cache = new WeakMap<Scene, SceneGeom>();
@@ -24,8 +24,8 @@ export function buildGeometry(scene: Scene): SceneGeom {
     ? buildBodyGeometry(scene)
     : kind === 'realCell' || kind === 'realCellNet'
       ? buildDiscoveryGeometry(scene, plain)
-      // In the sequence, toxicity keeps tab 1's pathway.
-      : plain(kind === 'toxicity' && !scene.module.seqPart ? withToxicPathway(scene) : scene);
+      // Target combination's added pathway is a simpler one (core/modules.ts).
+      : plain(kind === 'combination' ? withSimplerAdded(scene) : scene);
   cache.set(scene, geom);
   return geom;
 }

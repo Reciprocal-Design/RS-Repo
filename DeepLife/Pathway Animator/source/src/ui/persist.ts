@@ -1,13 +1,14 @@
 import { defaultModule } from '../core/defaults';
-import { MODULES, TISSUE_ALL_ACTIVE } from '../core/modules';
+import { MODULES, TAB_LAYER_DURATION, TISSUE_ALL_ACTIVE } from '../core/modules';
 import { normalizeScene } from '../core/sceneIO';
-import type { Scene } from '../core/types';
+import type { ModuleKind, Scene } from '../core/types';
 
 // The app's last settings, kept in this browser: every tab's scene and the
 // open tab, saved a moment after each change and restored on the next load.
 
 const KEY = 'pathway-animator:settings:v1';
 const OLD_SEQUENCE_TABS = 'moa,combination,toxicity,tissue,crossTissue,body';
+const SLOW: ModuleKind[] = ['moa', 'combination', 'toxicity', 'tissue', 'crossTissue'];
 let stopped = false;
 
 /**
@@ -33,6 +34,10 @@ export function loadSaved(): { tabs: (Scene | null)[]; active: number } | null {
       // The sequence's first default played the body last; it no longer does.
       if (s?.module.kind === 'sequence' && s.module.seqTabs.join() === OLD_SEQUENCE_TABS) {
         s.module = { ...s.module, seqTabs: defaultModule('sequence').seqTabs };
+      }
+      // Tabs 1–5 used to run their pulse at the plain animator's speed; it is slower now.
+      if (s && SLOW.includes(s.module.kind) && s.animation.layerDuration === 0.5) {
+        s.animation = { ...s.animation, layerDuration: TAB_LAYER_DURATION };
       }
       // Tabs 4 and 5 used to spread the signal out from the selected cell (a long loop); now every cell is active.
       const cm = s?.cellMap;

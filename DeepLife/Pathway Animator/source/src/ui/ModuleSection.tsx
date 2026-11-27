@@ -67,11 +67,6 @@ export function ModuleSection() {
       {m.markTargets && <ColorField label="Target ring colour" value={m.targetColor} onChange={(targetColor) => set({ targetColor })} />}
     </>
   );
-  const tracing = (
-    <>
-      <Slider label="Back-and-forth trips" value={m.trips} min={1} max={4} step={1} onChange={(trips) => set({ trips })} />
-    </>
-  );
   const organ = (label: string) => (
     <Select<OrganId>
       label={label}
@@ -98,7 +93,6 @@ export function ModuleSection() {
 
       {m.kind === 'moa' && (
         <>
-          {tracing}
           {targets}
         </>
       )}
@@ -107,7 +101,6 @@ export function ModuleSection() {
         <>
           <Slider label="Turn" value={scene.rotation} min={-180} max={180} step={1} unit="°"
             onChange={(rotation) => setScene((s) => ({ ...s, rotation }))} />
-          {tracing}
           {targets}
         </>
       )}
@@ -116,7 +109,6 @@ export function ModuleSection() {
         <>
           <ColorField label="Toxicity colour" value={m.toxicColor} onChange={(toxicColor) => set({ toxicColor })} />
           <p className="hint">The large dot this pathway ends at, in the nucleus, pulses in this colour and radiates a ring for the whole loop.</p>
-          {tracing}
           {targets}
         </>
       )}

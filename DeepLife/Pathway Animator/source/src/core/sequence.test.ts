@@ -28,11 +28,12 @@ describe('the sequence tab', () => {
     const v = sequenceScene(own);
     expect(own.module.seqPart).toBeUndefined();
     expect(v.module.seqPart).toBe(true);
-    const ownEdges = buildSchedule(own).edges, seqEdges = buildSchedule(v).edges;
-    // Every edge carries the pulse once, receptor to DEG; the tab sends it back and forth.
+    const seqEdges = buildSchedule(v).edges;
+    // Every edge carries the pulse once, receptor to DEG; the tab loops it, the sequence runs it once.
     expect(seqEdges.length).toBe(buildGeometry(v).edges.length);
     expect(seqEdges.every((et) => et.wave === 0)).toBe(true);
-    expect(ownEdges.length).toBeGreaterThan(seqEdges.length);
+    expect(buildSchedule(own).period).toBeGreaterThan(0);
+    expect(buildSchedule(v).period).toBe(0);
     // Saved scenes never carry the flag.
     expect(parseSceneJson(serializeScene(v)).module.seqPart).toBeUndefined();
   });
@@ -42,8 +43,8 @@ describe('the sequence tab', () => {
     const moa = buildGeometry(sequenceScene(tab('moa')));
     const pos = (gg: typeof g) => gg.nodes.filter((n) => n.pathwayId === 'p1').map((n) => [n.id, Math.round(n.x), Math.round(n.y)]);
     expect(pos(g)).toEqual(pos(moa));
-    // The tab itself keeps its own, different pathway.
-    expect(pos(buildGeometry(tab('toxicity')))).not.toEqual(pos(moa));
+    // As the tab itself shows it.
+    expect(pos(buildGeometry(tab('toxicity')))).toEqual(pos(moa));
     const toxic = g.nodes.find((n) => n.toxic)!;
     expect(toxic.dim).toBeUndefined();
     // The route: at most two lines into each protein on it, back to the receptor; the rest fades.
@@ -60,7 +61,7 @@ describe('the sequence tab', () => {
     expect(g.nodes.some((n) => n.dim !== undefined)).toBe(true);
   });
 
-  it('combination builds its added pathway out from the crosstalk back to its receptor, sparser than the tab', () => {
+  it('combination builds its added pathway out from the crosstalk back to its receptor', () => {
     const v = sequenceScene(tab('combination'));
     const g = buildGeometry(v);
     const added = g.nodes.filter((n) => n.pathwayId === 'p2');
@@ -74,9 +75,9 @@ describe('the sequence tab', () => {
     expect(cross.length).toBeGreaterThan(0);
     expect(cross.every((e) => e.discoverAt === 0 && e.growBack)).toBe(true);
     expect(g.receptors.find((r) => r.pathwayId === 'p2')!.discoverAt).toBe(Math.max(...added.map((n) => n.discoverAt!)));
-    // Fewer lines in the added pathway than the tab's own.
-    const count = (gg: typeof g) => gg.edges.filter((e) => e.pathwayId === 'p2' && !e.crosstalk).length;
-    expect(count(g)).toBeLessThan(count(buildGeometry(tab('combination'))));
+    // The same added pathway as the tab shows.
+    const lines = (gg: typeof g) => JSON.stringify(gg.edges.filter((e) => e.pathwayId === 'p2').map((e) => [e.id, e.bezier]));
+    expect(lines(g)).toBe(lines(buildGeometry(tab('combination'))));
   });
 
   it('moves on from each tab as soon as its pulse reaches the end of the pathway', () => {
@@ -115,7 +116,7 @@ describe('the sequence tab', () => {
     expect(e.length).toBeCloseTo(p.section, 9);
     expect(p.total).toBeCloseTo(5 * p.section, 9);
     // Tabs 4 and 5 are now as short as the others: no section longer than about a pathway and a build-out.
-    expect(p.section).toBeLessThan(8);
+    expect(p.section).toBeLessThan(10);
     // A set length overrides the fit.
     expect(sequencePlan(seqWith(['moa', 'tissue'], { seqSection: 6, seqEqual: true }), tabs).section).toBe(6);
   });

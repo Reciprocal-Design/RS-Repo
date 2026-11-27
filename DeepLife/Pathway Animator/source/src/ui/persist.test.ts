@@ -66,6 +66,15 @@ describe('saved settings', () => {
     };
     expect(tissue({ startShare: 0, relayHops: 4, stagger: 3 })).toMatchObject({ startShare: 1, relayHops: 0, stagger: 1 });
     expect(tissue({ startShare: 0.5, relayHops: 2 })).toMatchObject({ startShare: 0.5, relayHops: 2 });
+    // Tabs 1–5 saved at the old pulse speed get the slower one; a speed of their own is kept.
+    const speed = (kind: 'moa' | 'body', layerDuration: number) => {
+      const s = moduleScene(kind, 1);
+      mem.set('pathway-animator:settings:v1', JSON.stringify({ tabs: [{ ...s, animation: { ...s.animation, layerDuration } }], active: 0 }));
+      return loadSaved()?.tabs.find((t) => t?.module.kind === kind)?.animation.layerDuration;
+    };
+    expect(speed('moa', 0.5)).toBe(0.8);
+    expect(speed('moa', 0.6)).toBe(0.6);
+    expect(speed('body', 0.5)).toBe(0.5);
     mem.set('pathway-animator:settings:v1', JSON.stringify({ tabs: [], active: 0 }));
     expect(loadSaved()).toBeNull();
     mem.set('pathway-animator:settings:v1', 'not json');

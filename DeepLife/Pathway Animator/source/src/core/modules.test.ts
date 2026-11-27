@@ -4,7 +4,7 @@ import { displayListToSvg } from '../render/svg';
 import { defaultScene } from './defaults';
 import { neighbourCells } from './cellMap';
 import { buildGeometry } from './geometry';
-import { linkTraced, MODULES, moduleScene, shareScene, tissueMap, TRACED } from './modules';
+import { linkTraced, MODULES, moduleScene, shareScene, TAB_LAYER_DURATION, tissueMap, TRACED } from './modules';
 import { parseSceneJson, serializeScene } from './sceneIO';
 import { buildSchedule } from './timeline';
 import type { ModuleKind, Scene } from './types';
@@ -42,7 +42,7 @@ describe('modules', () => {
     expect(seconds('realCell')).toBe(10);
     // Tabs 4 and 5: every cell active at once, signals crossing between them; about one pathway long.
     for (const kind of ['tissue', 'crossTissue'] as ModuleKind[]) {
-      expect(seconds(kind)).toBeLessThan(6.5);
+      expect(seconds(kind)).toBeLessThan(8);
       expect(moduleScene(kind, 1234).cellMap).toMatchObject({ startShare: 1, relayHops: 0, stagger: 1 });
     }
   });
@@ -68,29 +68,23 @@ describe('modules', () => {
     }
   });
 
-  it('MOA flows back and forth between the nucleus and the receptor', () => {
-    const start = moduleScene('moa', 7);
-    const s: Scene = { ...start, module: { ...start.module, trips: 2 } };
+  it('tabs 1–5 run a slower pulse, one way, from the receptor to the DEGs, and loop', () => {
+    for (const kind of [...TRACED, 'tissue', 'crossTissue'] as ModuleKind[]) {
+      expect(moduleScene(kind, 7).animation.layerDuration).toBe(TAB_LAYER_DURATION);
+    }
+    expect(TAB_LAYER_DURATION).toBeGreaterThan(moduleScene('custom', 7).animation.layerDuration);
+    const s = moduleScene('moa', 7);
     const g = buildGeometry(s);
     const sched = buildSchedule(s);
-    const receptor = g.nodes.find((n) => n.layer === 0)!;
-    const deg = g.nodes.find((n) => n.layer === lastLayer(s))!;
-    const legs = [0, 1, 2, 3].map((w) => sched.edges.filter((et) => et.wave === w));
-    for (const leg of legs) expect(leg).toHaveLength(g.edges.length);
-    const first = (w: number) => [...legs[w]].sort((a, b) => a.start - b.start)[0];
-    expect(g.nodeById.get(first(0).edge.from)!.layer).toBe(0);
-    expect(g.nodeById.get(first(1).edge.from)!.layer).toBe(lastLayer(s));
-    expect(g.nodeById.get(first(2).edge.from)!.layer).toBe(0);
-    expect(g.nodeById.get(first(3).edge.from)!.layer).toBe(lastLayer(s));
-    for (let w = 1; w < 4; w++) expect(first(w).start).toBeGreaterThan(Math.max(...legs[w - 1].map((et) => et.start + et.duration)));
-    expect(sched.pulses.get(deg.id)!.length).toBeGreaterThan(1);
-    expect(sched.pulses.get(receptor.id)!.length).toBeGreaterThan(1);
-    // The loop closes as the pulse gets back to the receptor, so it never stops.
+    // Every line once, all in the first wave, from the receptor towards the DEGs; no return.
+    expect(sched.edges).toHaveLength(g.edges.length);
+    expect(sched.edges.every((et) => et.wave === 0)).toBe(true);
+    const first = [...sched.edges].sort((a, b) => a.start - b.start)[0];
+    expect(g.nodeById.get(first.edge.from)!.layer).toBe(0);
+    for (const et of sched.edges) expect(g.nodeById.get(et.edge.to)!.layer).toBeGreaterThan(g.nodeById.get(et.edge.from)!.layer);
+    // It loops: the pulse starts again from the receptor.
     expect(sched.period).toBe(sched.total);
     expect(Math.max(...sched.edges.map((et) => et.start + et.duration))).toBeLessThan(sched.total);
-    // More trips, a longer loop.
-    const more = { ...s, module: { ...s.module, trips: 3 } };
-    expect(buildSchedule(more).total).toBeGreaterThan(sched.total);
   });
 
   it('target combination is the pathway of tab 1 and one more', () => {
@@ -116,8 +110,14 @@ describe('modules', () => {
       expect([m.x, m.y]).toEqual([n.x, n.y]);
     }
     expect(lit(g, 'p1')).toEqual(lit(one, 'p1'));
-    // The second: its own receptor and its own route to the nucleus.
+    // The second: its own receptor and its own route to the nucleus, on the right-hand side of the cell,
+    // simpler than the first (a protein fewer in each deep row, fewer lines).
     expect(lit(g, 'p2').length).toBeGreaterThan(0);
+    expect(lit(g, 'p2').length).toBeLessThan(lit(g, 'p1').length);
+    const second = g.receptors.find((r) => r.pathwayId === 'p2')!;
+    expect(second.center.x).toBeGreaterThanOrEqual(g.cell.center.x);
+    const rows = (pid: string) => s.pathways[0].layers.map((_, li) => g.nodes.filter((n) => n.pathwayId === pid && n.layer === li).length);
+    expect(rows('p2')).toEqual(rows('p1').map((n, li) => (li >= rows('p1').length - 3 ? n - 1 : n)));
     const sched = buildSchedule(s);
     for (const pid of ['p1', 'p2']) {
       const receptor = g.nodes.find((n) => n.pathwayId === pid && n.layer === 0)!;
@@ -175,7 +175,7 @@ describe('modules', () => {
     expect(linkTraced(edited, moduleScene('toxicity', 1234)).module.toxicColor).toBe(moduleScene('toxicity', 1234).module.toxicColor);
   });
 
-  it('toxicity keeps the receptor, takes a different pathway to a different dot, and that dot pulses red', () => {
+  it('toxicity keeps tab 1’s pathway, fades everything off the route to the toxic dot, and that dot pulses red', () => {
     const one = buildGeometry(moduleScene('moa', 7));
     const s = moduleScene('toxicity', 7);
     const g = buildGeometry(s);
@@ -184,11 +184,15 @@ describe('modules', () => {
     const last = lastLayer(s);
     expect(toxic[0].layer).toBe(last);
     expect(toxic[0].region).toBe('nucleus');
-    // The receptor is where it was; the wiring is its own.
+    // Exactly tab 1's pathway: the receptor, proteins and lines where they were.
     const receptor = (x: typeof g) => x.receptors.find((r) => r.target)!.center;
     expect(receptor(g)).toEqual(receptor(one));
-    const wiring = (x: typeof g) => JSON.stringify(x.edges.map((e) => e.bezier));
-    expect(wiring(g)).not.toBe(wiring(one));
+    const wiring = (x: typeof g) => JSON.stringify(x.edges.map((e) => [e.id, e.bezier]));
+    expect(wiring(g)).toBe(wiring(one));
+    // The route into the toxic dot stands out: the rest of the lines and proteins are fainter.
+    expect(g.edges.filter((e) => e.to === toxic[0].id).some((e) => e.dim === undefined)).toBe(true);
+    expect(g.edges.filter((e) => e.dim !== undefined).length).toBeGreaterThan(0);
+    expect(g.nodes.filter((n) => n.dim !== undefined).length).toBeGreaterThan(0);
     // Red from the first frame to the last, pulsing, with no warning and an unchanged membrane.
     const dot = (t: number) => buildDisplayList(s, t).prims.find((p) => p.id === toxic[0].id)!;
     const radius = (t: number) => { const p = dot(t); return p.kind === 'circle' ? p.r : 0; };

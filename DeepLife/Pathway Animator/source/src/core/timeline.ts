@@ -177,8 +177,8 @@ export function buildSchedule(scene: Scene): Schedule {
   if (traced.length) {
     const reach = Math.max(...traced.map((et) => et.start + et.duration));
     const leg = reach + TURN_REST * hop;
-    // In the sequence, one pulse from the receptor to the DEGs and no return.
-    const passes = scene.module.seqPart ? 0 : 2 * Math.max(1, Math.round(scene.module.trips)) - 1;
+    // One direction only: the pulse runs from the receptor to the DEGs, and the loop starts it again.
+    const passes = 0;
     if (a.loop || a.continuous) tracedLoop = (passes + 1) * leg;
     const backwards = new Map(traced.map((et) => [et.edge.id, reverseEdge(et.edge)]));
     for (let pass = 1; pass <= passes; pass++) {
