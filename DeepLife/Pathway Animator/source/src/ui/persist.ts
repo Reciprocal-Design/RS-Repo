@@ -9,7 +9,7 @@ import type { ModuleKind, Scene } from '../core/types';
 const KEY = 'pathway-animator:settings:v1';
 const OLD_SEQUENCE_TABS = 'moa,combination,toxicity,tissue,crossTissue,body';
 const SLOW: ModuleKind[] = ['moa', 'combination', 'toxicity', 'tissue', 'crossTissue'];
-const OLD_TAB_SPEEDS = [0.5, 0.8];
+const OLD_TAB_SPEEDS = [0.5, 0.8, 1];
 let stopped = false;
 
 /**
@@ -36,7 +36,7 @@ export function loadSaved(): { tabs: (Scene | null)[]; active: number } | null {
       if (s?.module.kind === 'sequence' && s.module.seqTabs.join() === OLD_SEQUENCE_TABS) {
         s.module = { ...s.module, seqTabs: defaultModule('sequence').seqTabs };
       }
-      // Tabs 1–5 saved at an earlier default pulse speed (0.5, then 0.8 s a layer) get the current, slower one.
+      // Tabs 1–5 saved at an earlier default pulse speed (0.5, 0.8, then 1 s a layer) get the current one.
       if (s && SLOW.includes(s.module.kind) && OLD_TAB_SPEEDS.includes(s.animation.layerDuration)) {
         s.animation = { ...s.animation, layerDuration: TAB_LAYER_DURATION };
       }

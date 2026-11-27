@@ -27,7 +27,7 @@ animation to the others (each keeps its module settings, pathway count, start de
 a preset scene plus a pure transform of the geometry (`src/core/modules.ts`):
 
 **Short loops.** To keep exported videos small, tabs 1–5 run one pulse, one way, from the receptor to the DEGs, at a
-slower pace than the plain animator (1 s a layer; about 5–6 s a loop for tabs 1–3, about 8.5 s for tabs 4 and 5,
+slower pace than the plain animator (0.9 s a layer; about 5 s a loop for tabs 1–3, about 8 s for tabs 4 and 5,
 every cell active), the body rests briefly (about 6 s), and tab 8 runs five 2 s sections (10 s). "Relay hops",
 "Hold at end" and "Section length" lengthen them.
 

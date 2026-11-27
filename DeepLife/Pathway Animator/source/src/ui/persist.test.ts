@@ -72,8 +72,9 @@ describe('saved settings', () => {
       mem.set('pathway-animator:settings:v1', JSON.stringify({ tabs: [{ ...s, animation: { ...s.animation, layerDuration } }], active: 0 }));
       return loadSaved()?.tabs.find((t) => t?.module.kind === kind)?.animation.layerDuration;
     };
-    expect(speed('moa', 0.5)).toBe(1);
-    expect(speed('moa', 0.8)).toBe(1);
+    expect(speed('moa', 0.5)).toBe(0.9);
+    expect(speed('moa', 0.8)).toBe(0.9);
+    expect(speed('moa', 1)).toBe(0.9);
     expect(speed('moa', 0.6)).toBe(0.6);
     expect(speed('body', 0.5)).toBe(0.5);
     mem.set('pathway-animator:settings:v1', JSON.stringify({ tabs: [], active: 0 }));
